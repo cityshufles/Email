@@ -1,0 +1,206 @@
+@using Syncfusion.Blazor.Grids
+@using Email.Models
+@using Email.Services
+@inherits TourEmailCollectionAndProcessingBase
+
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            @if (!HideCollectionToolbar)
+            {
+                <!-- Primary Action Buttons -->
+                <div class="btn-group" role="group" aria-label="Primary actions">
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" disabled="@isBusy">
+                            Collect Only
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("new")'>New (10)</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("today")'>Today</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("week")'>Week</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("month")'>Month</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("all")'>All</button></li>
+                            <li><hr class="dropdown-divider" /></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("last50")'>Last 50</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectWithSpan("last100")'>Last 100</button></li>
+                        </ul>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-outline-warning dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" disabled="@isBusy">
+                            Collect & Process
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("new")'>New (10)</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("today")'>Today</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("week")'>Week</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("month")'>Month</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("all")'>All</button></li>
+                            <li><hr class="dropdown-divider" /></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("last50")'>Last 50</button></li>
+                            <li><button class="dropdown-item" @onclick='() => CollectAndProcessSpanAsync("last100")'>Last 100</button></li>
+                        </ul>
+                    </div>
+                </div>
+            }
+
+            <!-- Filters / Search -->
+            <div class="form-check form-check-inline ms-2">
+                <input class="form-check-input" type="checkbox" id="onlyUnclassified" @bind="onlyUnclassified" />
+                <label class="form-check-label" for="onlyUnclassified">Only unclassified</label>
+            </div>
+            <div class="form-check visually-hidden form-check-inline">
+                <input class="form-check-input" type="checkbox" id="onlyTourRelated" @bind="onlyTourRelated" />
+                <label class="form-check-label"  for="onlyTourRelated">Only tour-related</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="onlyClassified" @bind="onlyClassified" />
+                <label class="form-check-label" for="onlyClassified">Only classified</label>
+            </div>
+            <div class="input-group input-group-sm" style="width: 260px;">
+                <input type="text" class="form-control" placeholder="Search subject/from..." @bind="searchTerm" @onkeyup="OnSearchKeyUp" />
+                <button class="btn btn-outline-primary" @onclick="PerformSearch" disabled="@isBusy || string.IsNullOrWhiteSpace(searchTerm)">
+                    <i class="bi bi-search"></i>
+                </button>
+                @if (!string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    <button class="btn btn-outline-secondary" @onclick="ClearSearch" disabled="@isBusy">
+                        <i class="bi bi-x"></i>
+                    </button>
+                }
+            </div>
+
+            <button class="btn btn-sm btn-outline-secondary" disabled="@isBusy" @onclick="RefreshGridAsync">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+
+            <!-- Status Display -->
+            <div class="ms-auto small text-muted">
+                @if (collectionStatus != null)
+                {
+                    <span>Collected: @collectionStatus.TotalCollected | Processed: @collectionStatus.TotalProcessed | Unprocessed: @collectionStatus.TotalUnprocessed</span>
+                }
+                else
+                {
+                    <span>Loading status...</span>
+                }
+            </div>
+
+            @if (isBusy)
+            {
+                <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <div>
+            <strong>Unprocessed Emails</strong>
+            @if (!isBusy && unprocessedEmails != null)
+            {
+                <small class="text-muted ms-2">(@unprocessedEmails.Count total)</small>
+            }
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-success" disabled="@(isBusy || !hasSelectedEmails)" @onclick='() => ProcessSelectedAsync()'>Process Selected</button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (isBusy)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading data...</p>
+            </div>
+        }
+        else if (unprocessedEmails?.Count > 0)
+        {
+            <SfGrid @ref="unprocessedEmailsGrid"
+                    DataSource="@unprocessedEmails"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowSelection="true"
+                    SelectionType="SelectionType.Multiple"
+                    TValue="UnprocessedEmailDto"
+                    Height="600">
+                <GridSelectionSettings CheckboxOnly="true" PersistSelection="true" Type="SelectionType.Multiple" />
+                <GridPageSettings PageSize="20" PageSizes="true" />
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Excel" />
+                <GridEvents TValue="UnprocessedEmailDto" RowSelected="OnRowSelected" RowDeselected="OnRowDeselected" />
+
+                <GridColumns>
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.Id)" HeaderText="Select" Width="80" Type="ColumnType.CheckBox" AllowSorting="false" AllowFiltering="false" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.Subject)" HeaderText="Subject" Width="300" TextAlign="TextAlign.Left" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.FromEmail)" HeaderText="From" Width="200" TextAlign="TextAlign.Left" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.FromName)" HeaderText="From Name" Width="150" TextAlign="TextAlign.Left" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.ReceivedDate)" HeaderText="Received" Width="140" Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.VendorName)" HeaderText="Vendor" Width="100" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.EmailType)" HeaderText="Type" Width="100" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.CollectedAt)" HeaderText="Collected" Width="140" Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" TextAlign="TextAlign.Center" />
+                    <GridColumn HeaderText="Actions" Width="200" AllowSorting="false" AllowFiltering="false">
+                        <Template>
+                            @{
+                                var email = context as UnprocessedEmailDto;
+                            }
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary btn-sm" @onclick='() => PreviewEmail(email)'>Preview</button>
+                                <button class="btn btn-outline-success btn-sm" @onclick='() => ProcessSingleEmail(email)'>Process</button>
+                            </div>
+                        </Template>
+                    </GridColumn>
+                </GridColumns>
+            </SfGrid>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <div class="text-muted">
+                    <i class="bi bi-envelope-open display-6"></i>
+                    <p class="mt-2">No unprocessed emails found</p>
+                    <button class="btn btn-outline-primary btn-sm" @onclick="RefreshGridAsync"><i class="bi bi-arrow-clockwise me-1"></i>Try Again</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (showPreview && previewEmail != null)
+{
+    <div class="modal fade show" style="display:block; background:rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@previewEmail.Subject</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="ClosePreview"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2 small text-muted">
+                        From: @previewEmail.FromName &lt;@previewEmail.FromEmail&gt; | Received: @previewEmail.ReceivedDate
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(previewEmail.HtmlBody))
+                    {
+                        <iframe style="width:100%; height:500px; border:1px solid #eee;" srcdoc="@previewEmail.HtmlBody"></iframe>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(previewEmail.TextBody))
+                    {
+                        <pre class="p-3 bg-light" style="white-space:pre-wrap;">@previewEmail.TextBody</pre>
+                    }
+                    else
+                    {
+                        <div class="text-muted">No body content.</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="ClosePreview">Close</button>
+                    <button class="btn btn-primary" @onclick='() => ProcessSingleEmail(new UnprocessedEmailDto { Id = previewEmail.Id, MessageId = previewEmail.MessageId })'>Process This Email</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+

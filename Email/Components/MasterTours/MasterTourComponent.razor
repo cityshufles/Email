@@ -1,0 +1,147 @@
+@inject IMasterTourService MasterTourService
+@inject IGuidesApiService GuidesApi
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h4 class="mb-0">Master Tours</h4>
+            <div class="text-muted small">Manage master tour names and vendor variants.</div>
+        </div>
+        <button class="btn btn-primary" type="button" @onclick="CreateNewTour" disabled="@isLoading">
+            <i class="bi bi-plus-lg me-1"></i>New Master Tour
+        </button>
+    </div>
+    <div class="card-body">
+        @if (isLoading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 text-muted">Loading master tours...</div>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="alert alert-danger">@loadError</div>
+        }
+        else if (masterTours.Count == 0)
+        {
+            <div class="text-muted">No master tours found.</div>
+        }
+        else
+        {
+            <div class="accordion" id="@accordionId">
+                @foreach (var tour in masterTours)
+                {
+                    <MasterTourAccordionItem @key="tour"
+                                             Tour="tour"
+                                             AvailableGuides="availableGuides"
+                                             ParentAccordionId="@accordionId"
+                                             IsNew="@(tour.Id == 0)"
+                                             IsExpanded="@(tour.Id == 0)"
+                                             OnRefreshRequested="LoadMasterToursAsync"
+                                             OnCancelNew="CancelNewTour" />
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly string accordionId = "masterToursAccordion";
+    private List<DbTour> masterTours = new();
+    private List<DbGuide> availableGuides = new();
+    private bool isLoading = true;
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load master tours for initial render.
+        try
+        {
+            await LoadMasterToursAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourComponent] OnInitializedAsync failed: {ex}");
+#endif
+            loadError = "Failed to load master tours.";
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadMasterToursAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Fetch active master tours from the database.
+        try
+        {
+            isLoading = true;
+            loadError = null;
+            StateHasChanged();
+
+            masterTours = await MasterTourService.GetAllMasterToursAsync();
+            availableGuides = await GuidesApi.GetGuidesAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourComponent] LoadMasterToursAsync failed: {ex}");
+#endif
+            loadError = "Failed to load master tours.";
+            masterTours = new List<DbTour>();
+            availableGuides = new List<DbGuide>();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CreateNewTour()
+    {
+        // Created: 2026-02-12 00:00 UTC - Insert a new unsaved tour into the list for editing.
+        try
+        {
+            masterTours.RemoveAll(t => t.Id == 0);
+
+            var newTour = new DbTour
+            {
+                Id = 0,
+                TourName = string.Empty,
+                MasterTourName = string.Empty,
+                MasterTourNameDesktop = string.Empty,
+                MasterTourNameMobile = string.Empty,
+                MeetingPlace = string.Empty,
+                MeetingInstructions = string.Empty,
+                IsActive = true
+            };
+
+            masterTours.Insert(0, newTour);
+            loadError = null;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourComponent] CreateNewTour failed: {ex}");
+#endif
+            loadError = "Failed to start a new master tour.";
+        }
+    }
+
+    private void CancelNewTour(DbTour tour)
+    {
+        // Created: 2026-02-12 00:00 UTC - Remove an unsaved tour row from the list.
+        try
+        {
+            masterTours.Remove(tour);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourComponent] CancelNewTour failed: {ex}");
+#endif
+            loadError = "Failed to remove the new tour row.";
+        }
+    }
+}

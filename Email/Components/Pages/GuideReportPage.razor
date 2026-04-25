@@ -1,0 +1,3459 @@
+@page "/guide-report"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.GuideCalculator
+@using Email.Models.Mobile
+@using Email.Models.Reports
+@using Email.Services
+@using Email.Calendar.Services
+@using Email.Calendar.Models
+@using Email.Components.Tours
+@inject ITourGuideAssignmentService AssignmentService
+@inject ICalendarDataService CalendarService
+@inject IGuidesApiService GuidesService
+@inject IGuideReportService ReportService
+@inject IGuideCalculatorService CalculatorService
+@inject IToastService ToastService
+@inject ITourPhotoService PhotoService
+@inject ITourNameNormalizer TourNameNormalizerService
+@inject IConfiguration Configuration
+@inject StaticGalleryGeneratorService GalleryGenerator
+@inject IJSRuntime JSRuntime
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@inject IWebHostEnvironment WebHostEnvironment
+@inject Microsoft.Extensions.Logging.ILogger<GuideReportPage> Logger
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Configuration
+@using System.IO
+@using System.Security.Claims
+
+<!-- Created: 1/28/2026 9:30 PM - Added expander, check-in, notes, photo upload -->
+
+<PageTitle>Guide Report</PageTitle>
+
+<div class="container-fluid py-3 @(_buttonFontSize)">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    @onclick="ForcePageRefresh"
+                    title="Refresh page">
+                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                <span class="visually-hidden">Refresh page</span>
+            </button>
+            <h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Guide Reports</h4>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="/guide-lite" class="btn btn-outline-secondary" title="Open Guide Lite">
+                <i class="bi bi-grid-3x3-gap me-1"></i>Lite
+            </a>
+            <form method="post" action="/logout" class="d-inline">
+                <button type="submit" class="btn btn-danger" title="Logout">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </form>
+            <button class="btn btn-outline-secondary border-0" @onclick="ToggleSettings" title="Page Settings">
+                <i class="bi bi-gear-fill"></i>
+            </button>
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Left Panel: Date Picker & Tour List -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                    <div>
+                        <i class="bi bi-calendar3 me-1"></i> Select Date
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-person me-1"></i>
+                        <select class="form-select form-select-sm" style="width: 170px;"
+                                value="@SelectedGuideFilter"
+                                @onchange="OnGuideFilterChange">
+                            <option value="all">All Guides</option>
+                            <option value="unassigned">Unassigned</option>
+                            <option disabled>---------</option>
+                            @foreach (var guide in GetDistinctGuidesForFilter())
+                            {
+                                <option value="guide-@guide.Id">@guide.FirstName @guide.LastName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 mb-3">
+                        <input type="date" class="form-control" style="width: 50%;"
+                               value="@SelectedDate.ToString("yyyy-MM-dd")" 
+                               @onchange="OnDateChanged" />
+                        <input type="month" class="form-control" style="width: 50%;"
+                               value="@SelectedMonth.ToString("yyyy-MM")"
+                               @onchange="OnMonthChanged" />
+                    </div>
+                    @{
+                        var visibleTours = GetVisibleTours();
+                    }
+                    
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (visibleTours.Count == 0)
+                    {
+                        <div class="text-muted small">No tours found for this date.</div>
+                    }
+                    else
+                    {
+                        <div class="fw-semibold mb-2">
+                            @if (DateViewMode == "month")
+                            {
+                                <span>Tours in @SelectedMonth.ToString("MMMM yyyy"):</span>
+                            }
+                            else
+                            {
+                                <span>Tours on @SelectedDate.ToString("MMM d, yyyy"):</span>
+                            }
+                        </div>
+                        <ul class="list-unstyled">
+                            @foreach (var tour in visibleTours)
+                            {
+                                var isActive = SelectedTour?.TourDate == tour.TourDate &&
+                                               string.Equals(SelectedTour?.GroupFamilyKey, tour.GroupFamilyKey, StringComparison.OrdinalIgnoreCase) &&
+                                               string.Equals(SelectedTour?.GroupTimeKey, tour.GroupTimeKey, StringComparison.OrdinalIgnoreCase);
+                                <li class="mb-1">
+                                    <button class='@($"btn btn-sm w-100 text-start d-flex justify-content-between align-items-start gap-2 {(isActive ? "btn-primary" : "btn-outline-secondary")}")'
+                                            @onclick="() => SelectTour(tour)">
+                                        <span class="flex-grow-1">
+                                            @if (DateViewMode == "month")
+                                            {
+                                                <small class="text-muted">@tour.TourDate.ToString("MMM d")</small>
+                                                <br />
+                                            }
+                                            <i class="bi bi-clock me-1"></i>@tour.DisplayTime
+                                            <br />
+                                            <small>@tour.ListDisplayName (@tour.TotalBookings bookings)</small>
+                                        </span>
+                                        @if (tour.IsSubmitted)
+                                        {
+                                            <i class="bi bi-check-circle-fill text-success align-self-start" style="font-size: 1.1rem;" title="Report submitted"></i>
+                                        }
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Tour Detail & Report -->
+        <div class="col-md-9">
+            @if (SelectedTour == null)
+            {
+                <div class="card">
+                    <div class="card-body text-center text-muted py-5">
+                        <i class="bi bi-arrow-left-circle" style="font-size: 3rem;"></i>
+                        <div class="mt-3">Select a tour from the left panel to view details</div>
+                    </div>
+                </div>
+            }
+            else if (isLoadingReport)
+            {
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2 text-muted">Loading report...</p>
+                    </div>
+                </div>
+            }
+            else if (Report != null)
+            {
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>@SelectedDate.ToString("dddd, MMMM d, yyyy")</strong>
+                            <span class="badge border ms-2">@Report.Walkers.Sum(w => w.ActualAttendees) guests</span>
+                        </div>
+                        <div>
+                            @if (Report.IsSubmitted)
+                            {
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Submitted</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Tour Header -->
+                        <div class="mb-3 p-2 border rounded guide-tour-header-row">
+                            <div>
+                                <h5 class="mb-0">@SelectedTour.TourName</h5>
+                                <small class="text-muted"><i class="bi bi-clock me-1"></i>@SelectedTour.DisplayTime</small>
+                            </div>
+                            <div class="guide-tour-header-actions">
+                                <div class="form-check form-switch guide-contact-mode-lock mb-0">
+                                    <input class="form-check-input m-0"
+                                           type="checkbox"
+                                           role="switch"
+                                           checked="@isContactModeLockEnabled"
+                                           @onchange="OnContactModeLockChanged"
+                                           title="Lock to Blank mode"
+                                           aria-label="Lock contact mode to Blank" />
+                                </div>
+                                <select class="form-select form-select-sm guide-contact-mode-select"
+                                        value="@contactMessageMode"
+                                        @onchange="OnContactMessageModeChanged"
+                                        disabled="@isContactModeLockEnabled"
+                                        title="Contact mode">
+                                    <option value="@ContactModeBlank">Blank</option>
+                                    <option value="@ContactModeGalleryLink">Gallery Link</option>
+                                    <option value="@ContactModeGreeting">Greeting</option>
+                                </select>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-warning guide-tour-bulk-btn"
+                                        @onclick="OpenBulkGuideContactDialog"
+                                        title="Bulk contact guide">
+                                    <i class="bi bi-chat-dots-fill"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Walker List with Expanders -->
+                        <div class="mb-3">
+                            <div class="fw-semibold mb-2">
+                                <i class="bi bi-building me-1"></i>All Bookings
+                                <span class="badge border ms-1">@Report.Walkers.Count bookings</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0 guide-bookings-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 30px;"></th>
+                                        <th>Name</th>
+                                        <th class="text-center" style="width: 80px;" title="Adults" aria-label="Adults">
+                                            <span aria-hidden="true">&#x1F9D3;</span>
+                                            <span class="visually-hidden">Adults</span>
+                                        </th>
+                                        <th class="text-center" style="width: 80px;" title="Children" aria-label="Children">
+                                            <span aria-hidden="true">&#x1F9D2;</span>
+                                            <span class="visually-hidden">Children</span>
+                                        </th>
+                                        <th class="text-center" style="width: 72px;" title="Contact" aria-label="Contact">
+                                            <i class="bi bi-telephone-outbound-fill" aria-hidden="true"></i>
+                                            <span class="visually-hidden">Contact</span>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var walker in Report.Walkers)
+                                    {
+                                        var isPositive = walker.ReviewStatus == "Positive";
+                                        var isNegative = walker.ReviewStatus == "Negative";
+                                        var isNoContact = walker.ReviewStatus == "NoContact";
+                                        
+                                        <!-- Main Walker Row -->
+                                        <tr>
+                                            <td>
+                                                <button class="btn btn-sm btn-link p-0" @onclick="() => walker.IsExpanded = !walker.IsExpanded">
+                                                    <i class='@($"bi bi-chevron-{(walker.IsExpanded ? "down" : "right")}")'></i>
+                                                </button>
+                                            </td>
+                                            <td class="booking-name-cell">
+                                                <div class="fw-semibold text-break">@walker.CustomerName</div>
+                                                @if (!string.IsNullOrWhiteSpace(walker.VendorName))
+                                                {
+                                                    <div class="small text-muted text-break">@walker.VendorName</div>
+                                                }
+                                                <div class="walker-status-actions mt-1">
+                                                    <button type="button"
+                                                            class='@($"btn btn-sm btn-outline-info checkin-icon-btn {(walker.IsCheckedIn ? "checked" : "")}")'
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            @onclick='() => ToggleCheckInButtonAsync(walker)'
+                                                            title="@(walker.IsCheckedIn ? "Checked in. Tap to mark not checked in." : "Not checked in. Tap to check in.")"
+                                                            aria-label="@(walker.IsCheckedIn ? "Mark not checked in" : "Mark checked in")">
+                                                        @if (walker.IsCheckedIn)
+                                                        {
+                                                            <i class="bi bi-person-check-fill text-success"></i>
+                                                        }
+                                                        else
+                                                        {
+                                                            <i class="bi bi-clipboard2-check-fill text-body"></i>
+                                                        }
+                                                    </button>
+                                                    <button type="button" class='@($"btn btn-sm status-positive-btn {(isPositive ? "btn-success" : "btn-outline-success")}")' 
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            @onclick='() => ToggleReviewStatusAsync(walker, "Positive")' 
+                                                            title="Thumbs Up">
+                                                        <i class="bi bi-hand-thumbs-up-fill"></i>
+                                                    </button>
+                                                    <button type="button" class='@($"btn btn-sm status-nocontact-btn {(isNoContact ? "btn-warning" : "btn-outline-warning")}")' 
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            @onclick='() => ToggleReviewStatusAsync(walker, "NoContact")' 
+                                                            title="No Contact">
+                                                        <i class="bi bi-person-x-fill"></i>
+                                                    </button>
+                                                    <button type="button" class='@($"btn btn-sm status-negative-btn {(isNegative ? "btn-danger" : "btn-outline-danger")}")' 
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            @onclick='() => ToggleReviewStatusAsync(walker, "Negative")' 
+                                                            title="Thumbs Down">
+                                                        <i class="bi bi-hand-thumbs-down-fill"></i>
+                                                    </button>
+                                                    @if (walker.VendorName == "Walk-Up")
+                                                    {
+                                                        <button class="btn btn-sm btn-outline-danger" 
+                                                                @onclick="() => DeleteWalkUpGuest(walker.BookingId)" 
+                                                                title="Delete Guest">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    } 
+                                                </div>
+                                            </td>
+                                            @* Replaced by icon toggle button under walker name. *@
+                                            @* <td class="text-center">
+                                                <div class="form-check form-switch d-inline-block mb-0">
+                                                    <input class="form-check-input" type="checkbox" role="switch"
+                                                           checked="@walker.IsCheckedIn" 
+                                                           disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                           @onchange="@(e => UpdateCheckInAsync(walker, e))" />
+                                                </div>
+                                            </td> *@
+                                            @* Adults *@
+                                            <td class="text-center align-middle">
+                                                <div class="d-flex flex-column align-items-center gap-0">
+                                                    <button class="btn btn-sm btn-link text-success p-0" type="button" 
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            style="font-size: 1.2rem; line-height: 1;"
+                                                            @onclick="() => AdjustAdultsAsync(walker, 1)" title="Increase Adults">
+                                                        <i class="bi bi-caret-up-fill"></i>
+                                                    </button>
+                                                    <span class="fw-bold px-1 my-1" style="min-width: 24px;">@walker.ActualAdults</span>
+                                                    <button class="btn btn-sm btn-link text-danger p-0" type="button" 
+                                                            disabled="@(IsFutureDate || walker.ActualAdults <= 0 || IsAttendanceSavePending(walker))"
+                                                            style="font-size: 1.2rem; line-height: 1;"
+                                                            @onclick="() => AdjustAdultsAsync(walker, -1)" title="Decrease Adults">
+                                                        <i class="bi bi-caret-down-fill"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            @* Children *@
+                                            <td class="text-center align-middle">
+                                                <div class="d-flex flex-column align-items-center gap-0">
+                                                    <button class="btn btn-sm btn-link text-success p-0" type="button" 
+                                                            disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                            style="font-size: 1.2rem; line-height: 1;"
+                                                            @onclick="() => AdjustChildrenAsync(walker, 1)" title="Increase Children">
+                                                        <i class="bi bi-caret-up-fill"></i>
+                                                    </button>
+                                                    <span class="fw-bold px-1 my-1" style="min-width: 24px;">@walker.ActualChildren</span>
+                                                    <button class="btn btn-sm btn-link text-danger p-0" type="button" 
+                                                            disabled="@(IsFutureDate || walker.ActualChildren <= 0 || IsAttendanceSavePending(walker))"
+                                                            style="font-size: 1.2rem; line-height: 1;"
+                                                            @onclick="() => AdjustChildrenAsync(walker, -1)" title="Decrease Children">
+                                                        <i class="bi bi-caret-down-fill"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            <td class="text-center align-middle">
+                                                @{
+                                                    var smsActionUrl = GetWalkerSmsActionLink(Report, walker);
+                                                    var waActionUrl = GetWalkerWhatsAppActionLink(Report, walker);
+                                                    var canLaunchSms = !string.IsNullOrWhiteSpace(smsActionUrl);
+                                                    var canLaunchWa = !string.IsNullOrWhiteSpace(waActionUrl);
+                                                    var smsButtonClass = GetContactStateButtonClass(walker.SmsContactState, canLaunchSms);
+                                                    var waButtonClass = GetContactStateButtonClass(walker.WaContactState, canLaunchWa);
+                                                }
+                                                <div class="d-inline-flex flex-column align-items-center gap-1">
+                                                    @if (canLaunchSms)
+                                                    {
+                                                        <a href="@smsActionUrl"
+                                                           class='@($"btn btn-sm {smsButtonClass} p-1")'
+                                                           title="@GetContactActionTitle("SMS", walker.SmsContactState, canLaunchSms)"
+                                                           aria-label="SMS">
+                                                            <i class="bi bi-chat-dots"></i>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button type="button"
+                                                                class='@($"btn btn-sm {smsButtonClass} p-1")'
+                                                                title="@GetContactActionTitle("SMS", walker.SmsContactState, canLaunchSms)"
+                                                                aria-label="SMS"
+                                                                disabled>
+                                                            <i class="bi bi-chat-dots"></i>
+                                                        </button>
+                                                    }
+                                                    @if (canLaunchWa)
+                                                    {
+                                                        <a href="@waActionUrl"
+                                                           target="_blank"
+                                                           rel="noopener"
+                                                           class='@($"btn btn-sm {waButtonClass} p-1")'
+                                                           title="@GetContactActionTitle("WA", walker.WaContactState, canLaunchWa)"
+                                                           aria-label="WhatsApp">
+                                                            <i class="bi bi-whatsapp"></i>
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button type="button"
+                                                                class='@($"btn btn-sm {waButtonClass} p-1")'
+                                                                title="@GetContactActionTitle("WA", walker.WaContactState, canLaunchWa)"
+                                                                aria-label="WhatsApp"
+                                                                disabled>
+                                                            <i class="bi bi-whatsapp"></i>
+                                                        </button>
+                                                    }
+                                                    <button class="btn btn-sm btn-outline-primary p-1" 
+                                                            disabled="@IsFutureDate"
+                                                            @onclick="() => OpenPhoneEditDialog(walker)" 
+                                                            title="Edit Phone">
+                                                        <i class="bi bi-telephone"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+
+                                        </tr>
+                                        
+                                        <!-- Expandable Details Row -->
+                                        @if (walker.IsExpanded)
+                                        {
+                                            <tr>
+                                                <td colspan="5" class="ps-4 border-0">
+                                                    <div class="p-2 border rounded">
+                                                        <div class="row g-2">
+                                                            <div class="col-md-8">
+                                                                <label class="form-label small mb-1">Notes</label>
+                                                                <textarea class="form-control form-control-sm" rows="2"
+                                                                          placeholder="Add notes about this walker..."
+                                                                          value="@walker.ReviewNotes"
+                                                                          disabled="@(IsFutureDate || IsAttendanceSavePending(walker))"
+                                                                          @onchange="@(e => UpdateReviewNotesAsync(walker, e.Value?.ToString()))"></textarea>
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Status</label>
+                                                                <div class="small text-muted">
+                                                                    @if (walker.ReviewStatus == "Positive")
+                                                                    {
+                                                                        <i class="bi bi-hand-thumbs-up-fill text-success me-1"></i><span>Positive</span>
+                                                                    }
+                                                                    else if (walker.ReviewStatus == "Negative")
+                                                                    {
+                                                                        <i class="bi bi-hand-thumbs-down-fill text-danger me-1"></i><span>Negative</span>
+                                                                    }
+                                                                    else if (walker.ReviewStatus == "NoContact")
+                                                                    {
+                                                                        <i class="bi bi-person-x-fill text-warning me-1"></i><span>No Contact</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span>No status set</span>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    
+                                    <!-- Walk-up Guest Row -->
+                                    <tr>
+                                        <td></td>
+                                        <td class="text-primary">
+                                            <i class="bi bi-person-plus me-1"></i>Walk up Guest
+                                        </td>
+                                        <td class="text-center text-primary">
+                                            <div class="d-inline-flex align-items-center gap-1">
+                                                <button class="btn btn-sm btn-outline-danger" type="button" 
+                                                        @onclick="@(() => ToastService.ShowInfoAsync("Info", "Please remove walk-up guests from the main list above."))"
+                                                        title="Remove from list">
+                                                    <i class="bi bi-dash"></i>
+                                                </button>
+                                                <span class="fw-bold px-1">
+                                                    @(Report?.Walkers.Count(w => w.VendorName == "Walk-Up") ?? 0)
+                                                </span>
+                                                <button class="btn btn-sm btn-outline-success" type="button" 
+                                                        @onclick="OpenWalkUpDialog"
+                                                        title="Add Walk-up Guest">
+                                                    <i class="bi bi-plus"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        </div>
+
+                        @{
+                            var headerCanOpenGallery = Report != null && Report.IsSubmitted;
+                            var headerHasGallery = Report != null && HasGalleryFile(Report);
+                        }
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="fw-semibold"><i class="bi bi-camera me-1"></i>Tour Photos</span>
+                                <div class="d-inline-flex align-items-center gap-2">
+                                    <a class="btn btn-sm btn-outline-success"
+                                       href="@GetMobileUploaderUrl()"
+                                       title="Upload photos">
+                                        <i class="bi bi-images"></i>
+                                    </a>
+                                    @if (headerCanOpenGallery && headerHasGallery)
+                                    {
+                                        <a href="@GetGalleryUrl(Report)"
+                                           target="_blank"
+                                           rel="noopener"
+                                           class="btn btn-sm btn-outline-info"
+                                           title="Preview gallery"
+                                           aria-label="Preview gallery">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    }
+                                    else if (!headerCanOpenGallery)
+                                    {
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-info"
+                                                disabled
+                                                title="Send Report First"
+                                                aria-label="Preview gallery (disabled)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-info"
+                                                disabled
+                                                title="Gallery not generated yet"
+                                                aria-label="Preview gallery">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    }
+                                    <span class="d-inline-block" tabindex="0" title="@(IsReportValid ? "" : "Notes required for 'No Contact' guests")">
+                                        <button type="button"
+                                                class="btn btn-sm btn-primary"
+                                                @onclick="SendReport"
+                                                @onclick:preventDefault="true"
+                                                disabled="@(isSaving || !IsReportValid || IsFutureDate)"
+                                                title="Send report"
+                                                aria-label="Send report">
+                                            <i class="bi bi-send"></i>
+                                        </button>
+                                    </span>
+                                </div>
+                            </div>
+                            @if (showPhotoSyncHint)
+                            {
+                                <div class='@($"alert {photoSyncHintAlertClass} d-flex justify-content-between align-items-center py-2 mb-2")' role="status">
+                                    <span class="small">@photoSyncHintMessage</span>
+                                    <button class="btn btn-sm btn-outline-warning" @onclick="RefreshPhotos" disabled="@isUploadingPhotos" title="Retry photo sync">
+                                        @if (isUploadingPhotos) { <span class="spinner-border spinner-border-sm me-1"></span><span>Syncing</span> }
+                                        else { <i class="bi bi-arrow-clockwise me-1"></i><span>Try Again</span> }
+                                    </button>
+                                </div>
+                            }
+                            @if (ReportPhotos.Count > 0)
+                            {
+                                <TourPhotoGallery 
+                                    Photos="ReportPhotos" 
+                                    AllowDelete="false" />
+                            }
+                            else
+                            {
+                                <div class="text-muted small">No photos uploaded for this tour.</div>
+                            }
+                        </div>
+
+                        <!-- Gallery Link Copy Section -->
+                        @if (Report != null && !string.IsNullOrEmpty(Report.PublicId))
+                        {
+                            var canOpenGallery = Report.IsSubmitted;
+                            <div class="mb-3">
+                                @if (!canOpenGallery)
+                                {
+                                    <div class="d-inline-flex align-items-center gap-1 badge text-bg-info mb-2">
+                                        <i class="bi bi-info-circle"></i>
+                                        <span>Links available after submitting report</span>
+                                    </div>
+                                }
+                                <div class="input-group">
+                                    <input type="text" class="form-control" readonly value="@(canOpenGallery ? GetGalleryUrl(Report) : "Links available after submitting report")" id="galleryLinkInput" />
+                                    <button class="btn btn-outline-primary" @onclick="CopyGalleryLink" disabled="@(!canOpenGallery)" title="@(canOpenGallery ? "Copy gallery link" : "Send report first")">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                    @if (canOpenGallery)
+                                    {
+                                        <a class="btn btn-outline-secondary" href="@GetGalleryUrl(Report)" target="_blank" rel="noopener" title="Open gallery in new tab">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="d-inline-block" tabindex="0" title="Send Report First">
+                                            <button type="button" class="btn btn-outline-secondary" disabled aria-label="Open gallery (disabled)">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </button>
+                                        </span>
+                                    }
+                                </div>
+                                @if (HasVendorGallery("guruwalk"))
+                                {
+                                    <div class="text-muted small fw-bold mt-2 mb-1">GuruWalk Gallery Link</div>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" readonly value='@(canOpenGallery ? GetGalleryUrl(Report, "GuruWalk") : "Links available after submitting report")' id="galleryLinkInputGuruWalk" />
+                                        <button class="btn btn-outline-primary" @onclick='() => CopyVendorGalleryLink("GuruWalk", "galleryLinkInputGuruWalk")' disabled="@(!canOpenGallery)" title="@(canOpenGallery ? "Copy GuruWalk gallery link" : "Send report first")">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                        @if (canOpenGallery)
+                                        {
+                                            <a class="btn btn-outline-secondary" href='@GetGalleryUrl(Report, "GuruWalk")' target="_blank" rel="noopener" title="Open GuruWalk gallery in new tab">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <span class="d-inline-block" tabindex="0" title="Send Report First">
+                                                <button type="button" class="btn btn-outline-secondary" disabled aria-label="Open GuruWalk gallery (disabled)">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                </button>
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                                @if (HasVendorGallery("freetour"))
+                                {
+                                    <div class="text-muted small fw-bold mt-2 mb-1">FreeTour Gallery Link</div>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" readonly value='@(canOpenGallery ? GetGalleryUrl(Report, "FreeTour") : "Links available after submitting report")' id="galleryLinkInputFreeTour" />
+                                        <button class="btn btn-outline-primary" @onclick='() => CopyVendorGalleryLink("FreeTour", "galleryLinkInputFreeTour")' disabled="@(!canOpenGallery)" title="@(canOpenGallery ? "Copy FreeTour gallery link" : "Send report first")">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                        @if (canOpenGallery)
+                                        {
+                                            <a class="btn btn-outline-secondary" href='@GetGalleryUrl(Report, "FreeTour")' target="_blank" rel="noopener" title="Open FreeTour gallery in new tab">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <span class="d-inline-block" tabindex="0" title="Send Report First">
+                                                <button type="button" class="btn btn-outline-secondary" disabled aria-label="Open FreeTour gallery (disabled)">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                </button>
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (_calculationResult != null)
+                        {
+                            <div class="mt-4 border-top pt-4">
+                                <h5 class="mb-3">Report Summary &amp; Earnings</h5>
+                                <GuideCalculator Result="@_calculationResult" />
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@* Bulk Guide Contact Dialog *@
+@if (showBulkGuideContactDialog && Report != null && SelectedTour != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-chat-dots-fill me-2 text-warning"></i>Bulk Contact Guide</h5>
+                    <button type="button" class="btn-close" @onclick="CloseBulkGuideContactDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="mb-2">Tour Info</h6>
+                            <table class="table table-sm mb-0">
+                                <tr>
+                                    <td class="text-muted">Tour</td>
+                                    <td>@SelectedTour.TourName</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Time</td>
+                                    <td>@SelectedTour.DisplayTime</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Date</td>
+                                    <td>@SelectedDate.ToString("dddd, MMM d, yyyy")</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Totals</td>
+                                    <td>@Report.Walkers.Count bookings / @Report.Walkers.Sum(w => w.ActualAttendees) guests</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label mb-1">Guide Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   value="@bulkGuideGuideName"
+                                   list="bulkGuideContactGuideLookup"
+                                   placeholder="Type or pick a guide"
+                                   @oninput="OnBulkGuideNameInput" />
+                            <datalist id="bulkGuideContactGuideLookup">
+                                @foreach (var guide in Guides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                                {
+                                    <option value="@GetGuideDisplayName(guide)"></option>
+                                }
+                            </datalist>
+                            <div class="mt-2">
+                                <label class="form-label mb-1">Guide Phone</label>
+                                <input type="tel"
+                                       class="form-control"
+                                       value="@bulkGuidePhone"
+                                       placeholder="+12125551234"
+                                       @oninput="OnBulkGuidePhoneInput" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 d-flex flex-wrap gap-2 bulk-guide-mode-wrap">
+                        <button type="button"
+                                class='@($"btn btn-sm {(bulkGuideChannelMode == BulkGuideModeWaApp ? "btn-success" : "btn-outline-secondary")}")'
+                                @onclick='() => SetBulkGuideChannelMode(BulkGuideModeWaApp)'>WA App</button>
+                        <button type="button"
+                                class='@($"btn btn-sm {(bulkGuideChannelMode == BulkGuideModeWaWeb ? "btn-primary" : "btn-outline-secondary")}")'
+                                @onclick='() => SetBulkGuideChannelMode(BulkGuideModeWaWeb)'>WA Web</button>
+                        <button type="button"
+                                class='@($"btn btn-sm {(bulkGuideChannelMode == BulkGuideModeSmsApp ? "btn-primary" : "btn-outline-secondary")}")'
+                                @onclick='() => SetBulkGuideChannelMode(BulkGuideModeSmsApp)'>SMS App</button>
+                        <button type="button"
+                                class='@($"btn btn-sm {(bulkGuideChannelMode == BulkGuideModeSmsWeb ? "btn-primary" : "btn-outline-secondary")}")'
+                                @onclick='() => SetBulkGuideChannelMode(BulkGuideModeSmsWeb)'>SMS Web</button>
+                        <button type="button"
+                                class='@($"btn btn-sm {(bulkGuideChannelMode == BulkGuideModeCopy ? "btn-dark" : "btn-outline-secondary")}")'
+                                @onclick='() => SetBulkGuideChannelMode(BulkGuideModeCopy)'>Copy</button>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="form-label">Message Payload</label>
+                        <textarea class="form-control"
+                                  rows="12"
+                                  value="@bulkGuideMessage"
+                                  @oninput="OnBulkGuideMessageInput"></textarea>
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <small class="text-muted">@GetBulkGuideModeDescription()</small>
+                            <small class='@($"{(bulkGuideMessage.Length > 3500 ? "text-warning" : "text-muted")}")'>@bulkGuideMessage.Length characters</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseBulkGuideContactDialog">Cancel</button>
+                    @if (bulkGuideChannelMode == BulkGuideModeCopy)
+                    {
+                        <button type="button"
+                                class="btn btn-outline-dark"
+                                @onclick="CopyBulkGuideTextAsync"
+                                disabled="@string.IsNullOrWhiteSpace(bulkGuideCopyText)">
+                            <i class="bi bi-clipboard me-1"></i>Copy
+                        </button>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(GetBulkGuideLaunchUrl()))
+                    {
+                        <a class='@($"btn {GetBulkGuideLaunchButtonClass()}")'
+                           href="@GetBulkGuideLaunchUrl()"
+                           target="_blank"
+                           rel="noopener"
+                           @onclick="CloseBulkGuideContactDialog">
+                            <i class='@($"{GetBulkGuideLaunchIconClass()} me-1")'></i>@GetBulkGuideLaunchLabel()
+                        </a>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-secondary" disabled>
+                            <i class='@($"{GetBulkGuideLaunchIconClass()} me-1")'></i>@GetBulkGuideLaunchLabel()
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Walk-Up Guest Dialog *@
+@if (showWalkUpDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>Add Walk-Up Guest</h5>
+                    <button type="button" class="btn-close" @onclick="() => showWalkUpDialog = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Guest Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="walkUpGuest.CustomerName" placeholder="John Doe" />
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Phone <span class="text-danger">*</span></label>
+                            <input type="tel" class="form-control" @bind="walkUpGuest.Phone" placeholder="+1234567890" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Email <span class="text-muted">(Optional)</span></label>
+                            <input type="email" class="form-control" @bind="walkUpGuest.Email" placeholder="john@example.com" />
+                        </div>
+                    </div>
+                    
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Adults</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" @onclick="() => { if(walkUpGuest.ActualAdults > 0) walkUpGuest.ActualAdults--; }">-</button>
+                                <input type="number" class="form-control text-center" @bind="walkUpGuest.ActualAdults" readonly />
+                                <button class="btn btn-outline-secondary" @onclick="() => walkUpGuest.ActualAdults++">+</button>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Children</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" @onclick="() => { if(walkUpGuest.ActualChildren > 0) walkUpGuest.ActualChildren--; }">-</button>
+                                <input type="number" class="form-control text-center" @bind="walkUpGuest.ActualChildren" readonly />
+                                <button class="btn btn-outline-secondary" @onclick="() => walkUpGuest.ActualChildren++">+</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Notes / Message</label>
+                        <textarea class="form-control" rows="2" @bind="walkUpGuest.ReviewNotes" placeholder="Any special requests or notes..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => showWalkUpDialog = false">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveWalkUpGuest" disabled="@isSaving">
+                         @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                         Save Guest
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+
+
+@* Settings Drawer (Offcanvas) *@
+@if (showSettings)
+{
+    <div class="offcanvas offcanvas-end show" tabindex="-1" style="visibility: visible;">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title"><i class="bi bi-gear me-2"></i>Settings</h5>
+            <button type="button" class="btn-close" @onclick="ToggleSettings"></button>
+        </div>
+        <div class="offcanvas-body">
+            @if (currentGuideProfile != null)
+            {
+                <!-- Profile Settings -->
+                <div class="card mb-3">
+                    <div class="card-header fw-bold">Profile Info</div>
+                    <div class="card-body">
+                         <div class="mb-3">
+                            <label class="form-label small">Email (Username)</label>
+                            <input type="email" class="form-control" @bind="editEmail" />
+                            <div class="form-text small">Updating this will change your login.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">Phone Number</label>
+                            <input type="tel" class="form-control" @bind="editPhone" />
+                        </div>
+                        <button class="btn btn-primary w-100" @onclick="SaveProfile" disabled="@isSavingProfile">
+                            @if (isSavingProfile) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Photo Settings -->
+                <div class="card mb-3">
+                    <div class="card-header fw-bold">Profile Photo</div>
+                    <div class="card-body text-center">
+                        @if (!string.IsNullOrEmpty(editGuideImage))
+                        {
+                            <div class="position-relative d-inline-block mb-3">
+                                <img src="@editGuideImage" class="img-thumbnail rounded-circle" style="width: 120px; height: 120px; object-fit: cover;" />
+                                <button class="btn btn-sm btn-danger position-absolute top-0 start-100 translate-middle rounded-circle p-1" 
+                                        @onclick="DeletePhoto" title="Remove Photo" style="width: 24px; height: 24px; line-height: 1;">
+                                    <i class="bi bi-x small"></i>
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="mb-3 text-muted">
+                                <i class="bi bi-person-circle" style="font-size: 4rem;"></i>
+                                <p class="small">No photo uploaded</p>
+                            </div>
+                        }
+                        
+                        <div class="mt-2">
+                             <InputFile OnChange="HandlePhotoUpload" class="form-control form-control-sm" accept=".jpg,.jpeg,.png" disabled="@isSavingPhoto" />
+                             @if (isSavingPhoto)
+                             {
+                                 <div class="small mt-2">
+                                     <span class="spinner-border spinner-border-sm me-1"></span>
+                                     Saving photo...
+                                 </div>
+                             }
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-warning text-center">
+                    <i class="bi bi-exclamation-triangle-fill fs-4 mb-2 d-block"></i>
+                    <strong>Profile Not Found</strong>
+                    <p class="small mb-2">
+                        Your login <code>@currentUsername</code> is not linked to any Guide profile.
+                    </p>
+                    <p class="small mb-0 text-muted">
+                        This usually happens if the Guide record has no email set.
+                    </p>
+                </div>
+            }
+
+            <hr/>
+            
+            <div class="mb-3">
+                <label class="form-label fw-bold small text-muted text-uppercase">Button Font Size</label>
+                <div class="list-group">
+                    <button class='@($"list-group-item list-group-item-action d-flex justify-content-between align-items-center {(_buttonFontSize == "font-normal" ? "active" : "")}")'
+                            @onclick='() => SetFontSize("font-normal")'>
+                        <span>Normal</span>
+                        @if (_buttonFontSize == "font-normal") { <i class="bi bi-check-lg"></i> }
+                    </button>
+                    <button class='@($"list-group-item list-group-item-action d-flex justify-content-between align-items-center {(_buttonFontSize == "font-large" ? "active" : "")}")'
+                            @onclick='() => SetFontSize("font-large")'>
+                        <span style="font-size: 1.15rem;">Large</span>
+                        @if (_buttonFontSize == "font-large") { <i class="bi bi-check-lg"></i> }
+                    </button>
+                    <button class='@($"list-group-item list-group-item-action d-flex justify-content-between align-items-center {(_buttonFontSize == "font-supersize" ? "active" : "")}")'
+                            @onclick='() => SetFontSize("font-supersize")'>
+                        <span style="font-size: 1.4rem;">Supersize</span>
+                        @if (_buttonFontSize == "font-supersize") { <i class="bi bi-check-lg"></i> }
+                    </button>
+                </div>
+                <div class="mt-3 small text-muted fst-italic">
+                    <i class="bi bi-info-circle me-1"></i> Changes apply to all buttons on this page.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="offcanvas-backdrop fade show" @onclick="ToggleSettings"></div>
+}
+
+<style>
+    .settings-flyout {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100%;
+        width: 300px;
+        z-index: 2100;
+        transition: transform 0.3s ease-in-out;
+    }
+    .settings-flyout-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.3);
+        z-index: 2050;
+    }
+    
+    /* Font size scaling for buttons in this page container */
+    .font-large button.btn, .font-large a.btn {
+        font-size: 1.25rem !important;
+        padding: 0.6rem 1.2rem !important;
+    }
+    .font-large .btn-sm {
+        font-size: 1.05rem !important;
+        padding: 0.4rem 0.8rem !important;
+    }
+    
+    .font-supersize button.btn, .font-supersize a.btn {
+        font-size: 1.6rem !important;
+        padding: 0.8rem 1.6rem !important;
+    }
+    .font-supersize .btn-sm {
+        font-size: 1.3rem !important;
+        padding: 0.6rem 1.2rem !important;
+    }
+
+    /* Ensure icons scale too */
+    .font-large .btn i, .font-supersize .btn i {
+        font-size: 1.1em;
+    }
+
+    /* Form Switch scaling (Check-in toggles) */
+    .font-large .form-switch {
+        min-height: 1.5rem;
+        padding-left: 3rem;
+    }
+    .font-large .form-switch .form-check-input {
+        width: 2.5rem;
+        height: 1.25rem;
+        margin-left: -3.5rem;
+        cursor: pointer;
+    }
+    
+    .font-supersize .form-switch {
+        min-height: 2.2rem;
+        padding-left: 4.5rem;
+    }
+    .font-supersize .form-switch .form-check-input {
+        width: 4rem;
+        height: 2rem;
+        margin-left: -5.5rem;
+        cursor: pointer;
+    }
+
+    .guide-bookings-table th,
+    .guide-bookings-table td {
+        vertical-align: middle;
+    }
+
+    .booking-name-cell {
+        overflow-wrap: anywhere;
+    }
+
+    .guide-tour-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .guide-tour-header-actions {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: nowrap;
+    }
+
+    .guide-contact-mode-select {
+        width: auto;
+        flex: 0 0 auto;
+        min-width: 150px;
+    }
+
+    .guide-contact-mode-lock {
+        display: inline-flex;
+        align-items: center;
+        padding-left: 0;
+        min-height: auto;
+        margin-bottom: 0;
+    }
+
+    .guide-tour-bulk-btn {
+        --bs-btn-padding-y: 0.16rem;
+        --bs-btn-padding-x: 0.45rem;
+        min-width: 2rem;
+    }
+
+    .bulk-guide-mode-wrap .btn {
+        min-width: 84px;
+    }
+
+    .walker-status-actions {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+    .checkin-icon-btn {
+        --bs-btn-padding-y: 0.16rem;
+        --bs-btn-padding-x: 0.44rem;
+        margin-right: 0.35rem;
+        min-width: 2rem;
+    }
+
+    .checkin-icon-btn i {
+        font-size: 1.12rem;
+        line-height: 1;
+    }
+
+    .checkin-icon-btn.checked {
+        background-color: rgba(var(--bs-info-rgb), 0.18);
+        border-color: var(--bs-info);
+    }
+
+    @@media (max-width: 767.98px) {
+        .guide-tour-header-row {
+            align-items: flex-start;
+        }
+
+        .guide-tour-header-actions {
+            width: auto;
+        }
+
+        .guide-bookings-table {
+            table-layout: fixed;
+        }
+
+        .guide-bookings-table th,
+        .guide-bookings-table td {
+            padding: 0.25rem 0.2rem;
+        }
+
+        .guide-bookings-table thead th:nth-child(1) {
+            width: 24px !important;
+        }
+
+        .guide-bookings-table thead th:nth-child(3),
+        .guide-bookings-table thead th:nth-child(4) {
+            width: 54px !important;
+        }
+
+        .guide-bookings-table thead th:nth-child(5) {
+            width: 52px !important;
+        }
+
+        .guide-bookings-table .btn.btn-sm {
+            --bs-btn-padding-y: 0.1rem;
+            --bs-btn-padding-x: 0.3rem;
+        }
+
+        .guide-bookings-table .checkin-icon-btn {
+            --bs-btn-padding-y: 0.14rem;
+            --bs-btn-padding-x: 0.4rem;
+            min-width: 1.95rem;
+        }
+
+        .guide-bookings-table .checkin-icon-btn i {
+            font-size: 1.08rem;
+        }
+
+        .walker-status-actions {
+            display: inline-grid !important;
+            grid-template-columns: repeat(2, minmax(0, auto));
+            row-gap: 0.22rem;
+            column-gap: 0.22rem;
+            width: fit-content;
+            align-items: center;
+        }
+
+        .walker-status-actions .checkin-icon-btn {
+            grid-column: 1;
+            grid-row: 1;
+            margin-right: 0;
+        }
+
+        .walker-status-actions .status-positive-btn {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .walker-status-actions .status-nocontact-btn {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .walker-status-actions .status-negative-btn {
+            grid-column: 2;
+            grid-row: 2;
+        }
+    }
+</style>
+
+@code {
+    // Created: 1/28/2026 9:30 PM
+    // Settings / Profile Logic
+    private bool showSettings = false;
+    private DbGuide? currentGuideProfile;
+    private string editEmail = "";
+    private string editPhone = "";
+    private string? editGuideImage = null;
+
+    private bool isSavingProfile = false;
+    private bool isSavingPhoto = false;
+    
+    private string? currentUsername = null;
+    
+    // Auth State Property injected
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+    private User? CurrentUser { get; set; }
+    private int? AuthorizedGuideId { get; set; }
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private DateTime SelectedMonth { get; set; } = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private List<TourDaySummary> DailyTours { get; set; } = new();
+    private TourDaySummary? SelectedTour { get; set; }
+    private int? SelectedGuideId { get; set; }
+    private string SelectedGuideFilter { get; set; } = "all";
+    private List<DbGuide> Guides { get; set; } = new();
+    private bool isLoading = false;
+    private bool isLoadingReport = false;
+    private bool isSaving = false;
+    private bool isUploadingPhotos = false;
+    private readonly HashSet<int> _attendanceSavePendingBookingIds = new();
+    private bool showPhotoSyncHint = false;
+    private string photoSyncHintMessage = string.Empty;
+    private string photoSyncHintAlertClass = "alert-info";
+    private List<string> ReportPhotos { get; set; } = new();
+    private string DateViewMode { get; set; } = "day";
+    private string? _requestedTourNameFromQuery;
+    private string? _requestedTourTimeFromQuery;
+    private bool _shouldAutoSyncAfterUploadReturn = false;
+    
+
+    private string _buttonFontSize = "font-normal";
+
+    private TourReport? Report { get; set; }
+    private GuideCalculationResult? _calculationResult;
+    private int WalkUpCount { get; set; } = 0;
+    private bool showBulkGuideContactDialog = false;
+    private string bulkGuideGuideName = string.Empty;
+    private string bulkGuidePhone = string.Empty;
+    private int? bulkGuideSelectedGuideId = null;
+    private string bulkGuideMessage = string.Empty;
+    private string bulkGuideCopyText = string.Empty;
+    private int bulkGuideChannelMode = BulkGuideModeWaApp;
+    private string bulkGuideWaAppUrl = string.Empty;
+    private string bulkGuideWaWebUrl = string.Empty;
+    private string bulkGuideSmsAppUrl = string.Empty;
+    private string bulkGuideSmsWebUrl = string.Empty;
+    private const int BulkGuideModeWaApp = 0;
+    private const int BulkGuideModeWaWeb = 1;
+    private const int BulkGuideModeSmsApp = 2;
+    private const int BulkGuideModeSmsWeb = 3;
+    private const int BulkGuideModeCopy = 4;
+    private const string ContactModeBlank = "blank";
+    private const string ContactModeGalleryLink = "gallery";
+    private const string ContactModeGreeting = "greeting";
+    private string contactMessageMode = ContactModeBlank;
+    private bool isContactModeLockEnabled = true;
+
+    // 2026-02-08 - Admin Bypass Parameters
+    // 2026-02-08 - Admin Bypass Parameters
+    // Removed specific attributes to rely on manual parsing for reliability
+    
+    private bool IsReportValid => 
+        Report != null && 
+        Report.Walkers.All(w => w.ReviewStatus != "NoContact" || !string.IsNullOrWhiteSpace(w.ReviewNotes));
+
+    private bool IsFutureDate => SelectedDate.Date > DateTime.Today;
+
+    // 2026-02-08 - Admin Bypass Parameters
+    // Removed specific attributes to rely on manual parsing for reliability
+    
+    // 2026-02-08 - Guide Filtering Removed per user request
+    // private bool _isAdminViewAll = false;
+    // private string? _currentGuidePhone = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get user state
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+        }
+
+        ApplyRouteContextFromQuery();
+        Guides = await GuidesService.GetGuidesAsync();
+        await LoadToursForDateAsync();
+        await TrySelectTourFromRouteContextAsync();
+        await TryAutoSyncPhotosAfterUploadReturnAsync();
+    }
+
+    private async Task ToggleSettings() 
+    {
+        showSettings = !showSettings;
+        if (showSettings)
+        {
+            await LoadGuideProfile();
+        }
+    }
+
+    private void ForcePageRefresh()
+    {
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
+    }
+
+    private async Task LoadGuideProfile()
+    {
+        currentUsername = null;
+        string? currentPhone = null;
+        
+        var state = AuthStateTask != null
+            ? await AuthStateTask
+            : await AuthStateProvider.GetAuthenticationStateAsync();
+
+        currentUsername = state.User.Identity?.Name;
+        currentPhone = state.User.FindFirst(ClaimTypes.MobilePhone)?.Value;
+
+        Guides = await GuidesService.GetGuidesAsync();
+
+        currentGuideProfile = null;
+        var matchedByEmail = false;
+        var matchedByPhone = false;
+        var matchedByLast10 = false;
+        var trimmedUsername = currentUsername?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(trimmedUsername))
+        {
+            currentGuideProfile = Guides.FirstOrDefault(g =>
+                string.Equals(g.Email?.Trim(), trimmedUsername, StringComparison.OrdinalIgnoreCase));
+            matchedByEmail = currentGuideProfile != null;
+        }
+
+        if (currentGuideProfile == null && !string.IsNullOrWhiteSpace(currentPhone))
+        {
+            var normalizedUserPhone = NormalizePhoneDigits(currentPhone);
+            if (!string.IsNullOrWhiteSpace(normalizedUserPhone))
+            {
+                currentGuideProfile = Guides.FirstOrDefault(g =>
+                    NormalizePhoneDigits(g.Phone) == normalizedUserPhone);
+                matchedByPhone = currentGuideProfile != null;
+
+                if (currentGuideProfile == null && normalizedUserPhone.Length >= 10)
+                {
+                    var userLast10 = normalizedUserPhone[^10..];
+                    var matches = Guides
+                        .Where(g =>
+                        {
+                            var gp = NormalizePhoneDigits(g.Phone);
+                            return gp.Length >= 10 && gp[^10..] == userLast10;
+                        })
+                        .ToList();
+
+                    if (matches.Count == 1)
+                    {
+                        currentGuideProfile = matches[0];
+                        matchedByPhone = true;
+                        matchedByLast10 = true;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[GuideProfile] Last10 match count={matches.Count} userLast10={userLast10}");
+                    }
+                }
+            }
+        }
+
+        if (currentGuideProfile != null)
+        {
+            editEmail = matchedByPhone && !string.IsNullOrWhiteSpace(trimmedUsername)
+                ? trimmedUsername
+                : currentGuideProfile.Email ?? trimmedUsername ?? "";
+            editPhone = currentGuideProfile.Phone ?? "";
+            editGuideImage = currentGuideProfile.GuideImage;
+        }
+
+        Console.WriteLine(
+            $"[GuideProfile] isAuth={state.User.Identity?.IsAuthenticated} username={trimmedUsername ?? "(null)"} phoneClaim={currentPhone ?? "(null)"} " +
+            $"normalizedPhone={NormalizePhoneDigits(currentPhone)} guides={Guides.Count} " +
+            $"matchedByEmail={matchedByEmail} matchedByPhone={matchedByPhone} matchedByLast10={matchedByLast10} " +
+            $"guideId={(currentGuideProfile?.Id.ToString() ?? "(null)")} " +
+            $"guideEmail={(currentGuideProfile?.Email ?? "(null)")} " +
+            $"guidePhone={(currentGuideProfile?.Phone ?? "(null)")}"
+        );
+
+        StateHasChanged();
+    }
+
+    private static string NormalizePhoneDigits(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return string.Empty;
+        return new string(phone.Where(char.IsDigit).ToArray());
+    }
+
+    private async Task SaveProfile()
+    {
+        if (currentGuideProfile == null) return;
+        
+        isSavingProfile = true;
+        StateHasChanged();
+
+        try
+        {
+            var oldEmail = currentGuideProfile.Email ?? "";
+            await GuidesService.UpdateGuideProfileAsync(currentGuideProfile.Id, editEmail, editPhone, editGuideImage);
+            
+            // Update local model
+            currentGuideProfile.Email = editEmail;
+            currentGuideProfile.Phone = editPhone;
+            currentGuideProfile.GuideImage = editGuideImage;
+
+            await ToastService.ShowSuccessAsync("Profile Updated", "Your changes have been saved.");
+            
+            if (!string.Equals(oldEmail, editEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                await ToastService.ShowInfoAsync("Notice", "Email changed. Use new email for next login.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to save profile: {ex.Message}");
+        }
+        finally
+        {
+            isSavingProfile = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandlePhotoUpload(InputFileChangeEventArgs e)
+    {
+        if (currentGuideProfile == null)
+        {
+            Logger.LogWarning("ProfilePhotoUpload REJECTED Reason=NoCurrentGuideProfile");
+            return;
+        }
+
+        var file = e.File;
+        if (file == null)
+        {
+            Logger.LogWarning(
+                "ProfilePhotoUpload REJECTED Reason=NoFile GuideId={GuideId}",
+                currentGuideProfile.Id);
+            return;
+        }
+
+        var uploadId = Guid.NewGuid().ToString("N")[..12];
+        var uploadTimer = System.Diagnostics.Stopwatch.StartNew();
+        Logger.LogInformation(
+            "ProfilePhotoUpload START UploadId={UploadId} GuideId={GuideId} FileName={FileName} FileSizeBytes={FileSizeBytes} ContentType={ContentType}",
+            uploadId, currentGuideProfile.Id, file.Name, file.Size, file.ContentType);
+
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            Logger.LogWarning(
+                "ProfilePhotoUpload REJECTED UploadId={UploadId} GuideId={GuideId} Reason=FileTooLarge FileName={FileName} FileSizeBytes={FileSizeBytes} MaxBytes={MaxBytes}",
+                uploadId, currentGuideProfile.Id, file.Name, file.Size, 5 * 1024 * 1024);
+            await ToastService.ShowErrorAsync("Error", "Image payload too large (Max 5MB).");
+            return;
+        }
+
+        try
+        {
+            isSavingPhoto = true;
+            StateHasChanged();
+
+            var wwwroot = WebHostEnvironment.WebRootPath;
+            var uploadsDir = Path.Combine(wwwroot, "guidephotos");
+            if (!Directory.Exists(uploadsDir))
+            {
+                Directory.CreateDirectory(uploadsDir);
+            }
+
+            var ext = Path.GetExtension(file.Name);
+            var fileName = $"{Guid.NewGuid()}{ext}";
+            var path = Path.Combine(uploadsDir, fileName);
+
+            var writeTimer = System.Diagnostics.Stopwatch.StartNew();
+            await using var fs = new FileStream(path, FileMode.Create);
+            await file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).CopyToAsync(fs);
+            writeTimer.Stop();
+            Logger.LogInformation(
+                "ProfilePhotoUpload FILE WRITTEN UploadId={UploadId} GuideId={GuideId} FileName={FileName} FullPath={FullPath} BytesWritten={BytesWritten} WriteDurationMs={WriteDurationMs}",
+                uploadId, currentGuideProfile.Id, file.Name, path, file.Size, writeTimer.ElapsedMilliseconds);
+
+            editGuideImage = $"guidephotos/{fileName}";
+            await GuidesService.UpdateGuideProfileAsync(currentGuideProfile.Id, editEmail, editPhone, editGuideImage);
+            currentGuideProfile.GuideImage = editGuideImage;
+            Logger.LogInformation(
+                "ProfilePhotoUpload DB UPDATED UploadId={UploadId} GuideId={GuideId} ImagePath={ImagePath}",
+                uploadId, currentGuideProfile.Id, editGuideImage);
+            await ToastService.ShowSuccessAsync("Saved", "Profile photo updated.");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await LogPhotoUploadErrorAsync(
+                "GuideReportPage.ProfilePhotoUpload",
+                $"UploadId={uploadId}; GuideId={currentGuideProfile.Id}; FileName={file.Name}; Size={file.Size}; TourDate={SelectedDate:yyyy-MM-dd}",
+                ex);
+            await ToastService.ShowErrorAsync("Error", ex.Message);
+        }
+        finally
+        {
+            uploadTimer.Stop();
+            Logger.LogInformation(
+                "ProfilePhotoUpload END UploadId={UploadId} GuideId={GuideId} DurationMs={DurationMs}",
+                uploadId, currentGuideProfile.Id, uploadTimer.ElapsedMilliseconds);
+            isSavingPhoto = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task LogPhotoUploadErrorAsync(string componentName, string context, Exception ex)
+    {
+        Logger.LogError(ex, "Photo upload error in {Component}. Context: {Context}", componentName, context);
+        return Task.CompletedTask;
+    }
+
+    private async Task DeletePhoto()
+    {
+        if (currentGuideProfile == null) return;
+
+        isSavingPhoto = true;
+        StateHasChanged();
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(editGuideImage))
+            {
+                var relativePath = editGuideImage.TrimStart('/');
+                if (relativePath.StartsWith("guidephotos/", StringComparison.OrdinalIgnoreCase))
+                {
+                    var wwwroot = WebHostEnvironment.WebRootPath;
+                    var fullPath = Path.Combine(wwwroot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                    if (File.Exists(fullPath))
+                    {
+                        File.Delete(fullPath);
+                    }
+                }
+            }
+
+            editGuideImage = null;
+            await GuidesService.UpdateGuideProfileAsync(currentGuideProfile.Id, editEmail, editPhone, editGuideImage);
+            currentGuideProfile.GuideImage = editGuideImage;
+            await ToastService.ShowSuccessAsync("Saved", "Profile photo removed.");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Delete Failed", ex.Message);
+        }
+        finally
+        {
+            isSavingPhoto = false;
+            StateHasChanged();
+        }
+    }
+
+    /*
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await UpdateViewRulesAsync();
+        await LoadToursForDateAsync();
+        StateHasChanged();
+    }
+
+    private async Task UpdateViewRulesAsync()
+    {
+         // Logic removed to show all tours to everyone
+    }
+    */
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var savedSize = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "guideReportFontSize");
+                if (!string.IsNullOrEmpty(savedSize))
+                {
+                    _buttonFontSize = savedSize;
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+
+    }
+
+
+
+    private async Task SetFontSize(string size)
+    {
+        _buttonFontSize = size;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "guideReportFontSize", size);
+        }
+        catch { }
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            SelectedDate = date;
+            SelectedMonth = new DateTime(date.Year, date.Month, 1);
+            DateViewMode = "day";
+            SelectedTour = null;
+            Report = null;
+            _calculationResult = null;
+            await LoadToursForDateAsync();
+        }
+    }
+
+    private async Task LoadToursForDateAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var rangeStart = DateViewMode == "month"
+                ? new DateTime(SelectedMonth.Year, SelectedMonth.Month, 1)
+                : SelectedDate.Date;
+            var rangeEnd = DateViewMode == "month"
+                ? rangeStart.AddMonths(1).AddDays(-1)
+                : rangeStart;
+
+            var bookings = await CalendarService.GetBookingsAsync(rangeStart, rangeEnd);
+
+            var assignments = new List<TourGuideAssignment>();
+            for (var date = rangeStart.Date; date <= rangeEnd.Date; date = date.AddDays(1))
+            {
+                var dayAssignments = await AssignmentService.GetAssignmentsForDateAsync(date);
+                if (dayAssignments.Count > 0)
+                {
+                    assignments.AddRange(dayAssignments);
+                }
+            }
+
+            var reports = new List<TourReportSummary>();
+            try
+            {
+                reports = await ReportService.GetAllReportsAsync(rangeStart, rangeEnd);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading report status: {ex.Message}");
+            }
+
+            var familyCache = new Dictionary<string, TourFamilySnapshot>(StringComparer.OrdinalIgnoreCase);
+            var reportGroups = new Dictionary<(DateTime TourDate, string TimeKey, string FamilyKey), List<TourReportSummary>>();
+            foreach (var report in reports)
+            {
+                var family = await ResolveTourFamilyAsync(report.TourName, vendorName: null, familyCache);
+                var reportKey = (
+                    TourDate: report.TourDate.Date,
+                    TimeKey: NormalizeTourTimeKey(report.TourTime),
+                    FamilyKey: family.FamilyKey);
+
+                if (!reportGroups.TryGetValue(reportKey, out var list))
+                {
+                    list = new List<TourReportSummary>();
+                    reportGroups[reportKey] = list;
+                }
+
+                list.Add(report);
+            }
+
+            var assignmentGroups = new Dictionary<(DateTime TourDate, string TimeKey, string FamilyKey), List<TourGuideAssignment>>();
+            foreach (var assignment in assignments)
+            {
+                var family = await ResolveTourFamilyAsync(assignment.TourName, vendorName: null, familyCache);
+                var assignmentKey = (
+                    TourDate: assignment.TourDate.Date,
+                    TimeKey: NormalizeTourTimeKey(assignment.TourTime),
+                    FamilyKey: family.FamilyKey);
+
+                if (!assignmentGroups.TryGetValue(assignmentKey, out var list))
+                {
+                    list = new List<TourGuideAssignment>();
+                    assignmentGroups[assignmentKey] = list;
+                }
+
+                list.Add(assignment);
+            }
+
+            var assignmentLookup = assignmentGroups.ToDictionary(
+                g => g.Key,
+                g => g.Value
+                    .OrderByDescending(x => x.GuideId.HasValue)
+                    .ThenByDescending(x => x.UpdatedAt ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.CreatedAt ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.Id)
+                    .FirstOrDefault()?.GuideId);
+
+            var resolvedBookings = new List<(CalendarBookingModel Booking, TourFamilySnapshot Family, DateTime TourDate, string TimeKey)>();
+            foreach (var booking in bookings.Where(b => b.TourDate.HasValue))
+            {
+                var family = await ResolveTourFamilyAsync(booking.TourName, booking.VendorName, familyCache);
+                resolvedBookings.Add((
+                    Booking: booking,
+                    Family: family,
+                    TourDate: booking.TourDate!.Value.Date,
+                    TimeKey: NormalizeTourTimeKey(booking.TourTime)));
+            }
+
+            DailyTours = resolvedBookings
+                .GroupBy(x => (x.TourDate, x.TimeKey, x.Family.FamilyKey))
+                .Select(g =>
+                {
+                    var key = g.Key;
+                    reportGroups.TryGetValue(key, out var groupReports);
+                    groupReports ??= new List<TourReportSummary>();
+                    var preferredReport = SelectPreferredReportCandidate(groupReports);
+
+                    var rawTourName = !string.IsNullOrWhiteSpace(preferredReport?.TourName)
+                        ? preferredReport!.TourName.Trim()
+                        : g.Select(x => x.Booking.TourName?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                            ?? "Unknown Tour";
+
+                    var rawTourTime = !string.IsNullOrWhiteSpace(preferredReport?.TourTime)
+                        ? preferredReport!.TourTime.Trim()
+                        : g.Select(x => x.Booking.TourTime?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                            ?? key.TimeKey;
+
+                    var desktopFamilyName = groupReports
+                            .Select(r => r.MasterTourName?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                        ?? g.Select(x => x.Family.DesktopName?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                        ?? rawTourName;
+
+                    var mobileFamilyName = groupReports
+                            .Select(r => r.MasterTourNameMobile?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                        ?? g.Select(x => x.Family.MobileName?.Trim())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                            .FirstOrDefault()
+                        ?? desktopFamilyName;
+
+                    var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var alias in g.Select(x => x.Booking.TourName?.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)))
+                    {
+                        aliases.Add(alias!);
+                    }
+
+                    foreach (var alias in groupReports.SelectMany(r => new[] { r.TourName, r.MasterTourName, r.MasterTourNameMobile }))
+                    {
+                        if (!string.IsNullOrWhiteSpace(alias))
+                        {
+                            aliases.Add(alias.Trim());
+                        }
+                    }
+
+                    aliases.Add(rawTourName);
+                    aliases.Add(desktopFamilyName);
+                    aliases.Add(mobileFamilyName);
+
+                    return new TourDaySummary
+                    {
+                        TourDate = key.TourDate,
+                        TourName = rawTourName,
+                        RawTourTime = rawTourTime,
+                        DisplayTime = FormatTourTimeDisplay(rawTourTime, key.TimeKey),
+                        TotalBookings = g.Count(),
+                        TotalGuests = g.Sum(x => x.Booking.NumberOfAttendees ?? 1),
+                        GuideId = assignmentLookup.TryGetValue(key, out var gid) ? gid : null,
+                        IsSubmitted = groupReports.Any(r => r.IsSubmitted),
+                        GroupFamilyKey = key.FamilyKey,
+                        GroupTimeKey = key.TimeKey,
+                        GroupFamilyDesktopName = desktopFamilyName,
+                        GroupFamilyMobileName = mobileFamilyName,
+                        ListDisplayName = mobileFamilyName,
+                        TourNameAliases = aliases.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList()
+                    };
+                })
+                .OrderBy(t => t.TourDate)
+                .ThenBy(t => t.GroupTimeKey, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.ListDisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // 2026-02-08 - Filtering removed, guides see all tours
+            /*
+            if (!_isAdminViewAll && !string.IsNullOrEmpty(_currentGuidePhone))
+            {
+                // ... filtering logic ...
+            }
+            */
+
+            await EnsureTourSelectionAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tours: {ex.Message}");
+            DailyTours = new();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task<TourFamilySnapshot> ResolveTourFamilyAsync(
+        string? tourName,
+        string? vendorName,
+        Dictionary<string, TourFamilySnapshot> cache)
+    {
+        var safeTourName = (tourName ?? string.Empty).Trim();
+        var normalizedRaw = TourNameNormalization.NormalizeTourNameForGrouping(vendorName ?? string.Empty, safeTourName);
+        var cacheKey = $"{NormalizeVendorLookupKey(vendorName)}|{normalizedRaw}";
+        if (cache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        TourNameResolution? resolution = null;
+        if (!string.IsNullOrWhiteSpace(safeTourName))
+        {
+            resolution = await TourNameNormalizerService.ResolveToMasterTourAsync(safeTourName, vendorName);
+        }
+
+        var desktopName = !string.IsNullOrWhiteSpace(resolution?.MasterTourNameDesktop)
+            ? resolution!.MasterTourNameDesktop!.Trim()
+            : !string.IsNullOrWhiteSpace(resolution?.MasterTourName)
+                ? resolution!.MasterTourName.Trim()
+                : TourNameNormalization.NormalizeTourNameForDisplay(safeTourName);
+
+        if (string.IsNullOrWhiteSpace(desktopName))
+        {
+            desktopName = string.IsNullOrWhiteSpace(safeTourName) ? "Unknown Tour" : safeTourName;
+        }
+
+        var mobileName = !string.IsNullOrWhiteSpace(resolution?.MasterTourNameMobile)
+            ? resolution!.MasterTourNameMobile!.Trim()
+            : desktopName;
+
+        var familyKey = TourNameNormalization.NormalizeTourNameForGrouping(string.Empty, desktopName);
+        if (string.IsNullOrWhiteSpace(familyKey))
+        {
+            familyKey = normalizedRaw;
+        }
+        if (string.IsNullOrWhiteSpace(familyKey))
+        {
+            familyKey = "__unknown__";
+        }
+
+        var snapshot = new TourFamilySnapshot
+        {
+            FamilyKey = familyKey,
+            DesktopName = desktopName,
+            MobileName = mobileName
+        };
+
+        cache[cacheKey] = snapshot;
+        return snapshot;
+    }
+
+    private static TourReportSummary? SelectPreferredReportCandidate(IEnumerable<TourReportSummary> candidates)
+    {
+        return candidates
+            .OrderByDescending(x => x.IsSubmitted)
+            .ThenByDescending(x => x.SubmittedAt ?? DateTime.MinValue)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+    }
+
+    private static string NormalizeTourTimeKey(string? rawTime)
+    {
+        if (string.IsNullOrWhiteSpace(rawTime))
+        {
+            return string.Empty;
+        }
+
+        var text = rawTime.Trim();
+        if (DateTime.TryParse(text, out var parsedDateTime))
+        {
+            return parsedDateTime.ToString("HH:mm");
+        }
+
+        if (TimeSpan.TryParse(text, out var parsedTimeSpan))
+        {
+            return $"{parsedTimeSpan.Hours:00}:{parsedTimeSpan.Minutes:00}";
+        }
+
+        var compact = text.ToLowerInvariant().Replace(".", string.Empty);
+        if (DateTime.TryParse(compact, out parsedDateTime))
+        {
+            return parsedDateTime.ToString("HH:mm");
+        }
+
+        if (TimeSpan.TryParse(compact, out parsedTimeSpan))
+        {
+            return $"{parsedTimeSpan.Hours:00}:{parsedTimeSpan.Minutes:00}";
+        }
+
+        return compact;
+    }
+
+    private static string FormatTourTimeDisplay(string? rawTime, string? normalizedTimeKey)
+    {
+        if (!string.IsNullOrWhiteSpace(rawTime))
+        {
+            var trimmed = rawTime.Trim();
+            if (DateTime.TryParse(trimmed, out var parsedDateTime))
+            {
+                return parsedDateTime.ToString("h:mm tt");
+            }
+
+            if (TimeSpan.TryParse(trimmed, out var parsedTimeSpan))
+            {
+                return DateTime.Today.Add(parsedTimeSpan).ToString("h:mm tt");
+            }
+
+            return trimmed;
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedTimeKey) && TimeSpan.TryParse(normalizedTimeKey, out var normalizedTs))
+        {
+            return DateTime.Today.Add(normalizedTs).ToString("h:mm tt");
+        }
+
+        return string.Empty;
+    }
+
+    private static string NormalizeVendorLookupKey(string? vendorName)
+    {
+        if (string.IsNullOrWhiteSpace(vendorName))
+        {
+            return string.Empty;
+        }
+
+        return new string(vendorName.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+    }
+
+    private async Task SelectTour(TourDaySummary tour)
+    {
+        SelectedDate = tour.TourDate;
+        SelectedMonth = new DateTime(SelectedDate.Year, SelectedDate.Month, 1);
+        SelectedTour = tour;
+        SelectedGuideId = tour.GuideId;
+        WalkUpCount = 0;
+        ReportPhotos = new();
+        showPhotoSyncHint = false;
+        photoSyncHintMessage = string.Empty;
+        photoSyncHintAlertClass = "alert-info";
+        _calculationResult = null;
+
+        isLoadingReport = true;
+        StateHasChanged();
+
+        try
+        {
+            Report = await ReportService.GetReportAsync(SelectedDate, tour.TourName, tour.RawTourTime);
+            if (Report != null)
+            {
+                if ((!Report.GuideId.HasValue || Report.GuideId.Value == 0) && tour.GuideId.HasValue)
+                {
+                    Report.GuideId = tour.GuideId;
+                }
+                SelectedGuideId = Report.GuideId ?? tour.GuideId;
+            }
+            else
+            {
+                SelectedGuideId = tour.GuideId;
+            }
+
+            // Load existing photos when a tour is selected
+            var photos = await PhotoService.GetPhotosForTourAsync(
+                SelectedDate.ToString("yyyy-MM-dd"), 
+                SelectedTour.TourName, 
+                SelectedTour.RawTourTime
+            );
+            ReportPhotos = photos;
+            if (Report != null)
+            {
+                if (photos.Count > 0 || string.IsNullOrWhiteSpace(Report.ImagePaths))
+                {
+                    Report.ImagePaths = string.Join(",", photos);
+                }
+            }
+
+            if (Report != null && Report.IsSubmitted)
+            {
+                try
+                {
+                    _calculationResult = await CalculatorService.CalculateFromReportAsync(Report);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[GuideReport] Calculation error (load): {ex.Message}");
+                    _calculationResult = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading report: {ex.Message}");
+            await ToastService.ShowErrorAsync("Error", "Failed to load report data.");
+            Report = null;
+            ReportPhotos = new();
+        }
+        finally
+        {
+            isLoadingReport = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnMonthChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse($"{e.Value}-01", out var month))
+        {
+            SelectedMonth = new DateTime(month.Year, month.Month, 1);
+            DateViewMode = "month";
+            SelectedDate = SelectedMonth;
+            SelectedTour = null;
+            Report = null;
+            _calculationResult = null;
+            await LoadToursForDateAsync();
+        }
+    }
+
+    private async Task OnGuideFilterChange(ChangeEventArgs e)
+    {
+        SelectedGuideFilter = e.Value?.ToString() ?? "all";
+        await EnsureTourSelectionAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnGuideSelectChange(ChangeEventArgs e)
+    {
+        if (SelectedTour == null) return;
+
+        var val = e.Value?.ToString();
+        int? newId = null;
+        if (!string.IsNullOrWhiteSpace(val) && val != "none" && int.TryParse(val, out var id))
+        {
+            newId = id;
+        }
+
+        try
+        {
+            var assignment = new TourGuideAssignment
+            {
+                TourDate = SelectedDate,
+                TourName = SelectedTour.TourName,
+                TourTime = SelectedTour.DisplayTime,
+                GuideId = newId
+            };
+            await AssignmentService.SaveAssignmentAsync(assignment);
+            SelectedGuideId = newId;
+            SelectedTour.GuideId = newId;
+            if (Report != null) Report.GuideId = newId;
+            
+            var guideName = newId.HasValue 
+                ? Guides.FirstOrDefault(g => g.Id == newId.Value)?.FirstName ?? "guide"
+                : "none";
+            await ToastService.ShowSuccessAsync("Saved", $"Guide set to {guideName}");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to save: {ex.Message}");
+        }
+    }
+
+    private bool IsGalleryLinkContactMode =>
+        string.Equals(contactMessageMode, ContactModeGalleryLink, StringComparison.OrdinalIgnoreCase);
+
+    private void OnContactModeLockChanged(ChangeEventArgs e)
+    {
+        isContactModeLockEnabled = ParseCheckboxValue(e.Value);
+        if (isContactModeLockEnabled)
+        {
+            contactMessageMode = ContactModeBlank;
+        }
+    }
+
+    private void OnContactMessageModeChanged(ChangeEventArgs e)
+    {
+        if (isContactModeLockEnabled)
+        {
+            contactMessageMode = ContactModeBlank;
+            return;
+        }
+
+        var requestedMode = e.Value?.ToString() ?? string.Empty;
+        if (string.Equals(requestedMode, ContactModeGreeting, StringComparison.OrdinalIgnoreCase))
+        {
+            contactMessageMode = ContactModeGreeting;
+            return;
+        }
+
+        if (string.Equals(requestedMode, ContactModeGalleryLink, StringComparison.OrdinalIgnoreCase))
+        {
+            contactMessageMode = ContactModeGalleryLink;
+            return;
+        }
+
+        contactMessageMode = ContactModeBlank;
+    }
+
+    private static bool ParseCheckboxValue(object? value)
+    {
+        if (value is bool boolValue)
+        {
+            return boolValue;
+        }
+
+        var text = value?.ToString() ?? string.Empty;
+        if (bool.TryParse(text, out var parsed))
+        {
+            return parsed;
+        }
+
+        return string.Equals(text, "on", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OpenBulkGuideContactDialog()
+    {
+        if (Report == null || SelectedTour == null)
+        {
+            return;
+        }
+
+        bulkGuideChannelMode = BulkGuideModeWaApp;
+        bulkGuideSelectedGuideId = ResolvePreferredGuideForSelectedTour();
+        if (bulkGuideSelectedGuideId.HasValue)
+        {
+            var matchedGuide = Guides.FirstOrDefault(g => g.Id == bulkGuideSelectedGuideId.Value);
+            if (matchedGuide != null)
+            {
+                bulkGuideGuideName = GetGuideDisplayName(matchedGuide);
+                bulkGuidePhone = matchedGuide.Phone ?? string.Empty;
+            }
+            else
+            {
+                bulkGuideGuideName = string.Empty;
+                bulkGuidePhone = string.Empty;
+            }
+        }
+        else
+        {
+            bulkGuideGuideName = string.Empty;
+            bulkGuidePhone = string.Empty;
+        }
+
+        bulkGuideCopyText = BuildBulkGuideCopyText();
+        bulkGuideMessage = bulkGuideCopyText;
+        RefreshBulkGuideUrls();
+        showBulkGuideContactDialog = true;
+    }
+
+    private void CloseBulkGuideContactDialog()
+    {
+        showBulkGuideContactDialog = false;
+        bulkGuideGuideName = string.Empty;
+        bulkGuidePhone = string.Empty;
+        bulkGuideSelectedGuideId = null;
+        bulkGuideMessage = string.Empty;
+        bulkGuideCopyText = string.Empty;
+        bulkGuideChannelMode = BulkGuideModeWaApp;
+        bulkGuideWaAppUrl = string.Empty;
+        bulkGuideWaWebUrl = string.Empty;
+        bulkGuideSmsAppUrl = string.Empty;
+        bulkGuideSmsWebUrl = string.Empty;
+    }
+
+    private int? ResolvePreferredGuideForSelectedTour()
+    {
+        var candidates = new[] { SelectedGuideId, Report?.GuideId, SelectedTour?.GuideId };
+        foreach (var candidate in candidates)
+        {
+            if (candidate.HasValue && candidate.Value > 0 && Guides.Any(g => g.Id == candidate.Value))
+            {
+                return candidate.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private void OnBulkGuideNameInput(ChangeEventArgs e)
+    {
+        var value = (e.Value?.ToString() ?? string.Empty).Trim();
+        bulkGuideGuideName = value;
+        bulkGuideSelectedGuideId = null;
+
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            var match = Guides.FirstOrDefault(g =>
+                string.Equals(GetGuideDisplayName(g), value, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                bulkGuideSelectedGuideId = match.Id;
+                bulkGuideGuideName = GetGuideDisplayName(match);
+                bulkGuidePhone = match.Phone ?? string.Empty;
+            }
+        }
+
+        RefreshBulkGuideUrls();
+    }
+
+    private void OnBulkGuidePhoneInput(ChangeEventArgs e)
+    {
+        bulkGuidePhone = e.Value?.ToString() ?? string.Empty;
+        RefreshBulkGuideUrls();
+    }
+
+    private void OnBulkGuideMessageInput(ChangeEventArgs e)
+    {
+        bulkGuideMessage = e.Value?.ToString() ?? string.Empty;
+        RefreshBulkGuideUrls();
+    }
+
+    private void SetBulkGuideChannelMode(int mode)
+    {
+        bulkGuideChannelMode = mode;
+        RefreshBulkGuideUrls();
+    }
+
+    private string BuildBulkGuideCopyText()
+    {
+        if (Report == null || SelectedTour == null)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        var tourTime = SelectedTour.DisplayTime?.Trim();
+        var tourHeader = string.IsNullOrWhiteSpace(tourTime)
+            ? SelectedTour.TourName
+            : $"{SelectedTour.TourName} - {tourTime}";
+
+        sb.AppendLine(tourHeader);
+        sb.AppendLine(SelectedDate.ToString("dddd, MMMM d, yyyy"));
+        sb.AppendLine();
+
+        var totalBookings = Report.Walkers.Count;
+        var totalGuests = Report.Walkers.Sum(GetWalkerGuestCount);
+        sb.AppendLine($"{totalBookings} bookings {totalGuests} guests");
+        sb.AppendLine();
+
+        var vendorGroups = Report.Walkers.GroupBy(w =>
+            string.IsNullOrWhiteSpace(w.VendorName) ? "Unknown Vendor" : w.VendorName.Trim());
+
+        foreach (var vendorGroup in vendorGroups)
+        {
+            var vendorBookings = vendorGroup.Count();
+            var vendorGuests = vendorGroup.Sum(GetWalkerGuestCount);
+            sb.AppendLine($"*{vendorGroup.Key} {vendorBookings}/{vendorGuests}*");
+            sb.AppendLine();
+
+            foreach (var walker in vendorGroup)
+            {
+                var name = string.IsNullOrWhiteSpace(walker.CustomerName) ? "Unknown" : walker.CustomerName.Trim();
+                var attendeesDisplay = string.IsNullOrWhiteSpace(walker.AttendeeDisplay)
+                    ? GetWalkerGuestCount(walker).ToString()
+                    : walker.AttendeeDisplay;
+                sb.AppendLine($"{name} {attendeesDisplay}");
+                sb.AppendLine(string.IsNullOrWhiteSpace(walker.Phone) ? "No number" : walker.Phone.Trim());
+                sb.AppendLine();
+            }
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static int GetWalkerGuestCount(GuideReportWalker walker)
+    {
+        if (walker.ActualAttendees > 0)
+        {
+            return walker.ActualAttendees;
+        }
+
+        var adults = Math.Max(0, walker.ActualAdults);
+        var children = Math.Max(0, walker.ActualChildren);
+        return adults + children;
+    }
+
+    private string BuildBulkGuideMessageBody()
+    {
+        return (bulkGuideMessage ?? string.Empty).TrimEnd();
+    }
+
+    private void RefreshBulkGuideUrls()
+    {
+        var body = BuildBulkGuideMessageBody();
+        bulkGuideWaAppUrl = BuildWhatsAppAppUrl(bulkGuidePhone, body);
+        bulkGuideWaWebUrl = BuildWhatsAppWebUrl(bulkGuidePhone, body);
+        bulkGuideSmsAppUrl = BuildSmsAppUrl(bulkGuidePhone, body);
+        bulkGuideSmsWebUrl = BuildSmsWebUrl(bulkGuidePhone, body);
+    }
+
+    private string BuildWhatsAppAppUrl(string? phone, string body)
+    {
+        var waPhone = GetWhatsappPhoneDigits(phone);
+        if (string.IsNullOrWhiteSpace(waPhone))
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(body)
+            ? $"whatsapp://send?phone={waPhone}"
+            : $"whatsapp://send?phone={waPhone}&text={Uri.EscapeDataString(body)}";
+    }
+
+    private string BuildWhatsAppWebUrl(string? phone, string body)
+    {
+        var waPhone = GetWhatsappPhoneDigits(phone);
+        if (string.IsNullOrWhiteSpace(waPhone))
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(body)
+            ? $"https://wa.me/{waPhone}"
+            : $"https://wa.me/{waPhone}?text={Uri.EscapeDataString(body)}";
+    }
+
+    private string BuildSmsAppUrl(string? phone, string body)
+    {
+        var e164 = FormatPhoneToE164Local(phone);
+        if (string.IsNullOrWhiteSpace(e164))
+        {
+            return string.Empty;
+        }
+
+        return $"sms:{e164}&body={Uri.EscapeDataString(body ?? string.Empty)}";
+    }
+
+    private string BuildSmsWebUrl(string? phone, string body)
+    {
+        // Locked behavior: SMS Web aliases SMS App deeplink.
+        return BuildSmsAppUrl(phone, body);
+    }
+
+    private static string FormatPhoneToE164Local(string? phone)
+    {
+        var digits = NormalizePhoneDigits(phone);
+        if (string.IsNullOrWhiteSpace(digits))
+        {
+            return string.Empty;
+        }
+
+        if (digits.Length == 10)
+        {
+            return $"+1{digits}";
+        }
+
+        if (digits.Length == 11 && digits.StartsWith("1", StringComparison.Ordinal))
+        {
+            return $"+{digits}";
+        }
+
+        if ((phone ?? string.Empty).TrimStart().StartsWith("+", StringComparison.Ordinal))
+        {
+            return $"+{digits}";
+        }
+
+        return $"+{digits}";
+    }
+
+    private static string GetWhatsappPhoneDigits(string? phone)
+    {
+        var e164 = FormatPhoneToE164Local(phone);
+        return new string((e164 ?? string.Empty).Where(char.IsDigit).ToArray());
+    }
+
+    private static string GetGuideDisplayName(DbGuide guide)
+    {
+        if (guide == null)
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(guide.LastName)
+            ? (guide.FirstName ?? string.Empty)
+            : $"{guide.FirstName} {guide.LastName}".Trim();
+    }
+
+    private string GetBulkGuideModeDescription()
+    {
+        return bulkGuideChannelMode switch
+        {
+            BulkGuideModeWaApp => "Will open WhatsApp app with this payload.",
+            BulkGuideModeWaWeb => "Will open WhatsApp Web with this payload.",
+            BulkGuideModeSmsApp => "Will open SMS app with this payload.",
+            BulkGuideModeSmsWeb => "SMS Web uses the same SMS deeplink behavior as SMS App.",
+            _ => "Copy this payload to clipboard."
+        };
+    }
+
+    private string GetBulkGuideLaunchUrl()
+    {
+        return bulkGuideChannelMode switch
+        {
+            BulkGuideModeWaApp => bulkGuideWaAppUrl,
+            BulkGuideModeWaWeb => bulkGuideWaWebUrl,
+            BulkGuideModeSmsApp => bulkGuideSmsAppUrl,
+            BulkGuideModeSmsWeb => bulkGuideSmsWebUrl,
+            _ => string.Empty
+        };
+    }
+
+    private string GetBulkGuideLaunchLabel()
+    {
+        return bulkGuideChannelMode switch
+        {
+            BulkGuideModeWaApp => "Open WA App",
+            BulkGuideModeWaWeb => "Open WA Web",
+            BulkGuideModeSmsApp => "Open SMS App",
+            BulkGuideModeSmsWeb => "Open SMS Web",
+            _ => "Copy"
+        };
+    }
+
+    private string GetBulkGuideLaunchButtonClass()
+    {
+        return bulkGuideChannelMode switch
+        {
+            BulkGuideModeWaApp => "btn-success",
+            BulkGuideModeWaWeb => "btn-primary",
+            BulkGuideModeSmsApp => "btn-primary",
+            BulkGuideModeSmsWeb => "btn-primary",
+            _ => "btn-outline-secondary"
+        };
+    }
+
+    private string GetBulkGuideLaunchIconClass()
+    {
+        return bulkGuideChannelMode switch
+        {
+            BulkGuideModeWaApp => "bi bi-whatsapp",
+            BulkGuideModeWaWeb => "bi bi-globe",
+            BulkGuideModeSmsApp => "bi bi-chat-dots",
+            BulkGuideModeSmsWeb => "bi bi-browser-chrome",
+            _ => "bi bi-clipboard"
+        };
+    }
+
+    private async Task CopyBulkGuideTextAsync()
+    {
+        var text = bulkGuideCopyText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", text);
+            await ToastService.ShowSuccessAsync("Copied", "Bulk payload copied to clipboard.");
+        }
+        catch
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+                await ToastService.ShowSuccessAsync("Copied", "Bulk payload copied to clipboard.");
+            }
+            catch
+            {
+                await ToastService.ShowErrorAsync("Error", "Could not copy payload.");
+            }
+        }
+    }
+
+    private bool IsAttendanceSavePending(GuideReportWalker walker)
+    {
+        return walker.BookingId > 0 && _attendanceSavePendingBookingIds.Contains(walker.BookingId);
+    }
+
+    private Task AdjustAdultsAsync(GuideReportWalker walker, int delta)
+    {
+        return AdjustAttendanceAsync(walker, adultsDelta: delta, childrenDelta: 0);
+    }
+
+    private Task AdjustChildrenAsync(GuideReportWalker walker, int delta)
+    {
+        return AdjustAttendanceAsync(walker, adultsDelta: 0, childrenDelta: delta);
+    }
+
+    private async Task AdjustAttendanceAsync(GuideReportWalker walker, int adultsDelta, int childrenDelta)
+    {
+        if (walker == null)
+        {
+            return;
+        }
+
+        var originalAdults = walker.ActualAdults;
+        var originalChildren = walker.ActualChildren;
+
+        var updatedAdults = Math.Max(0, originalAdults + adultsDelta);
+        var updatedChildren = Math.Max(0, originalChildren + childrenDelta);
+
+        if (updatedAdults == originalAdults && updatedChildren == originalChildren)
+        {
+            return;
+        }
+
+        walker.ActualAdults = updatedAdults;
+        walker.ActualChildren = updatedChildren;
+        walker.ActualAttendees = walker.ActualAdults + walker.ActualChildren;
+
+        var hasPersistableBookingId = walker.BookingId > 0;
+        if (hasPersistableBookingId && !_attendanceSavePendingBookingIds.Add(walker.BookingId))
+        {
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        if (!hasPersistableBookingId)
+        {
+            return;
+        }
+
+        try
+        {
+            await ReportService.UpdateBookingAttendeesAsync(
+                walker.BookingId,
+                walker.ActualAdults,
+                walker.ActualChildren);
+        }
+        catch (Exception ex)
+        {
+            walker.ActualAdults = originalAdults;
+            walker.ActualChildren = originalChildren;
+            walker.ActualAttendees = originalAdults + originalChildren;
+            await ToastService.ShowErrorAsync("Save Failed", $"Could not save attendee counts: {ex.Message}");
+        }
+        finally
+        {
+            _attendanceSavePendingBookingIds.Remove(walker.BookingId);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task UpdateCheckInAsync(GuideReportWalker walker, ChangeEventArgs e)
+    {
+        var originalIsCheckedIn = walker.IsCheckedIn;
+        var originalReviewStatus = walker.ReviewStatus;
+        var originalReviewNotes = walker.ReviewNotes;
+        var originalDoNotContact = walker.DoNotContact;
+
+        walker.IsCheckedIn = (bool)(e.Value ?? false);
+        return PersistWalkerGuideStateAsync(
+            walker,
+            originalIsCheckedIn,
+            originalReviewStatus,
+            originalReviewNotes,
+            originalDoNotContact);
+    }
+
+    private Task ToggleCheckInButtonAsync(GuideReportWalker walker)
+    {
+        var originalIsCheckedIn = walker.IsCheckedIn;
+        var originalReviewStatus = walker.ReviewStatus;
+        var originalReviewNotes = walker.ReviewNotes;
+        var originalDoNotContact = walker.DoNotContact;
+
+        walker.IsCheckedIn = !walker.IsCheckedIn;
+        return PersistWalkerGuideStateAsync(
+            walker,
+            originalIsCheckedIn,
+            originalReviewStatus,
+            originalReviewNotes,
+            originalDoNotContact);
+    }
+
+    private Task UpdateReviewNotesAsync(GuideReportWalker walker, string? notes)
+    {
+        var originalIsCheckedIn = walker.IsCheckedIn;
+        var originalReviewStatus = walker.ReviewStatus;
+        var originalReviewNotes = walker.ReviewNotes;
+        var originalDoNotContact = walker.DoNotContact;
+
+        walker.ReviewNotes = notes;
+        return PersistWalkerGuideStateAsync(
+            walker,
+            originalIsCheckedIn,
+            originalReviewStatus,
+            originalReviewNotes,
+            originalDoNotContact);
+    }
+
+    // Modified: 2026-03-13 - Do not auto-expand notes for Positive status
+    private Task ToggleReviewStatusAsync(GuideReportWalker walker, string status)
+    {
+        var originalIsCheckedIn = walker.IsCheckedIn;
+        var originalReviewStatus = walker.ReviewStatus;
+        var originalReviewNotes = walker.ReviewNotes;
+        var originalDoNotContact = walker.DoNotContact;
+
+        // Toggle OFF (if clicking same status again)
+        if (walker.ReviewStatus == status)
+        {
+            var wasNoContact = (status == "NoContact");
+            walker.ReviewStatus = null;
+
+            if (wasNoContact)
+            {
+                walker.DoNotContact = false;
+                walker.IsExpanded = false; // Collapse
+            }
+        }
+        else // Set NEW status (or switch)
+        {
+            walker.ReviewStatus = status;
+
+            if (status == "NoContact")
+            {
+                walker.DoNotContact = true;
+            }
+            else
+            {
+                walker.DoNotContact = false;
+            }
+
+            // Keep notes closed for Positive; still auto-open for statuses likely needing notes.
+            if (status == "NoContact" || status == "Negative")
+            {
+                walker.IsExpanded = true;
+            }
+        }
+
+        return PersistWalkerGuideStateAsync(
+            walker,
+            originalIsCheckedIn,
+            originalReviewStatus,
+            originalReviewNotes,
+            originalDoNotContact);
+    }
+
+    private async Task PersistWalkerGuideStateAsync(
+        GuideReportWalker walker,
+        bool originalIsCheckedIn,
+        string? originalReviewStatus,
+        string? originalReviewNotes,
+        bool originalDoNotContact)
+    {
+        if (walker.BookingId <= 0)
+        {
+            return;
+        }
+
+        if (!_attendanceSavePendingBookingIds.Add(walker.BookingId))
+        {
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await ReportService.UpdateBookingGuideStateAsync(
+                walker.BookingId,
+                walker.ReviewStatus,
+                walker.ReviewNotes,
+                walker.IsCheckedIn,
+                walker.DoNotContact);
+        }
+        catch (Exception ex)
+        {
+            walker.IsCheckedIn = originalIsCheckedIn;
+            walker.ReviewStatus = originalReviewStatus;
+            walker.ReviewNotes = originalReviewNotes;
+            walker.DoNotContact = originalDoNotContact;
+            await ToastService.ShowErrorAsync("Save Failed", $"Could not save booking status: {ex.Message}");
+        }
+        finally
+        {
+            _attendanceSavePendingBookingIds.Remove(walker.BookingId);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SendReport()
+    {
+        if (Report == null || SelectedTour == null) return;
+
+        Console.WriteLine($"[GuideReport] SendReport start. Date={SelectedDate:yyyy-MM-dd}, Tour='{SelectedTour.TourName}', Time='{SelectedTour.RawTourTime}', SelectedGuideId={SelectedGuideId}, ReportGuideId={Report.GuideId}, ReportGuideName='{Report.GuideName}', PublicId='{Report.PublicId}', Walkers={Report.Walkers.Count}, ActualAdults={Report.Walkers.Sum(w => w.ActualAdults)}, ActualChildren={Report.Walkers.Sum(w => w.ActualChildren)}, ActualAttendees={Report.Walkers.Sum(w => w.ActualAttendees)}");
+        foreach (var walker in Report.Walkers)
+        {
+            Console.WriteLine($"[GuideReport] Walker: BookingId={walker.BookingId}, Name='{walker.CustomerName}', Vendor='{walker.VendorName}', Adults={walker.ActualAdults}, Children={walker.ActualChildren}, Attendees={walker.ActualAttendees}, CheckedIn={walker.IsCheckedIn}, ReviewStatus='{walker.ReviewStatus}', DoNotContact={walker.DoNotContact}");
+        }
+
+        isSaving = true;
+        _calculationResult = null;
+        StateHasChanged();
+
+        try
+        {
+            Report.IsSubmitted = true;
+            Report.SubmittedAt = DateTime.UtcNow;
+            Report.TourDate = SelectedDate;
+            Report.TourName = SelectedTour.TourName;
+            Report.TourTime = SelectedTour.RawTourTime;
+
+            Console.WriteLine("[GuideReport] Saving report...");
+            await ReportService.SaveReportAsync(Report);
+            Console.WriteLine($"[GuideReport] Report saved. PublicId='{Report.PublicId}', SubmittedAt={Report.SubmittedAt:O}");
+            if (SelectedTour != null)
+            {
+                SelectedTour.IsSubmitted = true;
+            }
+            
+            // 2026-02-15: Enable static gallery generation in Development for testing.
+            Console.WriteLine("[GuideReport] Generating static gallery...");
+            await GalleryGenerator.GenerateAndSaveHtmlAsync(Report);
+            Console.WriteLine("[GuideReport] Static gallery generation complete.");
+
+            await ToastService.ShowSuccessAsync("Success", "Report submitted successfully!");
+
+            try
+            {
+                Console.WriteLine("[GuideReport] Starting calculation from report...");
+                _calculationResult = await CalculatorService.CalculateFromReportAsync(Report);
+                if (_calculationResult != null)
+                {
+                    Console.WriteLine($"[GuideReport] Calculation complete. GuideId={_calculationResult.GuideId}, GuideName='{_calculationResult.GuideName}', Tours={_calculationResult.Tours.Count}, TotalGuests={_calculationResult.Tours.Sum(t => t.TotalGuests)}, TotalEarned={_calculationResult.TotalEarned:N2}, TotalOwed={_calculationResult.TotalOwed:N2}");
+                    foreach (var tour in _calculationResult.Tours)
+                    {
+                        Console.WriteLine($"[GuideReport] TourCalc: Tour='{tour.TourName}', Time='{tour.TourTime}', Guests={tour.TotalGuests}, Earned={tour.TourEarned:N2}, Owed={tour.TourOwed:N2}");
+                        foreach (var guest in tour.GuestRoster)
+                        {
+                            Console.WriteLine($"[GuideReport] Guest: Pos={guest.Position}, Name='{guest.CustomerName}', Vendor='{guest.VendorName}', IsChild={guest.IsChild}, Chargeable={guest.IsChargeable}, Charge={guest.ChargeAmount:N2}, Earn={guest.EarnAmount:N2}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GuideReport] Calculation error: {ex.Message}");
+                _calculationResult = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GuideReport] Save error: {ex.Message}");
+            await ToastService.ShowErrorAsync("Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // 2026-02-06: Added copy gallery link function
+    private async Task CopyGalleryLink()
+    {
+        try
+        {
+            var url = GetGalleryUrl(Report);
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            // Fallback for browsers that don't support clipboard API
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('galleryLinkInput').select(); document.execCommand('copy');");
+                await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+            }
+            catch
+            {
+                await ToastService.ShowErrorAsync("Error", "Could not copy link. Please copy manually.");
+            }
+        }
+    }
+
+    private List<TourDaySummary> GetVisibleTours()
+    {
+        if (DailyTours.Count == 0)
+        {
+            return DailyTours;
+        }
+
+        if (SelectedGuideFilter == "all")
+        {
+            return DailyTours;
+        }
+
+        if (SelectedGuideFilter == "unassigned")
+        {
+            return DailyTours.Where(t => !t.GuideId.HasValue).ToList();
+        }
+
+        if (SelectedGuideFilter.StartsWith("guide-", StringComparison.OrdinalIgnoreCase))
+        {
+            var idPart = SelectedGuideFilter.Substring("guide-".Length);
+            if (int.TryParse(idPart, out var guideId))
+            {
+                return DailyTours.Where(t => t.GuideId == guideId).ToList();
+            }
+        }
+
+        return DailyTours;
+    }
+
+    private List<DbGuide> GetDistinctGuidesForFilter()
+    {
+        return Guides
+            .GroupBy(g =>
+            {
+                var first = (g.FirstName ?? string.Empty).Trim();
+                var last = (g.LastName ?? string.Empty).Trim();
+                return $"{first} {last}".Trim().ToLowerInvariant();
+            })
+            .Select(g => g.First())
+            .OrderBy(g => g.FirstName)
+            .ThenBy(g => g.LastName)
+            .ToList();
+    }
+
+    private async Task EnsureTourSelectionAsync()
+    {
+        var visibleTours = GetVisibleTours();
+        if (visibleTours.Count == 0)
+        {
+            SelectedTour = null;
+            Report = null;
+            _calculationResult = null;
+            ReportPhotos = new();
+            return;
+        }
+
+        if (SelectedTour != null &&
+            visibleTours.Any(t =>
+                t.TourDate == SelectedTour.TourDate &&
+                string.Equals(t.GroupFamilyKey, SelectedTour.GroupFamilyKey, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(t.GroupTimeKey, SelectedTour.GroupTimeKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        await SelectTour(visibleTours[0]);
+    }
+
+    private async Task CopyVendorGalleryLink(string vendor, string elementId)
+    {
+        if (Report == null) return;
+
+        try
+        {
+            var url = GetGalleryUrl(Report, vendor);
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+        }
+        catch
+        {
+            // Fallback for browsers that don't support clipboard API
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{elementId}').select(); document.execCommand('copy');");
+                await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+            }
+            catch
+            {
+                await ToastService.ShowErrorAsync("Error", "Could not copy link. Please copy manually.");
+            }
+        }
+    }
+
+    private bool HasVendorGallery(string vendorKey)
+    {
+        if (Report?.Walkers == null || Report.Walkers.Count == 0) return false;
+        var key = vendorKey?.ToLowerInvariant() ?? "";
+        foreach (var walker in Report.Walkers)
+        {
+            if (string.IsNullOrWhiteSpace(walker.VendorName)) continue;
+            var normalized = NormalizeVendorKey(walker.VendorName);
+            if (normalized.Contains(key)) return true;
+        }
+        return false;
+    }
+
+    private static string NormalizeVendorKey(string? vendor)
+    {
+        if (string.IsNullOrWhiteSpace(vendor)) return string.Empty;
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(vendor, "[^a-zA-Z0-9]", "");
+        return cleaned.ToLowerInvariant();
+    }
+
+    private async Task RefreshPhotos()
+    {
+        await SyncReportPhotosAsync(showSuccessToast: true, autoTriggered: false);
+    }
+
+    /// <summary>
+    /// 2026-03-31: Auto-sync photo paths on uploader return and keep retry UI hidden unless sync fails.
+    /// </summary>
+    private async Task TryAutoSyncPhotosAfterUploadReturnAsync()
+    {
+        if (!_shouldAutoSyncAfterUploadReturn)
+        {
+            return;
+        }
+
+        _shouldAutoSyncAfterUploadReturn = false;
+        await SyncReportPhotosAsync(showSuccessToast: false, autoTriggered: true);
+    }
+
+    /// <summary>
+    /// 2026-03-31: Refreshes filesystem photos and upserts TourReports.ImagePaths for cross-page consistency.
+    /// </summary>
+    private async Task SyncReportPhotosAsync(bool showSuccessToast, bool autoTriggered)
+    {
+        if (SelectedTour == null || Report == null)
+        {
+            Logger.LogWarning(
+                "TourPhotoRefresh SKIPPED Reason=MissingSelectedTourOrReport AutoTriggered={AutoTriggered}",
+                autoTriggered);
+            return;
+        }
+
+        var refreshId = Guid.NewGuid().ToString("N")[..12];
+        var refreshTimer = System.Diagnostics.Stopwatch.StartNew();
+        isUploadingPhotos = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            Logger.LogInformation(
+                "TourPhotoRefresh START RefreshId={RefreshId} TourDate={TourDate} TourName={TourName} TourTime={TourTime}",
+                refreshId, SelectedDate.ToString("yyyy-MM-dd"), SelectedTour.TourName, SelectedTour.RawTourTime);
+
+            var photos = await PhotoService.GetPhotosForTourAsync(
+                SelectedDate.ToString("yyyy-MM-dd"), 
+                SelectedTour.TourName, 
+                SelectedTour.RawTourTime
+            );
+            
+            Report.ImagePaths = string.Join(",", photos);
+            ReportPhotos = photos;
+            
+            // Persist only image paths to avoid unnecessary walker/bookings updates during sync.
+            var reportId = await ReportService.UpsertReportImagePathsAsync(
+                SelectedDate.Date,
+                SelectedTour.TourName,
+                SelectedTour.RawTourTime ?? string.Empty,
+                Report.ImagePaths);
+
+            if (Report.Id == 0 && reportId > 0)
+            {
+                Report.Id = reportId;
+            }
+
+            Logger.LogInformation(
+                "TourPhotoRefresh SUCCESS RefreshId={RefreshId} PhotoCount={PhotoCount} ReportId={ReportId}",
+                refreshId, photos.Count, reportId > 0 ? reportId : Report.Id);
+
+            showPhotoSyncHint = false;
+            photoSyncHintMessage = string.Empty;
+            photoSyncHintAlertClass = "alert-info";
+
+            if (showSuccessToast)
+            {
+                await ToastService.ShowSuccessAsync("Synced", "Photos refreshed and report updated.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogPhotoUploadErrorAsync(
+                "GuideReportPage.TourPhotoRefresh",
+                $"RefreshId={refreshId}; TourDate={SelectedDate:yyyy-MM-dd}; TourName={SelectedTour?.TourName}; TourTime={SelectedTour?.RawTourTime}",
+                ex);
+            Logger.LogError(ex, "Error refreshing photos RefreshId={RefreshId}", refreshId);
+            showPhotoSyncHint = true;
+            photoSyncHintMessage = autoTriggered
+                ? "Upload completed, but auto-sync did not finish. Tap Try Again."
+                : "Upload completed, but sync did not finish. Tap Try Again.";
+            photoSyncHintAlertClass = "alert-warning";
+            await ToastService.ShowErrorAsync("Warning", "Photos synced locally but report update may have failed.");
+        }
+        finally
+        {
+            refreshTimer.Stop();
+            Logger.LogInformation("TourPhotoRefresh END RefreshId={RefreshId} DurationMs={DurationMs}", refreshId, refreshTimer.ElapsedMilliseconds);
+            isUploadingPhotos = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GetMobileUploaderUrl()
+    {
+        if (SelectedTour == null)
+        {
+            return "/mobile-photo-upload.html";
+        }
+
+        var tourDate = Uri.EscapeDataString(SelectedDate.ToString("yyyy-MM-dd"));
+        var tourName = Uri.EscapeDataString(SelectedTour.TourName ?? string.Empty);
+        var tourTime = Uri.EscapeDataString(SelectedTour.RawTourTime ?? string.Empty);
+        var returnUrl = $"/guide-report?date={tourDate}&tourName={tourName}&tourTime={tourTime}&photoReturn=1";
+        var encodedReturnUrl = Uri.EscapeDataString(returnUrl);
+
+        return $"/mobile-photo-upload.html?tourDate={tourDate}&tourName={tourName}&tourTime={tourTime}&returnUrl={encodedReturnUrl}";
+    }
+
+    private void ApplyRouteContextFromQuery()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("date", out var dateValues))
+        {
+            var rawDate = dateValues.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(rawDate) &&
+                DateTime.TryParseExact(rawDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate))
+            {
+                SelectedDate = parsedDate.Date;
+                SelectedMonth = new DateTime(parsedDate.Year, parsedDate.Month, 1);
+                DateViewMode = "day";
+            }
+        }
+
+        _requestedTourNameFromQuery = query.TryGetValue("tourName", out var tourNameValues)
+            ? tourNameValues.FirstOrDefault()
+            : null;
+        _requestedTourTimeFromQuery = query.TryGetValue("tourTime", out var tourTimeValues)
+            ? tourTimeValues.FirstOrDefault()
+            : null;
+        _shouldAutoSyncAfterUploadReturn = query.TryGetValue("photoReturn", out var photoReturnValues)
+            && IsTruthyQueryFlag(photoReturnValues.FirstOrDefault());
+    }
+
+    private async Task TrySelectTourFromRouteContextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_requestedTourNameFromQuery))
+        {
+            return;
+        }
+
+        var requestedTimeKey = NormalizeTourTimeKey(_requestedTourTimeFromQuery);
+        var match = DailyTours.FirstOrDefault(t =>
+            t.TourDate.Date == SelectedDate.Date &&
+            TourMatchesRequestedName(t, _requestedTourNameFromQuery) &&
+            (string.IsNullOrWhiteSpace(_requestedTourTimeFromQuery) ||
+             string.Equals(t.GroupTimeKey ?? string.Empty, requestedTimeKey, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(t.RawTourTime ?? string.Empty, _requestedTourTimeFromQuery, StringComparison.OrdinalIgnoreCase)));
+
+        if (match == null)
+        {
+            return;
+        }
+
+        if (SelectedTour != null &&
+            SelectedTour.TourDate.Date == match.TourDate.Date &&
+            string.Equals(SelectedTour.GroupFamilyKey ?? string.Empty, match.GroupFamilyKey ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(SelectedTour.GroupTimeKey ?? string.Empty, match.GroupTimeKey ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await SelectTour(match);
+    }
+
+    private static bool IsTruthyQueryFlag(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return false;
+        }
+
+        var value = rawValue.Trim();
+        return value == "1" ||
+               value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TourMatchesRequestedName(TourDaySummary tour, string? requestedTourName)
+    {
+        if (tour == null || string.IsNullOrWhiteSpace(requestedTourName))
+        {
+            return false;
+        }
+
+        if (string.Equals(tour.TourName ?? string.Empty, requestedTourName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(tour.ListDisplayName ?? string.Empty, requestedTourName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(tour.GroupFamilyDesktopName ?? string.Empty, requestedTourName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(tour.GroupFamilyMobileName ?? string.Empty, requestedTourName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return tour.TourNameAliases.Any(alias =>
+            string.Equals(alias, requestedTourName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetGalleryUrl(TourReport? report, string? vendor = null)
+    {
+        if (report == null) return "";
+        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        
+        var fileName = $"{report.PublicId}.html";
+        if (!string.IsNullOrWhiteSpace(vendor))
+        {
+             // Sanitize vendor to match generator logic
+             var suffix = System.Text.RegularExpressions.Regex.Replace(vendor, "[^a-zA-Z0-9]", "");
+             if (!string.IsNullOrEmpty(suffix))
+             {
+                 fileName = $"{report.PublicId}_{suffix}.html";
+             }
+        }
+        
+        return $"{baseUrl}/tour-gallery/{fileName}";
+    }
+
+    private bool HasGalleryFile(TourReport? report)
+    {
+        if (report == null || string.IsNullOrWhiteSpace(report.PublicId))
+        {
+            return false;
+        }
+
+        var fileName = $"{report.PublicId}.html";
+        var fullPath = Path.Combine(WebHostEnvironment.WebRootPath, "tour-gallery", fileName);
+        return File.Exists(fullPath);
+    }
+
+    // Walk-Up Dialog Logic
+    private bool showWalkUpDialog = false;
+    private GuideReportWalker walkUpGuest = new();
+
+    private void OpenWalkUpDialog()
+    {
+        walkUpGuest = new GuideReportWalker 
+        { 
+            ActualAdults = 1, 
+            ActualChildren = 0,
+            ActualAttendees = 1
+        };
+        showWalkUpDialog = true;
+    }
+
+    private void EditWalkUpGuest(GuideReportWalker walker)
+    {
+        walkUpGuest = new GuideReportWalker 
+        { 
+            BookingId = walker.BookingId,
+            CustomerName = walker.CustomerName,
+            Phone = walker.Phone,
+            Email = walker.Email,
+            VendorName = walker.VendorName,
+            ActualAdults = walker.ActualAdults,
+            ActualChildren = walker.ActualChildren,
+            ActualAttendees = walker.ActualAttendees,
+            ReviewNotes = walker.ReviewNotes
+        };
+        showWalkUpDialog = true;
+    }
+
+    private async Task DeleteWalkUpGuest(int bookingId)
+    {
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this walk-up guest?"))
+        {
+            return;
+        }
+
+        isSaving = true;
+        StateHasChanged();
+        try
+        {
+            await ReportService.DeleteWalkUpBookingAsync(bookingId);
+            await ToastService.ShowSuccessAsync("Success", "Guest deleted.");
+            await SelectTour(SelectedTour!); 
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Delete failed: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveWalkUpGuest()
+    {
+        if (string.IsNullOrWhiteSpace(walkUpGuest.CustomerName) || string.IsNullOrWhiteSpace(walkUpGuest.Phone))
+        {
+            await ToastService.ShowErrorAsync("Required", "Name and Phone are required.");
+            return;
+        }
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            walkUpGuest.ActualAttendees = walkUpGuest.ActualAdults + walkUpGuest.ActualChildren;
+            
+            if (walkUpGuest.BookingId > 0)
+            {
+                await ReportService.UpdateWalkUpBookingAsync(walkUpGuest);
+                await ToastService.ShowSuccessAsync("Success", "Guest updated.");
+            }
+            else
+            {
+                await ReportService.AddWalkUpBookingAsync(
+                    walkUpGuest, 
+                    SelectedDate, 
+                    SelectedTour!.TourName, 
+                    SelectedTour.RawTourTime
+                );
+                await ToastService.ShowSuccessAsync("Success", "Walk-up guest added.");
+            }
+
+            showWalkUpDialog = false;
+            await SelectTour(SelectedTour!); 
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to save guest: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // Phone Edit Logic
+    private bool showPhoneEditDialog = false;
+    private GuideReportWalker? editingWalker;
+    private string newPhone = string.Empty;
+    private bool isPhoneError = false;
+
+    private void OpenPhoneEditDialog(GuideReportWalker walker)
+    {
+        editingWalker = walker;
+        newPhone = walker.Phone ?? string.Empty;
+        isPhoneError = false;
+        showPhoneEditDialog = true;
+    }
+
+    private async Task SavePhone()
+    {
+        if (editingWalker == null) return;
+
+        var clean = newPhone?.Trim() ?? "";
+        if (string.IsNullOrEmpty(clean) || !clean.StartsWith("+") || clean.Length < 2 || !char.IsDigit(clean[1]))
+        {
+            isPhoneError = true;
+            return;
+        }
+        isPhoneError = false;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            await ReportService.UpdateBookingPhoneAsync(editingWalker.BookingId, newPhone);
+            editingWalker.Phone = newPhone;
+            await ToastService.ShowSuccessAsync("Success", "Phone number updated.");
+            showPhoneEditDialog = false;
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to update phone: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetWalkerWhatsAppActionLink(TourReport? report, GuideReportWalker walker)
+    {
+        var waPhone = GetWhatsappPhoneDigits(walker.Phone);
+        if (string.IsNullOrWhiteSpace(waPhone))
+        {
+            return string.Empty;
+        }
+
+        if (IsGalleryLinkContactMode && report != null)
+        {
+            return GetWhatsAppLink(report, waPhone);
+        }
+
+        return $"https://wa.me/{waPhone}";
+    }
+
+    private string GetWalkerSmsActionLink(TourReport? report, GuideReportWalker walker)
+    {
+        var smsPhone = walker.Phone ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(smsPhone))
+        {
+            return string.Empty;
+        }
+
+        if (IsGalleryLinkContactMode && report != null)
+        {
+            return GetSmsLink(report, smsPhone);
+        }
+
+        return $"sms:{smsPhone}";
+    }
+
+    private string GetWhatsAppLink(TourReport? report, string phone)
+    {
+        if (report == null) return "";
+        
+        var walker = report.Walkers.FirstOrDefault(w => 
+            (w.Phone?.Replace("+", "").Replace(" ", "") ?? "") == (phone?.Replace("+", "").Replace(" ", "") ?? ""));
+ 
+        var msg = BuildGalleryMessage(report, walker?.VendorName);
+        return $"https://wa.me/{phone}?text={Uri.EscapeDataString(msg)}";
+    }
+
+    private static string GetContactStateButtonClass(byte state, bool enabled)
+    {
+        if (!enabled)
+        {
+            return "btn-outline-secondary";
+        }
+
+        return state switch
+        {
+            1 => "btn-outline-success",
+            2 => "btn-outline-danger",
+            3 => "btn-outline-secondary",
+            _ => "btn-outline-warning"
+        };
+    }
+
+    private static string GetContactActionTitle(string channelLabel, byte state, bool enabled)
+    {
+        if (!enabled)
+        {
+            return $"{channelLabel}: No phone";
+        }
+
+        return $"{channelLabel}: {GetContactStateLabel(state)}";
+    }
+
+    private static string GetContactStateLabel(byte state)
+    {
+        return state switch
+        {
+            1 => "Green (contacted)",
+            2 => "Red (failed)",
+            3 => "Gray (skipped / unknown)",
+            _ => "Yellow (no outcome)"
+        };
+    }
+
+    private string GetSmsLink(TourReport? report, string phone)
+    {
+         if (report == null) return "";
+        
+        var walker = report.Walkers.FirstOrDefault(w => 
+            (w.Phone?.Replace("+", "").Replace(" ", "") ?? "") == (phone?.Replace("+", "").Replace(" ", "") ?? ""));
+ 
+        var msg = BuildGalleryMessage(report, walker?.VendorName);
+        return $"sms:{phone}?body={Uri.EscapeDataString(msg)}";
+    }
+
+    private string BuildGalleryMessage(TourReport report, string? vendorName)
+    {
+        var url = GetGalleryUrl(report, vendorName);
+        var tourName = NormalizeMessageTourName(report.TourName);
+        var suffix = tourName.EndsWith("tour", StringComparison.OrdinalIgnoreCase) ? "" : " tour";
+        return $"Thanks for taking our {tourName}{suffix}! Here are the photos: {url}";
+    }
+
+    private static string NormalizeMessageTourName(string? rawTourName)
+    {
+        var decoded = System.Net.WebUtility.HtmlDecode(rawTourName ?? string.Empty).Trim();
+        decoded = System.Text.RegularExpressions.Regex.Replace(decoded, "\\s+", " ");
+
+        if (decoded.EndsWith("reservation", StringComparison.OrdinalIgnoreCase))
+        {
+            decoded = decoded.Substring(0, decoded.Length - "reservation".Length).TrimEnd(' ', '-', ':', '|', '/');
+        }
+
+        return string.IsNullOrWhiteSpace(decoded) ? "tour" : decoded;
+    }
+
+    public class TourDaySummary
+    {
+        public DateTime TourDate { get; set; }
+        public string TourName { get; set; } = string.Empty;
+        public string RawTourTime { get; set; } = string.Empty;
+        public string DisplayTime { get; set; } = string.Empty;
+        public string GroupFamilyKey { get; set; } = string.Empty;
+        public string GroupTimeKey { get; set; } = string.Empty;
+        public string GroupFamilyDesktopName { get; set; } = string.Empty;
+        public string GroupFamilyMobileName { get; set; } = string.Empty;
+        public string ListDisplayName { get; set; } = string.Empty;
+        public List<string> TourNameAliases { get; set; } = new();
+        public int TotalBookings { get; set; }
+        public int TotalGuests { get; set; }
+        public int? GuideId { get; set; }
+        public bool IsSubmitted { get; set; }
+    }
+
+    private sealed class TourFamilySnapshot
+    {
+        public string FamilyKey { get; set; } = string.Empty;
+        public string DesktopName { get; set; } = string.Empty;
+        public string MobileName { get; set; } = string.Empty;
+    }
+}
+
+@* Edit Phone Dialog *@
+@if (showPhoneEditDialog && editingWalker != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-telephone-plus me-2"></i>Edit Phone</h5>
+                    <button type="button" class="btn-close" @onclick="() => showPhoneEditDialog = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Phone Number</label>
+                        <input type="tel" class="@($"form-control {(isPhoneError ? "border-danger text-danger" : "")}")" 
+                               @bind="newPhone" 
+                               placeholder="+1234567890" />
+                        <div class="@(isPhoneError ? "text-danger fw-bold small" : "form-text small")">
+                            @(isPhoneError 
+                                ? "Format required: +[CountryCode][Number] (e.g. +12125551234)" 
+                                : "Enter full number with country code.")
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => showPhoneEditDialog = false">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SavePhone" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+

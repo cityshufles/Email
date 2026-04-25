@@ -1,0 +1,20 @@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+
+<Router AppAssembly="@typeof(App).Assembly">
+  <Found Context="routeData">
+    <KeepAlive MaxCount="8">
+      <RouteView RouteData="@routeData" DefaultLayout="@typeof(Email.Components.Layout.MainLayout)" />
+    </KeepAlive>
+    <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+  </Found>
+  <NotFound>
+    <PageTitle>Not found</PageTitle>
+    <LayoutView Layout="@typeof(Email.Components.Layout.MainLayout)">
+      <p role="alert">Sorry, there's nothing at this address.</p>
+    </LayoutView>
+  </NotFound>
+</Router>
+
+

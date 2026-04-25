@@ -1,0 +1,907 @@
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+@inject ITourProductionWorkbenchService TourProductionWorkbenchService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h4 class="mb-0"><i class="bi bi-clipboard2-check me-2"></i>Tour Setup (Production)</h4>
+            <div class="text-muted small">Direct production source coverage, grouping, tour updates, and alias management.</div>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" @onclick="ReloadAsync" disabled="@isLoading">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="text-muted mt-2">Loading production workbench...</div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            <div class="col-12 col-xl-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header">
+                        <div class="fw-semibold">Source Coverage</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="input-group input-group-sm mb-2">
+                            <input class="form-control" placeholder="Search name/vendor/master" @bind="searchText" />
+                            <button class="btn btn-outline-primary" @onclick="ReloadAsync">Search</button>
+                        </div>
+                        <div class="mb-2">
+                            <select class="form-select form-select-sm" @bind="statusFilter" @bind:after="ReloadAsync">
+                                @foreach (var option in groupStatusOptions)
+                                {
+                                    <option value="@option">@option</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            <span class="badge text-bg-secondary">Rows: @coverage.TotalRows</span>
+                            <span class="badge text-bg-success">Mapped: @coverage.MappedRows</span>
+                            <span class="badge text-bg-danger">Needs Tour: @coverage.NeedsTourRows</span>
+                            <span class="badge text-bg-warning text-dark">Needs Alias: @coverage.NeedsAliasRows</span>
+                            <span class="badge text-bg-info">Needs Place: @coverage.NeedsMeetingPlaceRows</span>
+                        </div>
+                        <div class="list-group" style="max-height: 60vh; overflow:auto;">
+                            @if (groups.Count == 0)
+                            {
+                                <div class="text-muted small">No groups found.</div>
+                            }
+                            else
+                            {
+                                @foreach (var group in groups)
+                                {
+                                    <button class="list-group-item list-group-item-action @(string.Equals(selectedGroupKey, group.GroupKey, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
+                                            @onclick="() => SelectGroupAsync(group.GroupKey)">
+                                        <div class="fw-semibold">@group.GroupLabel</div>
+                                        <div class="small">Rows: @group.TotalSourceRows | Variants: @group.VariantCount</div>
+                                        <div><span class="badge @StatusBadgeClass(group.Status)">@group.Status</span></div>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="fw-semibold">Group Detail</div>
+                        @if (selectedGroupDetail is not null)
+                        {
+                            <span class="badge @StatusBadgeClass(selectedGroupDetail.Status)">@selectedGroupDetail.Status</span>
+                        }
+                    </div>
+                    <div class="card-body">
+                        @if (isLoadingDetail)
+                        {
+                            <div class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                <div class="text-muted small mt-2">Loading group detail...</div>
+                            </div>
+                        }
+                        else if (selectedGroupDetail is null)
+                        {
+                            <div class="text-muted">Select a group from Source Coverage to inspect variants and candidates.</div>
+                        }
+                        else
+                        {
+                            <div class="mb-2">
+                                <div class="fw-semibold">@selectedGroupDetail.GroupLabel</div>
+                                <div class="small text-muted">Master: @(selectedGroupDetail.MasterTourName ?? "-") | TourId: @(selectedGroupDetail.TourId?.ToString() ?? "-")</div>
+                            </div>
+
+                            <div class="border rounded p-2 mb-3">
+                                <div class="small fw-semibold mb-1">Manual Merge/Split Override</div>
+                                <div class="input-group input-group-sm mb-1">
+                                    <input class="form-control" placeholder="override key (same key merges groups)" @bind="groupOverrideKeyInput" />
+                                    <button class="btn btn-outline-primary" @onclick="ApplyGroupOverrideAsync" disabled="@isSavingOverride">Apply Group</button>
+                                    <button class="btn btn-outline-secondary" @onclick="ClearGroupOverridesAsync" disabled="@isSavingOverride">Clear Group</button>
+                                </div>
+                                <div class="text-muted small">Use one key across cards to merge. Use a new key on a variant to split it into a new card.</div>
+                            </div>
+
+                            @if (selectedGroupDetail.ScheduleTimes.Count > 0)
+                            {
+                                <div class="mb-3">
+                                    <div class="small fw-semibold">Existing Schedule Times</div>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        @foreach (var slot in selectedGroupDetail.ScheduleTimes)
+                                        {
+                                            <span class="badge text-bg-light border">@slot.TourTime @(string.IsNullOrWhiteSpace(slot.MeetingPlace) ? string.Empty : $" - {slot.MeetingPlace}")</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="mb-3">
+                                <div class="small fw-semibold">Variants</div>
+                                <div style="max-height: 24vh; overflow:auto;">
+                                    <table class="table table-sm table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Source</th>
+                                                <th>Vendor</th>
+                                                <th>Raw Tour Name</th>
+                                                <th>Rows</th>
+                                                <th>Map</th>
+                                                <th>Override</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var variant in selectedGroupDetail.Variants)
+                                            {
+                                                <tr>
+                                                    <td>@variant.SourceType</td>
+                                                    <td>@(variant.VendorName ?? "-")</td>
+                                                    <td>@variant.RawTourName</td>
+                                                    <td>@variant.RecordCount</td>
+                                                    <td>@(variant.TourId?.ToString() ?? "-")</td>
+                                                    <td>@(variant.ManualGroupKey ?? "-")</td>
+                                                    <td class="text-end">
+                                                        <div class="btn-group btn-group-sm">
+                                                            <button class="btn btn-outline-primary" @onclick="() => ApplyVariantOverrideAsync(variant)" disabled="@isSavingOverride">Use Key</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="() => ClearVariantOverrideAsync(variant)" disabled="@isSavingOverride">Clear</button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="small fw-semibold mb-1">Candidate Tours</div>
+                                <div style="max-height: 24vh; overflow:auto;">
+                                    @foreach (var candidate in selectedGroupDetail.Candidates)
+                                    {
+                                        <div class="border rounded p-2 mb-2">
+                                            <div class="fw-semibold">@candidate.MasterTourName (ID @candidate.TourId)</div>
+                                            <div class="small text-muted">Duration: @(candidate.Duration ?? "-") | Place: @(candidate.MeetingPlace ?? "-")</div>
+                                            <div class="small text-muted mb-1">Score: @candidate.Score</div>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => UseCandidateAsync(candidate.TourId)">Use</button>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="fw-semibold">Production Editor</div>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="StartNewTourFromGroup">New Tour</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Tour Name</label>
+                            <input class="form-control form-control-sm" @bind="editor.TourName" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Master Tour Name</label>
+                            <input class="form-control form-control-sm" @bind="editor.MasterTourName" />
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Desktop</label>
+                                <input class="form-control form-control-sm" @bind="editor.MasterTourNameDesktop" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Mobile</label>
+                                <input class="form-control form-control-sm" @bind="editor.MasterTourNameMobile" />
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Duration</label>
+                                <input class="form-control form-control-sm" @bind="editor.Duration" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Meeting Place</label>
+                                <input class="form-control form-control-sm" @bind="editor.MeetingPlace" />
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-4"><input class="form-control form-control-sm" placeholder="Vendor link" @bind="editor.VendorLink" /></div>
+                            <div class="col-4"><input class="form-control form-control-sm" placeholder="Schedule link" @bind="editor.VendorScheduleLink" /></div>
+                            <div class="col-4"><input class="form-control form-control-sm" placeholder="Review link" @bind="editor.ReviewLink" /></div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            <button class="btn btn-primary btn-sm" @onclick="SaveTourAsync" disabled="@isSavingTour">Save</button>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="DeactivateTourAsync" disabled="@isSavingTour || !editorTourId.HasValue">Deactivate</button>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Meeting Place Library</label>
+                            <input class="form-control form-control-sm mb-1" placeholder="Search places" @bind="meetingPlaceSearch" @bind:after="LoadMeetingPlacesAsync" />
+                            <div style="max-height: 120px; overflow:auto;" class="border rounded p-1">
+                                @foreach (var place in meetingPlaces.Take(25))
+                                {
+                                    <button class="btn btn-link btn-sm text-start d-block w-100 p-1" @onclick="() => ApplyMeetingPlace(place.MeetingPlace)">
+                                        @place.MeetingPlace
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <hr />
+                        <div class="small fw-semibold mb-1">Aliases</div>
+                        @if (!editorTourId.HasValue)
+                        {
+                            <div class="text-muted small">Save/select a tour to manage aliases.</div>
+                        }
+                        else
+                        {
+                            <div class="input-group input-group-sm mb-2">
+                                <input class="form-control" placeholder="Incoming alias" @bind="newAliasName" />
+                                <input class="form-control" placeholder="Vendor (optional)" @bind="newAliasVendor" />
+                                <button class="btn btn-outline-primary" @onclick="AddAliasAsync" disabled="@isSavingAlias">Add</button>
+                            </div>
+
+                            <div style="max-height: 180px; overflow:auto;">
+                                @foreach (var alias in aliases)
+                                {
+                                    <div class="border rounded p-2 mb-2">
+                                        <div class="row g-1">
+                                            <div class="col-6"><input class="form-control form-control-sm" @bind="alias.IncomingTourName" /></div>
+                                            <div class="col-4"><input class="form-control form-control-sm" @bind="alias.VendorName" placeholder="Vendor" /></div>
+                                            <div class="col-2 text-end"><span class="badge @(alias.IsActive ? "text-bg-success" : "text-bg-secondary")">@(alias.IsActive ? "Active" : "Inactive")</span></div>
+                                        </div>
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => SaveAliasAsync(alias)" disabled="@isSavingAlias">Save</button>
+                                            <button class="btn btn-sm btn-outline-warning" @onclick="() => ToggleAliasAsync(alias)" disabled="@isSavingAlias">@(alias.IsActive ? "Deactivate" : "Reactivate")</button>
+                                            <select class="form-select form-select-sm" style="max-width:140px;" @bind="aliasTargetTours[alias.Id]">
+                                                <option value="0">Reassign...</option>
+                                                @foreach (var t in tours.Where(t => t.IsActive))
+                                                {
+                                                    <option value="@t.Id">@t.MasterTourName (@t.Id)</option>
+                                                }
+                                            </select>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ReassignAliasAsync(alias)" disabled="@isSavingAlias">Move</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] groupStatusOptions = { "All", "Needs Tour", "Needs Meeting Place", "Needs Alias", "Mapped" };
+    private TourProductionSourceCoverageResult coverage = new();
+    private List<TourProductionGroupCard> groups = new();
+    private TourProductionGroupDetail? selectedGroupDetail;
+    private List<DbTour> tours = new();
+    private List<TourNameMapping> aliases = new();
+    private List<TourProductionMeetingPlaceItem> meetingPlaces = new();
+
+    private TourProductionTourUpsertInput editor = new();
+    private int? editorTourId;
+    private string? selectedGroupKey;
+    private string searchText = string.Empty;
+    private string statusFilter = "All";
+    private string meetingPlaceSearch = string.Empty;
+    private string groupOverrideKeyInput = string.Empty;
+    private string newAliasName = string.Empty;
+    private string newAliasVendor = string.Empty;
+    private readonly Dictionary<int, int> aliasTargetTours = new();
+
+    private bool isLoading = true;
+    private bool isLoadingDetail;
+    private bool isSavingTour;
+    private bool isSavingAlias;
+    private bool isSavingOverride;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            var coverageQuery = new TourProductionSourceCoverageQuery { Search = searchText };
+            var groupQuery = new TourProductionGroupQuery { Search = searchText, StatusFilter = statusFilter };
+            coverage = await TourProductionWorkbenchService.GetSourceCoverageAsync(coverageQuery);
+            groups = await TourProductionWorkbenchService.GetGroupCardsAsync(groupQuery);
+            tours = await TourProductionWorkbenchService.GetToursAsync(includeInactive: true);
+            await LoadMeetingPlacesAsync();
+
+            if (!string.IsNullOrWhiteSpace(selectedGroupKey))
+            {
+                await SelectGroupAsync(selectedGroupKey);
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ReloadAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to load production workbench.");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMeetingPlacesAsync()
+    {
+        meetingPlaces = await TourProductionWorkbenchService.GetMeetingPlaceLibraryAsync(meetingPlaceSearch);
+    }
+
+    private async Task SelectGroupAsync(string groupKey)
+    {
+        selectedGroupKey = groupKey;
+        try
+        {
+            isLoadingDetail = true;
+            selectedGroupDetail = await TourProductionWorkbenchService.GetGroupDetailAsync(groupKey);
+            if (selectedGroupDetail is not null)
+            {
+                groupOverrideKeyInput = selectedGroupDetail.ManualGroupKey ?? BuildDefaultOverrideKey(selectedGroupDetail.GroupLabel);
+                await LoadEditorFromDetailAsync(selectedGroupDetail);
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] SelectGroupAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to load group detail.");
+        }
+        finally
+        {
+            isLoadingDetail = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadEditorFromDetailAsync(TourProductionGroupDetail detail)
+    {
+        var mappedTour = detail.TourId.HasValue ? tours.FirstOrDefault(t => t.Id == detail.TourId.Value) : null;
+        if (mappedTour is not null)
+        {
+            editorTourId = mappedTour.Id;
+            editor = new TourProductionTourUpsertInput
+            {
+                TourName = mappedTour.TourName,
+                MasterTourName = mappedTour.MasterTourName,
+                MasterTourNameDesktop = mappedTour.MasterTourNameDesktop,
+                MasterTourNameMobile = mappedTour.MasterTourNameMobile,
+                Duration = mappedTour.Duration,
+                MeetingPlace = mappedTour.MeetingPlace ?? string.Empty,
+                VendorLink = mappedTour.VendorLink,
+                VendorScheduleLink = mappedTour.VendorScheduleLink,
+                ReviewLink = mappedTour.ReviewLink,
+                IsActive = mappedTour.IsActive
+            };
+        }
+        else
+        {
+            editorTourId = null;
+            editor = new TourProductionTourUpsertInput
+            {
+                TourName = detail.GroupLabel,
+                MasterTourName = detail.MasterTourName ?? detail.GroupLabel,
+                MeetingPlace = string.Empty,
+                IsActive = true
+            };
+        }
+
+        await LoadAliasesAsync();
+    }
+
+    private async Task UseCandidateAsync(int tourId)
+    {
+        var match = tours.FirstOrDefault(t => t.Id == tourId);
+        if (match is null)
+        {
+            return;
+        }
+
+        editorTourId = match.Id;
+        editor = new TourProductionTourUpsertInput
+        {
+            TourName = match.TourName,
+            MasterTourName = match.MasterTourName,
+            MasterTourNameDesktop = match.MasterTourNameDesktop,
+            MasterTourNameMobile = match.MasterTourNameMobile,
+            Duration = match.Duration,
+            MeetingPlace = match.MeetingPlace ?? string.Empty,
+            VendorLink = match.VendorLink,
+            VendorScheduleLink = match.VendorScheduleLink,
+            ReviewLink = match.ReviewLink,
+            IsActive = match.IsActive
+        };
+        await LoadAliasesAsync();
+    }
+
+    private void StartNewTourFromGroup()
+    {
+        editorTourId = null;
+        editor = new TourProductionTourUpsertInput
+        {
+            TourName = selectedGroupDetail?.GroupLabel ?? string.Empty,
+            MasterTourName = selectedGroupDetail?.MasterTourName ?? selectedGroupDetail?.GroupLabel ?? string.Empty,
+            MeetingPlace = string.Empty,
+            IsActive = true
+        };
+        aliases.Clear();
+    }
+
+    private async Task SaveTourAsync()
+    {
+        try
+        {
+            isSavingTour = true;
+            if (editorTourId.HasValue)
+            {
+                var ok = await TourProductionWorkbenchService.UpdateTourAsync(editorTourId.Value, editor);
+                if (!ok)
+                {
+                    await ToastService.ShowWarningAsync("Tour update did not modify any row.");
+                    return;
+                }
+                await ToastService.ShowSuccessAsync("Tour updated.");
+            }
+            else
+            {
+                var created = await TourProductionWorkbenchService.CreateTourAsync(editor);
+                if (created is null)
+                {
+                    await ToastService.ShowErrorAsync("Failed to create tour.");
+                    return;
+                }
+                editorTourId = created.Id;
+                await ToastService.ShowSuccessAsync("Tour created.");
+            }
+
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] SaveTourAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to save tour.");
+        }
+        finally
+        {
+            isSavingTour = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeactivateTourAsync()
+    {
+        if (!editorTourId.HasValue)
+        {
+            return;
+        }
+
+        var tourLabel = string.IsNullOrWhiteSpace(editor.MasterTourName) ? editor.TourName : editor.MasterTourName;
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Deactivate tour '{tourLabel}' (ID {editorTourId.Value})?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            isSavingTour = true;
+            var ok = await TourProductionWorkbenchService.DeactivateTourAsync(editorTourId.Value);
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Tour deactivate did not modify any row.");
+                return;
+            }
+
+            await ToastService.ShowSuccessAsync("Tour deactivated.");
+            editorTourId = null;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] DeactivateTourAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to deactivate tour.");
+        }
+        finally
+        {
+            isSavingTour = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAliasesAsync()
+    {
+        aliases.Clear();
+        aliasTargetTours.Clear();
+        if (!editorTourId.HasValue)
+        {
+            return;
+        }
+
+        aliases = await TourProductionWorkbenchService.GetAliasesAsync(editorTourId.Value, includeInactive: true);
+        foreach (var alias in aliases)
+        {
+            aliasTargetTours[alias.Id] = 0;
+        }
+    }
+
+    private async Task AddAliasAsync()
+    {
+        if (!editorTourId.HasValue || string.IsNullOrWhiteSpace(newAliasName))
+        {
+            return;
+        }
+
+        try
+        {
+            isSavingAlias = true;
+            var id = await TourProductionWorkbenchService.CreateAliasAsync(new TourProductionAliasCreateInput
+            {
+                TourId = editorTourId.Value,
+                IncomingTourName = newAliasName.Trim(),
+                VendorName = string.IsNullOrWhiteSpace(newAliasVendor) ? null : newAliasVendor.Trim()
+            });
+            if (id <= 0)
+            {
+                await ToastService.ShowWarningAsync("Alias was not created.");
+                return;
+            }
+
+            newAliasName = string.Empty;
+            newAliasVendor = string.Empty;
+            await LoadAliasesAsync();
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync("Alias saved.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] AddAliasAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to add alias.");
+        }
+        finally
+        {
+            isSavingAlias = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAliasAsync(TourNameMapping alias)
+    {
+        try
+        {
+            isSavingAlias = true;
+            var ok = await TourProductionWorkbenchService.UpdateAliasAsync(alias.Id, new TourProductionAliasUpdateInput
+            {
+                IncomingTourName = alias.IncomingTourName,
+                VendorName = alias.VendorName
+            });
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Alias update did not modify any row.");
+                return;
+            }
+
+            await LoadAliasesAsync();
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync("Alias updated.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] SaveAliasAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to update alias.");
+        }
+        finally
+        {
+            isSavingAlias = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleAliasAsync(TourNameMapping alias)
+    {
+        try
+        {
+            isSavingAlias = true;
+            var ok = await TourProductionWorkbenchService.SetAliasActiveAsync(alias.Id, !alias.IsActive);
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Alias status did not change.");
+                return;
+            }
+
+            await LoadAliasesAsync();
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ToggleAliasAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to change alias status.");
+        }
+        finally
+        {
+            isSavingAlias = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReassignAliasAsync(TourNameMapping alias)
+    {
+        if (!aliasTargetTours.TryGetValue(alias.Id, out var targetTourId) || targetTourId <= 0)
+        {
+            await ToastService.ShowWarningAsync("Select a target tour first.");
+            return;
+        }
+
+        var target = tours.FirstOrDefault(t => t.Id == targetTourId);
+        var targetLabel = target is null ? targetTourId.ToString() : $"{target.MasterTourName} ({targetTourId})";
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Reassign alias '{alias.IncomingTourName}' to {targetLabel}?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            isSavingAlias = true;
+            var ok = await TourProductionWorkbenchService.ReassignAliasAsync(alias.Id, targetTourId);
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Alias reassignment did not modify any row.");
+                return;
+            }
+
+            await LoadAliasesAsync();
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync("Alias reassigned.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ReassignAliasAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to reassign alias.");
+        }
+        finally
+        {
+            isSavingAlias = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApplyGroupOverrideAsync()
+    {
+        if (selectedGroupDetail is null)
+        {
+            return;
+        }
+
+        var key = NormalizeOverrideKey(groupOverrideKeyInput);
+        if (key is null)
+        {
+            await ToastService.ShowWarningAsync("Enter an override key first.");
+            return;
+        }
+
+        try
+        {
+            isSavingOverride = true;
+            var changed = await TourProductionWorkbenchService.ApplyGroupOverrideToGroupAsync(selectedGroupDetail.GroupKey, key);
+            if (changed <= 0)
+            {
+                await ToastService.ShowWarningAsync("No variants were updated.");
+                return;
+            }
+
+            selectedGroupKey = $"manual:{key}";
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync($"Applied override to {changed} variant(s).");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ApplyGroupOverrideAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to apply group override.");
+        }
+        finally
+        {
+            isSavingOverride = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearGroupOverridesAsync()
+    {
+        if (selectedGroupDetail is null)
+        {
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Clear manual overrides for the current group?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            isSavingOverride = true;
+            var changed = await TourProductionWorkbenchService.ClearGroupOverridesForGroupAsync(selectedGroupDetail.GroupKey);
+            if (changed <= 0)
+            {
+                await ToastService.ShowWarningAsync("No overrides were cleared.");
+                return;
+            }
+
+            selectedGroupKey = null;
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync($"Cleared overrides for {changed} variant(s).");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ClearGroupOverridesAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to clear group overrides.");
+        }
+        finally
+        {
+            isSavingOverride = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApplyVariantOverrideAsync(TourProductionGroupVariant variant)
+    {
+        var key = NormalizeOverrideKey(groupOverrideKeyInput);
+        if (key is null)
+        {
+            await ToastService.ShowWarningAsync("Enter an override key first.");
+            return;
+        }
+
+        try
+        {
+            isSavingOverride = true;
+            var ok = await TourProductionWorkbenchService.ApplyGroupOverrideToVariantAsync(new TourProductionVariantOverrideInput
+            {
+                SourceType = variant.SourceType,
+                VendorName = variant.VendorName,
+                RawTourName = variant.RawTourName
+            }, key);
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Variant override was not updated.");
+                return;
+            }
+
+            selectedGroupKey = $"manual:{key}";
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync("Variant moved to override key.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ApplyVariantOverrideAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to apply variant override.");
+        }
+        finally
+        {
+            isSavingOverride = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearVariantOverrideAsync(TourProductionGroupVariant variant)
+    {
+        try
+        {
+            isSavingOverride = true;
+            var ok = await TourProductionWorkbenchService.ClearGroupOverrideForVariantAsync(new TourProductionVariantOverrideInput
+            {
+                SourceType = variant.SourceType,
+                VendorName = variant.VendorName,
+                RawTourName = variant.RawTourName
+            });
+            if (!ok)
+            {
+                await ToastService.ShowWarningAsync("Variant had no active override.");
+                return;
+            }
+
+            await ReloadAsync();
+            await ToastService.ShowSuccessAsync("Variant override cleared.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourProductionWorkbench] ClearVariantOverrideAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Failed to clear variant override.");
+        }
+        finally
+        {
+            isSavingOverride = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyMeetingPlace(string value)
+    {
+        editor.MeetingPlace = value;
+    }
+
+    private static string BuildDefaultOverrideKey(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(label.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-");
+        return cleaned.Trim('-');
+    }
+
+    private static string? NormalizeOverrideKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(value.Trim().ToLowerInvariant(), @"\s+", "-");
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"[^a-z0-9\-]+", string.Empty);
+        cleaned = cleaned.Trim('-');
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return null;
+        }
+
+        return cleaned.Length <= 200 ? cleaned : cleaned[..200];
+    }
+
+    private static string StatusBadgeClass(string status)
+    {
+        return status switch
+        {
+            "Mapped" => "text-bg-success",
+            "Needs Tour" => "text-bg-danger",
+            "Needs Alias" => "text-bg-warning text-dark",
+            "Needs Meeting Place" => "text-bg-info",
+            _ => "text-bg-secondary"
+        };
+    }
+}

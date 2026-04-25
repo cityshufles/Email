@@ -1,0 +1,155 @@
+@page "/vcard-logs"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.IO
+@using Microsoft.AspNetCore.Hosting
+@inject IWebHostEnvironment Environment
+
+<PageTitle>vCard Download Logs</PageTitle>
+
+<div class="container-fluid p-4">
+    <h2 class="mb-4">
+        <i class="bi bi-file-earmark-text me-2"></i>vCard Download Logs
+    </h2>
+
+    @if (logFiles == null)
+    {
+        <div class="alert alert-info">Loading log files...</div>
+    }
+    else if (!logFiles.Any())
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>No log files found. Logs will appear here after vCard downloads occur.
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-calendar3 me-2"></i>Available Log Files
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>File Name</th>
+                                <th>Size</th>
+                                <th>Last Modified</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var logFile in logFiles.OrderByDescending(f => f.Date))
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@logFile.Date.ToString("MMMM d, yyyy")</strong>
+                                        <br />
+                                        <small class="text-muted">@logFile.Date.ToString("dddd")</small>
+                                    </td>
+                                    <td>
+                                        <code>@logFile.FileName</code>
+                                    </td>
+                                    <td>@FormatFileSize(logFile.Size)</td>
+                                    <td>@logFile.LastModified.ToString("MMM d, yyyy HH:mm:ss")</td>
+                                    <td>
+                                        <a href="/logs/vcard/@logFile.FileName" target="_blank" class="btn btn-sm btn-primary">
+                                            <i class="bi bi-eye me-1"></i>View Log
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3 text-muted">
+            <small>
+                <i class="bi bi-info-circle me-1"></i>
+                Log files are stored in <code>wwwroot/logs/vcard/</code> and are automatically created when vCard downloads occur.
+            </small>
+        </div>
+    }
+</div>
+
+@code {
+    private List<LogFileInfo>? logFiles;
+
+    protected override void OnInitialized()
+    {
+        LoadLogFiles();
+    }
+
+    private void LoadLogFiles()
+    {
+        try
+        {
+            var logDirectory = Path.Combine(Environment.WebRootPath ?? Environment.ContentRootPath ?? ".", "logs", "vcard");
+            
+            if (!Directory.Exists(logDirectory))
+            {
+                logFiles = new List<LogFileInfo>();
+                return;
+            }
+
+            var files = Directory.GetFiles(logDirectory, "vcard_log_*.html")
+                .Select(filePath =>
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    var fileName = Path.GetFileName(filePath);
+                    
+                    // Extract date from filename: vcard_log_2025-12-19.html
+                    var dateMatch = System.Text.RegularExpressions.Regex.Match(fileName, @"vcard_log_(\d{4}-\d{2}-\d{2})\.html");
+                    DateTime date = DateTime.MinValue;
+                    if (dateMatch.Success && DateTime.TryParse(dateMatch.Groups[1].Value, out var parsedDate))
+                    {
+                        date = parsedDate;
+                    }
+
+                    return new LogFileInfo
+                    {
+                        FileName = fileName,
+                        Date = date != DateTime.MinValue ? date : fileInfo.CreationTime.Date,
+                        Size = fileInfo.Length,
+                        LastModified = fileInfo.LastWriteTime
+                    };
+                })
+                .ToList();
+
+            logFiles = files;
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't crash - just show empty list
+            Console.WriteLine($"Error loading log files: {ex.Message}");
+            logFiles = new List<LogFileInfo>();
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private class LogFileInfo
+    {
+        public string FileName { get; set; } = string.Empty;
+        public DateTime Date { get; set; }
+        public long Size { get; set; }
+        public DateTime LastModified { get; set; }
+    }
+}
+

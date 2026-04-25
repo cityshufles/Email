@@ -1,0 +1,256 @@
+@inject IMasterTourService MasterTourService
+@inject IJSRuntime JSRuntime
+
+<div class="border rounded p-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <h6 class="mb-0">Tour Name Variants</h6>
+        <span class="badge bg-secondary">@variants.Count</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (TourId <= 0)
+    {
+        <div class="text-muted">Save the master tour to manage variants.</div>
+    }
+    else if (isLoading)
+    {
+        <div class="text-muted">Loading variants...</div>
+    }
+    else if (variants.Count == 0)
+    {
+        <div class="text-muted">No variants yet.</div>
+    }
+    else
+    {
+        <ul class="list-group list-group-flush mb-3">
+            @foreach (var variant in variants)
+            {
+                <li class="list-group-item d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="fw-semibold">@variant.IncomingTourName</div>
+                        <div class="small text-muted">@(string.IsNullOrWhiteSpace(variant.VendorName) ? "Vendor: N/A" : $"Vendor: {variant.VendorName}")</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => DeleteVariantAsync(variant)" disabled="@isBusy">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+
+    <div class="border-top pt-3">
+        <div class="mb-2">
+            <label class="form-label">New Variant Name</label>
+            <input type="text"
+                   class="form-control"
+                   @bind="newVariantName"
+                   @bind:event="oninput"
+                   @bind:after="OnVariantNameChanged"
+                   @onblur="OnVariantNameBlur"
+                   disabled="@isBusy" />
+            @if (showNameValidation && string.IsNullOrWhiteSpace(newVariantName))
+            {
+                <div class="text-danger small mt-1">Variant name is required.</div>
+            }
+        </div>
+        <div class="mb-2">
+            <label class="form-label">Vendor (optional)</label>
+            <input type="text" class="form-control" list="@vendorListId" @bind="newVariantVendor" disabled="@isBusy" />
+            <datalist id="@vendorListId">
+                @foreach (var vendor in vendorOptions)
+                {
+                    <option value="@vendor"></option>
+                }
+            </datalist>
+            <div class="form-text">Select an existing vendor or type a new one.</div>
+        </div>
+        <button class="btn btn-outline-primary" type="button" @onclick="AddVariantAsync" disabled="@isBusy || TourId <= 0 || string.IsNullOrWhiteSpace(newVariantName)">
+            <i class="bi bi-plus-lg me-1"></i>Add Variant
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int TourId { get; set; }
+
+    private readonly string vendorListId = $"vendor-options-{Guid.NewGuid():N}";
+    private List<TourNameMapping> variants = new();
+    private List<string> vendorOptions = new();
+    private string? newVariantName;
+    private string? newVariantVendor;
+    private string? errorMessage;
+    private bool isLoading;
+    private bool isBusy;
+    private bool showNameValidation;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load variants and vendor options for the selected tour.
+        try
+        {
+            if (TourId <= 0)
+            {
+                variants = new List<TourNameMapping>();
+                return;
+            }
+
+            await LoadVariantsAsync();
+            await LoadVendorsAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourVariantsManager] OnParametersSetAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load variants.";
+        }
+    }
+
+    private async Task LoadVariantsAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Fetch active variants for the current tour.
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            variants = await MasterTourService.GetTourVariantsAsync(TourId);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourVariantsManager] LoadVariantsAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load variants.";
+            variants = new List<TourNameMapping>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load distinct vendor names for suggestions.
+        try
+        {
+            vendorOptions = await MasterTourService.GetDistinctVendorsAsync();
+            vendorOptions = vendorOptions
+                .Select(v => v.Trim())
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourVariantsManager] LoadVendorsAsync failed: {ex}");
+#endif
+            vendorOptions = new List<string>();
+        }
+    }
+
+    private async Task AddVariantAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Add a new variant mapping for the tour.
+        try
+        {
+            errorMessage = null;
+            Console.WriteLine($"[TourVariantsManager] AddVariantAsync clicked. TourId={TourId}, IsBusy={isBusy}, RawName='{newVariantName}', RawVendor='{newVariantVendor}'");
+
+            var name = newVariantName?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                showNameValidation = true;
+                errorMessage = "Variant name is required.";
+                Console.WriteLine("[TourVariantsManager] AddVariantAsync aborted: name is blank.");
+                return;
+            }
+
+            isBusy = true;
+            var vendor = string.IsNullOrWhiteSpace(newVariantVendor) ? null : newVariantVendor.Trim();
+            Console.WriteLine($"[TourVariantsManager] AddVariantAsync normalized: Name='{name}', Vendor='{vendor ?? "(null)"}'");
+
+            var mapping = new TourNameMapping
+            {
+                TourId = TourId,
+                IncomingTourName = name,
+                VendorName = vendor
+            };
+
+            var id = await MasterTourService.AddTourVariantAsync(mapping);
+            Console.WriteLine($"[TourVariantsManager] AddVariantAsync result: Id={id}");
+            if (id == -1)
+            {
+                errorMessage = "That variant already exists.";
+                Console.WriteLine("[TourVariantsManager] AddVariantAsync blocked: duplicate variant.");
+                return;
+            }
+
+            newVariantName = string.Empty;
+            newVariantVendor = string.Empty;
+            showNameValidation = false;
+            await LoadVariantsAsync();
+            await LoadVendorsAsync();
+            Console.WriteLine("[TourVariantsManager] AddVariantAsync completed successfully.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourVariantsManager] AddVariantAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to add variant.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void OnVariantNameChanged()
+    {
+        if (!string.IsNullOrWhiteSpace(newVariantName))
+        {
+            showNameValidation = false;
+        }
+    }
+
+    private void OnVariantNameBlur(FocusEventArgs _)
+    {
+        if (string.IsNullOrWhiteSpace(newVariantName))
+        {
+            showNameValidation = true;
+        }
+    }
+
+    private async Task DeleteVariantAsync(TourNameMapping variant)
+    {
+        // Created: 2026-02-12 00:00 UTC - Soft delete a variant mapping.
+        try
+        {
+            errorMessage = null;
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete variant '{variant.IncomingTourName}'?");
+            if (!confirmed) return;
+
+            isBusy = true;
+            await MasterTourService.DeleteTourVariantAsync(variant.Id);
+            await LoadVariantsAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourVariantsManager] DeleteVariantAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to delete variant.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

@@ -1,0 +1,478 @@
+@using Syncfusion.Blazor.Lists
+@using Email.Models
+@using Email.Services
+@inject ITourEmailsService TourEmailsService
+
+<div class="card live-inbox-root">
+    <div class="card-header d-flex align-items-center gap-2">
+        <button class="btn btn-outline-primary btn-sm" @onclick="RefreshAsync" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Refresh
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" @onclick="LoadMoreAsync" disabled="@isLoading || (items?.Count ?? 0) == 0">
+            <i class="bi bi-chevron-down me-1"></i>
+            Load More
+        </button>
+        <span class="ms-2 small text-muted">Total: @items?.Count</span>
+    </div>
+    <div class="card-body p-2">
+        @if (isLoading && (items == null || items.Count == 0))
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" style="width: 2rem; height: 2rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        }
+        else if (items?.Any() == true)
+        {
+            <!-- Debug info -->
+            <div class="debug-info mb-3 p-2 border rounded">
+                <small>
+                    <strong>Debug:</strong> 
+                    Total items: @items.Count | 
+                    Processed: @items.Count(x => x.HasProcessedEmail) | 
+                    Not Processed: @items.Count(x => !x.HasProcessedEmail) |
+                    Group values: @string.Join(", ", items.Select(x => x.ProcessedGroupStatus).Distinct())
+                </small>
+            </div>
+            
+            <div class="live-inbox">
+               @*  <SfListView TValue="TourEmails.Models.LiveUnifiedEmailListItem" 
+                           DataSource="@items" 
+                           ShowHeader="true"
+                           ShowIcon="true"
+                           HeaderTitle="Live Inbox"
+                           CssClass="e-list-template">
+                    <ListViewFieldSettings TValue="TourEmails.Models.LiveUnifiedEmailListItem" 
+                                          Id="Uid" 
+                                          Text="Subject" 
+                                          GroupBy="ProcessedGroupStatus"></ListViewFieldSettings>
+                    <ListViewTemplates TValue="TourEmails.Models.LiveUnifiedEmailListItem">
+                        <Template>
+                            @{
+                                var item = context as TourEmails.Models.LiveUnifiedEmailListItem;
+                            }
+                            <div class="e-list-wrapper e-list-multi-line e-list-avatar" data-processed="@item.HasProcessedEmail.ToString().ToLower()">
+                                <span class="e-avatar e-avatar-circle">
+                                    <i class="@item.IconCss" title="@(item.HasProcessedEmail ? "Processed Email" : "Not Processed")"></i>
+                                </span>
+                                <span class="e-list-item-header">@item.FromName</span>
+                                <span class="e-list-content">@item.Subject</span>
+                                @if (item.HasProcessedEmail)
+                                {
+                                    <div class="e-list-content processed-tourline">
+                                        <span class="badge bg-success">@item.ProcessedEmailType</span>
+                                        @if (!string.IsNullOrEmpty(item.ProcessedVendorName))
+                                        {
+                                            <span>• @item.ProcessedVendorName</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(item.ProcessedCustomerName))
+                                        {
+                                            <span class="fw-bold">• @item.ProcessedCustomerName</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(item.ProcessedTourName))
+                                        {
+                                            <span>• @item.ProcessedTourName</span>
+                                        }
+                                        @if (item.ProcessedTourDate.HasValue)
+                                        {
+                                            <span>• @item.ProcessedTourDate.Value.ToString("MMM dd")</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(item.ProcessedTourTime))
+                                        {
+                                            <span>• @item.ProcessedTourTime</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(item.BookingCode))
+                                        {
+                                            <span class="badge bg-info">@item.BookingCode</span>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="e-list-content text-muted">
+                                        <span class="badge bg-warning">Not Processed</span>
+                                        <span>No processed email found in database</span>
+                                    </span>
+                                }
+                                <span class="e-list-content email-timestamp small text-muted">
+                                    @item.ReceivedDate.ToString("g") UTC : @item.ReceivedDate.ToLocalTime().ToString("g")
+                                </span>
+                                <div class="action-buttons">
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="@(() => ViewAsync(item.Uid))">
+                                        <i class="bi bi-eye me-1"></i>View
+                                    </button>
+                                    @if (item.HasProcessedEmail)
+                                    {
+                                        <button class="btn btn-outline-success btn-sm" @onclick="@(() => ViewBookingAsync(item.ProcessedEmailId))" title="View Processed Booking">
+                                            <i class="bi bi-journal-text me-1"></i>Booking
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </Template>
+                        <GroupTemplate>
+                            <div class="group-header">
+                                <span class="group-title">@context.Text</span>
+                                <span class="group-count">(@context.Items.Count)</span>
+                            </div>
+                        </GroupTemplate>
+                    </ListViewTemplates>
+                </SfListView> *@
+
+             @*    <SfListView TValue="Email.Models.LiveUnifiedEmailListItem"
+                            DataSource="@items"
+                            ShowHeader="true"
+                            SortOrder="Syncfusion.Blazor.Lists.SortOrder.None" 
+                            HeaderTitle="Live Inbox"
+                            CssClass="e-list-template">
+                    <ListViewFieldSettings TValue="Email.Models.LiveUnifiedEmailListItem"
+                                           Id="Uid"
+                                           Text="Subject"
+                                           GroupBy="@nameof(Email.Models.LiveUnifiedEmailListItem.ProcessedGroupStatus)">
+                    </ListViewFieldSettings>
+
+                    <ListViewTemplates TValue="Email.Models.LiveUnifiedEmailListItem">
+                        <GroupTemplate>
+                            <div class="group-header">
+                                <span class="group-title">@context.Text</span>
+                                <span class="group-count">(@context.Items.Count)</span>
+                            </div>
+                        </GroupTemplate>
+
+                        <Template>
+                            @{
+                                var item = context as Email.Models.LiveUnifiedEmailListItem;
+                            }
+                            <div class="e-list-wrapper live-email-item" data-processed="@item.HasProcessedEmail.ToString().ToLower()">
+                                <!-- Avatar -->
+                                <span class="e-avatar e-avatar-circle">
+                                    <i class="@item.IconCss"></i>
+                                </span>
+
+                                <!-- Two-line vertical layout -->
+                                <div class="email-lines">
+                                    <!-- Line 1 -->
+                                    <div class="line1">
+                                        <span class="from-name">@item.FromName</span>
+                                        <span class="subject">@item.Subject</span>
+                                    </div>
+
+                                    <!-- Line 2 (Processed info or Not Processed) -->
+                                    <div class="line2">
+                                        @if (item.HasProcessedEmail)
+                                        {
+                                            <span class="badge bg-success">@item.ProcessedEmailType</span>
+                                            @if (!string.IsNullOrEmpty(item.ProcessedVendorName))
+                                            {
+                                                <span>• @item.ProcessedVendorName</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.BookingCode))
+                                            {
+                                                <span class="badge bg-info">@item.BookingCode</span>
+                                            }
+                                            //we need the processed customer name, booking code, and tour name
+                                            @if (!string.IsNullOrEmpty(item.ProcessedCustomerName))
+                                            {
+                                                <span>• @item.ProcessedCustomerName</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.ProcessedTourName))
+                                            {
+                                                <span>• @item.ProcessedTourName</span>
+                                            }
+                                            @if (item.ProcessedTourDate.HasValue)
+                                            {
+                                                <span>• @item.ProcessedTourDate.Value.ToString("MMM dd")</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.ProcessedTourTime))
+                                            {
+                                                <span>Tour Time: @item.ProcessedTourTime</span>
+                                              
+                                            }
+                                            <span>Gmail: @item.ReceivedDate.ToString("g") UTC</span>
+                                           @if(item.ProcessedExtractedAt.HasValue)
+                                           {
+                                                <span>Processed: @item.ProcessedExtractedAt.Value.ToString()</span>
+                                           }
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning">Not Processed</span>
+                                            <span>No processed email found</span>
+                                        }
+                                    </div>
+
+                                    <!-- Timestamp -->
+                                  
+                                </div>
+                            </div>
+                        </Template>
+                    </ListViewTemplates>
+                </SfListView> *@
+
+
+            </div>
+        }
+        else
+        {
+            <div class="text-muted small p-3">No emails found.</div>
+        }
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">
+                        <i class="bi bi-envelope me-2"></i>
+                        @detail?.Subject
+                    </h6>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small text-muted mb-2">
+                        <div>UID: @detail?.Uid · Message-Id: @detail?.MessageId</div>
+                        <div>From: @detail?.FromName (@detail?.FromEmail)</div>
+                        <div>To: @detail?.To</div>
+                        <div>Date: @detail?.ReceivedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                        <div>Attachments: @detail?.AttachmentCount (@detail?.AttachmentNames)</div>
+                    </div>
+                    <div style="white-space: pre-wrap;">
+                        @detail?.TextBody
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+
+<style> 
+    /* Syncfusion ListView wrapper styling */
+    .live-inbox .e-listview .e-list-wrapper {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e9ecef;
+        width: 100%;
+    }
+
+    .live-inbox .e-listview .live-email-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .live-inbox .e-listview .e-list-wrapper .e-avatar {
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.2rem;
+    }
+
+    .live-inbox .e-listview .live-email-item .e-avatar {
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.2rem;
+    }
+
+
+    /* Fix for processed email content wrapping */
+    .live-inbox .e-listview .e-list-wrapper .e-list-content {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .live-inbox .e-listview .e-list-wrapper .e-list-content span {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .live-inbox .e-listview .e-list-wrapper .e-list-content .badge {
+        flex-shrink: 0;
+    }
+
+    /* Specific styling for processed tourline to prevent wrapping */
+    .live-inbox .e-listview .e-list-wrapper .processed-tourline {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+        font-size: 0.85rem;
+        color: #495057;
+    }
+
+    .live-inbox .e-listview .e-list-wrapper .processed-tourline span {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .live-inbox .e-listview .e-list-wrapper .processed-tourline .badge {
+        flex-shrink: 0;
+        font-size: 0.7rem;
+        padding: 0.2rem 0.4rem;
+    }
+
+    .live-inbox .e-listview .live-email-item .email-lines {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 0.25rem;
+    }
+
+
+    .live-inbox .e-listview .live-email-item .line1 {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #212529;
+    }
+
+ 
+    .live-inbox .e-listview .live-email-item .line2 {
+        font-size: 0.85rem;
+        color: #495057;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+ 
+    .live-inbox .e-listview .live-email-item .timestamp {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+
+
+    .live-inbox .e-listview .live-email-item[data-processed="true"] {
+        background-color: rgba(40, 167, 69, 0.05);
+        border-left: 4px solid #28a745;
+    }
+
+    .live-inbox .e-listview .live-email-item[data-processed="false"] {
+        background-color: rgba(255, 193, 7, 0.05);
+        border-left: 4px solid #ffc107;
+    }
+
+
+    .live-inbox .e-listview .e-list-group-item {
+        background-color: #f8f9fa;
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+</style>
+@code {
+    private List<Email.Models.LiveUnifiedEmailListItem>? items;
+    private bool isLoading;
+    private long? olderThanUid;
+    private bool showModal;
+    private Email.Models.LiveEmailDetail? detail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Lazy load on first view via Refresh click, or uncomment to auto-load
+        // await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        isLoading = true;
+        try
+        {
+            olderThanUid = null;
+            items = await TourEmailsService.GetLiveInboxAsync(50, null);
+            if (items != null && items.Count > 0)
+            {
+                olderThanUid = items.Min(x => x.Uid);
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (isLoading) return;
+        isLoading = true;
+        try
+        {
+            var more = await TourEmailsService.GetLiveInboxAsync(50, olderThanUid);
+            if (more != null && more.Count > 0)
+            {
+                items ??= new List<Email.Models.LiveUnifiedEmailListItem>();
+                items.AddRange(more);
+                olderThanUid = Math.Min(olderThanUid ?? long.MaxValue, more.Min(x => x.Uid));
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ViewAsync(long uid)
+    {
+        detail = await TourEmailsService.GetLiveEmailAsync(uid);
+        showModal = detail != null;
+    }
+
+    private void Close()
+    {
+        showModal = false;
+    }
+
+    private async Task ViewBookingAsync(int? processedEmailId)
+    {
+        if (processedEmailId.HasValue)
+        {
+            // TODO: Implement booking view functionality
+            // This could open a modal with processed email details
+            // or navigate to a booking management page
+            await InvokeAsync(() => {
+                // Placeholder for now - could show an alert or implement booking view
+                Console.WriteLine($"View booking for processed email ID: {processedEmailId.Value}");
+            });
+        }
+    }
+}
+
+

@@ -1,0 +1,456 @@
+﻿<!DOCTYPE html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>SU</title>
+<!--various mobile fix meta tags-->
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta content="yes" name="apple-touch-fullscreen" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="format-detection" content="telephone=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+<meta name="x-apple-disable-message-reformatting" />
+<!-- Outlook 120dpi fix -->
+<!--[if gte mso 9]><xml>
+<o:OfficeDocumentSettings>
+<o:AllowPNG/>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml><![endif]-->
+<style type="text/css">
+/*these are fixes from htmlemailboilerplate.com */
+/* Outlook link fix */
+#outlook a {padding:0;}
+/* Hotmail background & line height fixes */
+.ExternalClass {width:100% !important;}
+.ExternalClass, .ExternalClass p, .ExternalClass span, .ExternalClass font,
+.ExternalClass td, .ExternalClass div {line-height: 100%;}
+/* Image borders & formatting */
+img {outline:none; text-decoration:none; -ms-interpolation-mode: bicubic;}
+a img {border:none;}
+/* Re-style iPhone automatic links (eg. phone numbers) */
+.applelinks a {color:#186b69; text-decoration: none;}
+/* Hotmail symbol fix for mobile devices */
+.ExternalClass img[class^=Emoji] { width: 10px !important; height: 10px !important; display: inline !important; }
+a {
+color:#186b69;
+}
+/* Outlook 2013 spacing fix */
+table td {border-collapse:collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt;}
+</style>
+<!--[if !mso]><!-->
+<style type="text/css">
+/*RESPONSIVE CODE*/
+@media screen and (max-device-width: 640px), screen and (max-width: 640px) {
+/*wrap to 100% width*/
+*[class="emailwrapto100pc"]{
+width:100% !important;
+height:auto !important;
+min-width:inherit !important;
+}
+/*hide on mobile*/
+*[class="emailnomob"]{
+display:none !important;
+}
+/*split columns*/
+*[class=emailcolsplit]{
+float:left!important;
+width:100% !important;
+display:inline !important;
+}
+/*this turns off line breaks on the mobile version (tho better to try avoid putting them in to begin with)*/
+*[class=emailhidebreaks] br{
+display:none !important;
+}
+/* this makes the padding on the sides go to 10px without altering the vertical padding */
+*[class="10pxsidepadding"] {
+padding-right:10px !important;
+padding-left:10px !important;
+}
+/* used for mobile only content */
+div[class="mobile-only"] {
+display: block !important;
+max-height: none !important;
+max-width: none !important;
+}
+*[class="emailmobshow"] {
+display: inline-block !important;
+margin: auto !important;
+max-height: inherit !important;
+overflow : visible !important;
+mso-hide: all !important; /* hide elements in Outlook 2007-2013 */
+height: auto !important;
+}
+}
+</style>
+<!--<![endif]-->
+</head>
+<body style="min-width:100%;padding:0; margin:0;-webkit-text-size-adjust:none;-ms-text-size-adjust:100%; background-color:#ffffff;" bgcolor="#ffffff">
+
+
+
+
+<table border="0" cellspacing="0" cellpadding="0" width="100%" style="background-color: #f5f5f5;">
+<tr>
+<td height="0" style="line-height:0px;color:#f5f5f5;height:0px; font-family: Helvetica, Arial, sans-serif; font-size:0px;mso-table-lspace:0pt;mso-table-rspace:0pt;mso-line-height-rule:exactly;border-collapse:separate;">
+No action is required. This booking is confirmed.
+</td>
+</tr>
+<tr>
+<td align="center" style="padding-top:16px;">
+<table width="550" border="0" cellspacing="0" cellpadding="0" style="border-collapse:separate;width:550px;background-color:#ffffff;">
+ <tr>
+<td>
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:separate;">
+<tr>
+<td style="padding-top: 24px; padding-bottom: 24px">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:separate;">
+<tr>
+<td align="center" valign="top" style="font-family: Helvetica, Arial, sans-serif;font-size: 18px; line-height: 24px;color:#262626;">
+<a href="https://www.viator.com/MptUrl?p=ACZK0i6XRLufQX%2FQLvCoEQSQ4GqXgBXgDoqLdbP74QiOP6ENWvgHcwfgHIQ237CzL%2FefYs%2B7M9A4umawK%2BGDyc3JMlVwfSg%2Bessz52b1bzY750RsAaN%2F81JBiVb2xUjODzVTQq3Wjs918XbLZumo6GoS25bTyc0D2IiNV2DYbotlrx%2BaRNegIhksOePZBBX8uFvlzjMrg2JJhnyud7zFGpZZdl7rLKPTUrOe2WbFk2n6nOxzUl02Zj7jAwFsi40xRAA%2F7ft%2FyeXx62eQkD3Gf2jPS2zgPXi1%2B%2Fb9i%2FS3nz%2FWfMBrdPMRbH64Y6ZMgJze2YvyAwoBTdg3BTBp0BTdgOjwGV01%2FP8hNQMf7x%2BCeUMMZpkoAt2OVAPCBAX1dmhFALP%2BQrx%2FLSN%2BEla1nGbMDFi9iB1HpUuEqFnjodUrjEVY" target="_blank" alias="HomeLink" style="color:#262626;text-decoration:none;">
+<img src="https://cdn.tripadvisor.com/img2/email/viator_logo_v2.png" height="70" border="0" style="border: 0; display:block;height:70px;" alt=""/>
+</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<table border="0" cellspacing="0" cellpadding="0" width="100%" bgcolor="#f5f5f5">
+<tr>
+<td align="center" valign="top" style="font-family:Arial, Helvetica, sans-serif; font-size:18px;line-height:24px;padding-top:0px;padding-bottom:0px;">
+<table width="550" border="0" align="center" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="border-collapse:separate;width:550px;">
+<tr>
+<td style="padding:0 16px;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse:separate;">
+<tr>
+<td align="center" style="padding: 0px 0px 18px; font-family: arial, helvetica, san-serif; font-size: 32px; color: #262626; line-height: 35px;">
+Booking Confirmation
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 18px; color: #262626; line-height: 24px;">
+You have a new reservation for Grand Central Terminal History and Mysteries. This is an Instant Confirmation booking, so no action is required.
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 16px; font-family: arial, helvetica, san-serif; font-size: 18px; color: #262626; line-height: 24px;">
+See below for more details or <a href="https://www.viator.com/MptUrl?p=ALZjqco%2FMukcIksZ%2BqgL%2FMXTgbCY5wj%2BVJBt%2BDHqNziX61247n5Gx7R7xJ%2Fj%2BwizJW%2Bq5vC8ZT4HkNUUbMKmAD7JeQYqzqZFs%2F5NvwKNAJKSfZyWTRvZBrrC3X1iIgKHiD8e%2Bi6FY95xQIvcLDk2hWRV9YCEG89adHOyS6SdJu92Ei1NoxpmGNiytjv4CcQfbNsbsTukdtb2u8FJwMPHqXm1yj7qwR6%2Bz8YOFZpai4iMD5DQzYDrGX0WSSYDLHES%2B%2FsP%2B1HOCQhgdv6qegAB%2F7LNGL2EmIXzrO4ghbAdh%2BxTzgkW1Yg1Kc0IzU%2FUn0dojIB2a5IE7lKFl3W3%2FpG2O%2FFaT9CkI3a%2FMnPBjOAbv7TODv4xI%2Bqg4iH6F2WfWHQTCsg1RsCVsyhkytw9uGl0eHd3PQjqlM8WkannE2527Y%2Bm" target="_blank" style="text-decoration:none;font-weight:bold;color:#186b69;" alias="HomeLink">visit your dashboard to manage all bookings.</a>
+</td>
+</tr>
+<!-- start divider -->
+
+
+
+<tr>
+<td align="center">
+<!DOCTYPE html>
+
+<table width="100%" height="50" border="0" cellspacing="0" cellpadding="0" style="height:50px;border-collapse:separate;">
+<tr>
+<td valign="middle" align="left">
+<table width="100%" height="1" border="0" cellspacing="0" cellpadding="0" style="height:1px;border-collapse:separate;">
+<tr>
+<td align="left" height="1" bgcolor="#186b69" style="line-height:1px;color:#186b69;font-size:0px;height:1px;line-height:1px;mso-table-lspace:0pt;mso-table-rspace:0pt;mso-line-height-rule:exactly;border-collapse:separate;">
+&nbsp;
+</td>
+</tr>
+</table>
+</td>
+<td align="center" height="50" width="45" style="width:45px;height:50px;line-height:45px;" >
+<img src="https://cdn.tripadvisor.com/img2/email/vr/starticketicon.png" height="45" width="45" border="0" style="display:block;height:45px;width:45px;"/>
+</td>
+<td valign="middle" align="right">
+<table width="100%" height="1" border="0" cellspacing="0" cellpadding="0" style="height:1px;border-collapse:separate;">
+<tr>
+<td align="left" height="1" bgcolor="#186b69" style="line-height:1px;color:#186b69;font-size:0px;height:1px;line-height:1px;mso-table-lspace:0pt;mso-table-rspace:0pt;mso-line-height-rule:exactly;border-collapse:separate;">
+&nbsp;
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+
+
+
+<!-- end divider -->
+<tr>
+<td align="center" style="padding: 16px 0px 16px; font-family: arial, helvetica, san-serif; font-size: 24px; color: #262626; line-height: 28px;">
+Booking Details
+</td>
+</tr>
+<tr>
+<td align="center" style="padding: 0px 0px 16px; font-family: arial, helvetica, san-serif; font-size: 18px; color: #262626; line-height: 20px;">
+Booking Reference: <span style="font-weight:bold;">BR-1361381631 </span>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding: 0px 0px 24px;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse:separate;">
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Tour Name: <span style="font-weight:bold;">Grand Central Terminal History and Mysteries</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Travel Date: <span style="font-weight:bold;">Sun, Feb 22, 2026</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Lead Traveler Name: <span style="font-weight:bold;">Christopher Knisely</span>
+</td>
+</tr>
+
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Traveler Names: <span style="color:#666666;">Christopher Knisely, Passenger Two</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Travelers: <span style="color:#666666;">2 Adults</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Product Code: <span style="color:#666666;">5527066P31 </span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Tour Grade: <span style="color:#666666;">Grand Central Terminal History and Mysteries 14:00</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Tour Grade Code: <span style="color:#666666;">TG1~14:00 </span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Tour Grade Description: <span style="color:#666666;">Grand Central Terminal History and Mysteries </span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Tour Language: <span style="color:#666666;">English - Guide </span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Location: <span style="color:#666666;">New York, United States</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Net Rate: <span style="color:#666666;">USD $58.64</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Meeting Point: <span style="color:#666666;">Grand Central Terminal, 89 E 42nd St, New York, NY 10017, USA</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Special Requirements: <span style="color:#666666;">No</span>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Phone: <span style="color:#666666;"> (Alternate Phone)US+1 5134486530 </span> <a href="https://www.viator.com/MptUrl?p=ACVFJh1rTJ0KOL3Uvj9la0AbyysVyVsLAESWmIcYr0rcbeOZZBUxIeKm65o8w5AqrQYFQ%2BxuMCQTj79LNGyH5OYJGRb0VpPjivZKdSELDxM0%2Ba6on2rhRfE808zpZ3hRR%2FOogsg%2FsfbaMPYPi8K24djMoe1VnbFNSPT2sn%2F0Ni2RVay8ULgoT9uc8geRO5jwjTYYnl21c9u9B74dWhlbhzUA%2BLh4XUHGIhrPCGQjwejv55bA9AQYFf6UgSgdtkR8PaLeWNb5%2FtkoqykSfKdr1pz8tTnmgtXnB0htYtPci4ypjDSJHWj6TBfFMt6tOYBrmfrCamjzR0OUPoiCCMoQh4NukkQT4nkkpf%2B3UtNbmbMk4ksemt1EF8v3g%2BBTIl1I92iPgaXA%2B7RbLZxWt8LbNDCj5ZZ7XfM35mukCrNaBCoMoqB6CJnwnpF8FUSh8cG1MR%2B1Z%2BUoReq3rlhY2ySugNTQ8yp7UdLNpVZ%2B9ujj8P07EIRM2Xu9kMLqQJk07LrFCP1bXo9vRKg0opRB6IDEkdoueb12hO3vhTCv8Ar84BOEjcFAYw%2BkDE9uqR%2F0D5cN8aBEDApwWJY8Uoyg4wb4yDc%3D" target="_blank" style="text-decoration:none;color:#186b69;" alias="CustomerMessageLink">Send the customer a message.</a>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding: 0px 0px 8px; font-family: arial, helvetica, san-serif; font-size: 15px; color: #262626; line-height: 18px;">
+Optional: <a href="https://www.viator.com/MptUrl?p=AEty9VC%2FbJ5%2BQyOzYmah6GOvk0wBJKe%2B0m40Htb%2FwMRNsGZfjlSBDMEwyqApoNYZbbrJKB5E9vons2OInFF9OpEGTb3xT99zI6K2nl%2F34uKxuDrv%2FSgqxw9nLZtNaYX8FVAmfMZlfXaGlIRqgqvfuT%2FENaJvLGIbMv43%2BapDD%2B4xMvCkudF%2FeBFFvcwDjvqp7ImI36wKCiZbuoQj7%2FMv6Qw7STMeCSIqI7fJFUYvg82ntuSBXCdffEzA1vtD8FtssZip5FRrKlMnGEqxlMzkg3%2BNwB7GriCzUHvZSxqFQeXkCdq0X%2Bjahe%2BCxclhD5pU6b1A%2BvZFiCVAs6gbVSgGNGjgUWC85G4AWRgi7kcYWlGnKIV9ohS%2BBzIlbEZgfEc26FQRo2A87v0ZTf%2F%2FQO%2F2atksWY3BMisvfPjmbSweIMvKPGQYmqFRrldwQC7o2b5GCg5QXWT4JiKIY3vkVoMmMJnEfz06KykYElNP%2BAn9mcGhj5dmBh%2FPAjSpcxl4tEadIY3rG2wEENdY255VzjFRomeTtWZ%2BzqsRxeEvkXdHM5v2TcNUWIHpPdf8t8uFezylSA%3D%3D" target="_blank" style="text-decoration:none;color:#186b69;" alias="AckBookingLink">Acknowledge this booking for your records.</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+
+
+
+
+
+
+
+
+
+<table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#e5f1f5" style="border-collapse:separate;">
+<tr>
+<td style="padding:20px;" >
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse:separate;" >
+
+<tr>
+<td align="center" style="font-family: Helvetica, Arial, sans-serif;font-size: 18px; line-height: 24px;color:#262626;font-weight: bold;mso-line-height-rule:exactly; text-align:center;">
+<span style="font-weight: bold; color:#262626;">Have questions or need help?</span>
+</td>
+</tr>
+
+<tr>
+<td align="center" style="
+padding: 8px 0 0;
+
+ font-family: Helvetica, Arial, sans-serif;font-size: 18px; line-height: 24px;color:#262626;mso-line-height-rule:exactly; text-align:center;">
+You can go to our <a href="https://www.viator.com/MptUrl?p=AJNH%2BKMMwTzWaNJr2qk7waCSECcACShBVS9FkwwXComU5WUNkZ3Z3QtIJZfLsWhszEusp8tvfXaGzfFXOWi%2B4ozDIuAs99D3TwdkHq91SN2k%2FbhHcovQy1tkrCD8c8ZAi0SDFGZJnNqKC%2FQVeWACfGfqWiVcf%2F2adxs2ySUq1JdQPLSkvIhEpngiHCWsDfsHLQXK9JRDQvLbK9W8TECRmZa36FWT%2BjLhYxfDA%2BRZil7jKA4Y9%2FjKkz7V7z2%2F%2BT4oYh87RUpYqSNd5yA0xQ0WNwUSqcUo%2BedIoloK2toeCvEptQLGteHR%2FkKGuqEUVO1%2B%2FgX3N1zyycHDpnlURxTPpxoziLXbMJLgPNsonwD7khpKLskYqlrPQeOPeBJVJxPBwfown1PpcA5zKZGkz2fKrEIzgm5xRD7ODKJqnyrbfBOq" target="_blank" style="text-decoration:none;color:#186b69;" alias="HelpCenterLink">Help Center</a> for more information.
+</td>
+</tr>
+
+<tr>
+<td align="center" style="
+padding: 8px 0 0;
+
+font-family: Helvetica, Arial, sans-serif;font-size: 18px; line-height: 24px;color:#262626;mso-line-height-rule:exactly; text-align:center;">
+If you need help, log in to your account to <a href="https://www.viator.com/MptUrl?p=AD2gN5ZqE01kwJlKHEoWGcDi%2B7hmBdjy%2B%2Fq8s22om2TxVEAEbWEEOBkr2PkZGl2CaYWnBdQcxwjmDCqHDKubRQC0nfyx6NxR8OXnJ6FdMoK2cojq%2Fjr%2ByXvlwuiICD8t1iD5p%2F9s%2Bh%2FoiYcVYmbP4dud8vSe4jdThWG7KlqBtJ5ZlndrZHsI9IcrAUM%2BxXZvARLn%2FjsV7ZDgERoQtxpv7L8Y6ZYt1zYILnPH7PWjBDgA77vwvF1P5bBP5RuyvlEmlURTAGI03LeCih5EI3mCIEW51K8aLU6QwItTKUtTE4L1pADhm2y9DjFgHmHAiozmHfP1WBNCINlwIt%2Bb4XQIueI8TABJKVtMm9s7xs9lHLaCY9TkH%2B25gXt5j%2FK1AQJ%2B6uOhNmkP1mJwbSngxOWFDhMufHjktYZaVv6YPGkrIky23ykkB%2F7S4%2FL7Xwowg5iNc2j4HsHXJwG%2FCVLR84NlWExxmvbFTGkmJ1%2FzmeA5KYDhYP6HG4%2Fe1zzW2kieQovOkTS4zW3zqXgLzv%2FOHj4ZS5HnyAkTavBCXlHUjqy%2ByC25%2FKbgImb9DJmYWFko2TcFIg%3D%3D" target="_blank" style="text-decoration:none;color:#186b69;" alias="ContactUsLink">contact us</a>.
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="0" width="100%" style="border-collapse:separate; background-color: #f5f5f5;">
+<tr>
+<td valign="top" align="center" style="padding:32px 0;" >
+<table border="0" cellspacing="0" cellpadding="0" width="550" style="width: 550px;border-collapse:separate;">
+<tr>
+<td valign="middle" align="center" width="251" style="width: 251px;font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;">
+<a href="https://www.viator.com/MptUrl?p=AORBAgWSm%2FSYdHBtZOf6saN%2FvperUiQyX1utoup3ZnhSA%2BuYiNXANH6BTWt3gTBxwQwJa4F6IiSW%2BtuFraV0mFs1x2tlYeWMr%2FnNuC5RowGF1ZnQ4IJraRQ4VWIuYiJwGiF7dzgYN0YzKuRV603C47ghmDTsCaYOsD%2FUrMI4%2B1o8YRTTsOyblenSx9Wy1m%2FP%2B%2FepgGESg5n40SLCSS5GLewR24iecaGvifdkOwyFjsCugFicw6GSWBf4hySie7xBEu6oomfe7zwXXzeSjy3lZe9A2Mxv2OuZpQIfLBSdTtECyFTqH%2FO4Zp1Cg20J8WRCM8C6nDX8i1Y6YXHc6IGZ2gTNFG8Ql1HDZanbgUU71UpHpEWqODGEauZinvLFyuB2sd%2ByjcPzjpIJARRriGkvZmVOCFxSbuzxjMoSdleTCu%2BG" target="_blank" alias="HomeLink" style="color:#262626;text-decoration:none;">
+<img src="https://cdn.tripadvisor.com/img2/email/v_logo.png" height="30" border="0" style="border: 0; display:block;height:30px;" alt=""/>
+</a>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding-top: 24px;padding-bottom:24px;">
+<table align="center" border="0" cellspacing="0" cellpadding="0" style="border-collapse:separate; ">
+<tr>
+<td align="center" style=" font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#186b69; text-decoration:none;mso-line-height-rule:exactly;">
+<a href="https://www.viator.com/MptUrl?p=APcr5IVX30lbszTnT10RJ0TZHkTNAFpB8rjJH2WkBTfO4NXL6tDelegC0%2BrwrpgTWP1izQqwADz5PBn7bXAC%2FBz5NxQDq49neHkgS19RAz1u7%2BQjL67EZ7RMizgHOKfJDP0NjVhDDpRplc9Ld%2FmvX1biuCdOwc3M2nYn6pyE7fIBSIj%2BUgnJNyt6s%2FDFKM6LLYZViUxb3EoS6JrcWrwOiN%2FlQ8z6j%2Frm9fm%2FQq2IrYUZLWnsrhkHflsThJtoUkvuFQOaWnFacmRPMeeK9P3Uld0agae9PZV2eG8AlE5i%2F4bRaGJ%2FcB0p9IjSCBYRd%2BTWZT01%2F0XEKQNIJx4LlYa1PpSlwsR2LBXwVdsafzFVc91bPsG7Jtp37k0xbew2Jv%2FJnAJ2BW9oqIl2Agpv7ysk9nDpprl0FFmZaH69B1mtoHy%2B" target="_blank" alias="HomeLink" style="color:#186b69; text-decoration:none;">
+Management Center
+</a>
+</td>
+<td width="8" style="width:8px; "/>
+<td align="center" style="font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;mso-line-height-rule:exactly; color:#186b69; text-decoration:none;">
+|
+</td>
+<td width="8" style="width:8px;"/>
+<td align="center" style=" font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#186b69; text-decoration:none;mso-line-height-rule:exactly;">
+<a href="https://www.viator.com/MptUrl?p=ANa9za5k7B0tMZeXpN%2BoqXyHX6fQb0TUTTZt60RujJJmBHzbhg%2B8veoYrSny28Wsly1N6YXzzL30UWXxV%2BugHBYoQ6hzkDV5KVmeaAcMAduODyh%2Ber7J%2FVHwbEn641vnlQSbXnmGWzcQ4yGbGJJ9eZmjMfN8sgd1nsTVszK4PC0iSO4LMTpOpCHomv7CCX6YJckXwEw8biF5EWb0s4cx5V9g6fe61BHb6lPW8ezT4HTx2vfF0hNGLy0786hxd5CUh%2FDeTqwbDKgFyzR%2Bigl%2BeBVgfvvJfGnt7BdM4xr%2FefsPg6hkVbRQK4OAlHjrun1gwBeu6V2qgScnsAybi2M%2FedBgrNOUIBl2aFs8Q%2Fq6Wl3Murtl2S3HFt7xWP74pVdH3gk1vW%2BJdcDdwzl87n3PkXBlhdez4YS%2FeoodM7wmKNAEGenb7tutqYdrLodjy%2FDerw%3D%3D" target="_blank" alias="PrivacyLink" style="color:#186b69; text-decoration:none;">
+Privacy Policy
+</a>
+</td>
+<td width="8" style="width:8px;"/>
+<td align="center" style="font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;mso-line-height-rule:exactly; color:#186b69; text-decoration:none;">
+|
+</td>
+<td width="8" style="width:8px;"/>
+<td align="center" style=" font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#186b69; text-decoration:none;mso-line-height-rule:exactly;" >
+<a href="https://www.viator.com/MptUrl?p=ANnxya2vlSv02EI2gPGWk%2BZXZWRcP7IMT9fof%2Bz3mlNZfeuaxO2Bd7sDtjofI2cs%2BHDlcf6uP%2B64lqzu9Ml%2FjMw0iYbL68ahKGqtHTrFTRqZdDXTt8j6a14ddkj9YGZ3Xw8adR4Nzq7VPQutffaC2VJZT6IwScfFCW2djtFQzjQgjiHceKvPIY4Xm5vQImrPudoHMsN5FXQmL1Ea6ooEffTlmPNk%2BuEtBnHqBHHtxtQlh5qK%2BO2FacWZSRILcuF2bYNxAd0cafwVQUGo2rr%2FU4bzNztULmqK6vEkXHihJ3nHHf5cdqGXqX5eyyaT%2FnxNJ4SZ361uotFfMeQS88b1TCrYA7D3y%2FOZFBIS4ezhEZaidzj71BtsdSuTtu%2F5rvg0S2V3J0RQEkSJdixhtA4Pxc%2F%2BAz33DkDkyPVseTErzoW9" target="_blank" alias="SupplierHelpCenterLink" style="color:#186b69; text-decoration:none;">
+Help Center
+</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td style="padding:0 0 16px;font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;mso-line-height-rule:exactly; text-align:center;">
+&copy; 2026 Viator, Inc. All rights reserved.
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 0 16px; font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;mso-line-height-rule:exactly; text-align:center;">
+Please do not reply directly to this email. This email was sent from a notification-only address that cannot accept incoming email. If you have questions or need assistance, <a href="https://www.viator.com/MptUrl?p=ALzVfC5xmpd3yqPng0XZkzr9jfTRPJm5nz92rf6LeqkgKVlSzTWMqcm08RXplp9e8U7WH%2FJye1ImLEe0uUFB2LL6KszCO%2BkRUVUceRkA0giS7Buc%2Fgak1J2rd80qlIDcPBiJXlQvZgYEnjuvZjj4VnGJw08QAlOgMAMGwpV3Rj5tCXyGhejgAE8LdhsH2FKOPKvxFzywFjtqGZe4jYPXNYirI%2B12iofJPZFy9R9z14FJliFJzdXDnESa0XYw7hjY35AJcirnidUM643ObbyY4Iat5tb%2FY3wZ%2FgXf4JrJ0ZfP471ENmxzCgcZyJUyXylS6%2BCXv01%2Fi6m14ry9OaBwTBp%2FBtzANAkpgH%2BkaG3r%2BG7Yb3xxnp4T9d%2BM%2BSmkuESPQ7mPmn6oaakyaLyJS808lyO5fPhtp%2BcasshhDCq3x7FM" target="_blank" style="text-decoration:none;color:#186b69;" alias="FAQLink">visit our Help Center</a>.
+</td>
+</tr>
+<tr>
+<td style="padding:0 0 16px;font-family: Helvetica, Arial, sans-serif;font-size: 14px; line-height: 15px;color:#666666;mso-line-height-rule:exactly; text-align:center;">
+Viator, Inc., 400 First Ave, Needham, MA 02494
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
+<custom name="opencounter" type="tracking">
+<img src="https://www.tripadvisor.com/MptUrl?p=ACjWy1Qayf7PigEUZSBbsCdkWdeO2w7NuzqQdvo0zr1UTDQroarAnqxKQMFhBfKxoVnNKY5Xt0BsnYll3GUpmOHOHAArJe5Y%2BJjAFA2Wc%2Bmy0qOQRVzsBiSXa5DMWGcs%2Bq25bCfcZRemY%2Fozxx%2B9%2BBu2KQbMewI4rx5hmDsJ9SoQwmlIquk%2Fn2k4m46gPWFsikzwd%2F6%2B7nLPQZFtme0IM00im8WsBk2bR27Wdv76ekeo%2Bk0gh0ag8hETSYV0vPKttgVHT1Vp8me6nodFyE6n2zI%3D" style="display:none;" />

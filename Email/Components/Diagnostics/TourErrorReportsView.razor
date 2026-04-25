@@ -1,0 +1,113 @@
+@using Email.Models
+@using Microsoft.AspNetCore.Components
+@inject IJSRuntime JS
+
+@* 2025-12-01 00:00 UTC - Component to display a TourDataErrorReport with developer-friendly JSON tables *@
+@if (SelectedReport == null)
+{
+	<div class="alert alert-info mb-0 small">
+		Select a tour error from the list to view details.
+	</div>
+}
+else
+{
+	<div class="card mb-2">
+		<div class="card-header py-2 d-flex align-items-center justify-content-between">
+			<small class="fw-bold">tour data error</small>
+			<small class="text-muted">created @SelectedReport.CreatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</small>
+		</div>
+		<div class="card-body p-2 small">
+			<div class="row row-cols-1 row-cols-md-3 g-2">
+				<div><small class="text-muted">message id</small><div><code class="text-break">@SelectedReport.MessageId</code></div></div>
+				<div><small class="text-muted">vendor</small><div>@(SelectedReport.VendorName ?? "—")</div></div>
+				<div><small class="text-muted">booking</small><div>@(SelectedReport.BookingCode ?? "—")</div></div>
+			</div>
+			<div class="row row-cols-1 row-cols-md-3 g-2 mt-1">
+				<div><small class="text-muted">customer identifier</small><div>@(SelectedReport.CustomerIdentifier ?? "—")</div></div>
+				<div class="col-md-8"><small class="text-muted">error notes</small><div class="text-prewrap">@((SelectedReport.ErrorNotes ?? "—"))</div></div>
+			</div>
+		</div>
+	</div>
+
+	<div class="row g-2">
+		<div class="col-md-6">
+			<div class="card mb-2">
+				<div class="card-header py-2"><small class="fw-bold">original (readonly)</small></div>
+				<div class="card-body p-2">
+					@RenderJsonTable(SelectedReport.OriginalSnapshotJson)
+				</div>
+			</div>
+		</div>
+		<div class="col-md-6">
+			<div class="card mb-2">
+				<div class="card-header py-2"><small class="fw-bold">corrected</small></div>
+				<div class="card-body p-2">
+					@RenderJsonTable(SelectedReport.CorrectedSnapshotJson ?? "{}")
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	[Parameter] public TourDataErrorReport? SelectedReport { get; set; }
+
+	private RenderFragment RenderJsonTable(string json) => builder =>
+	{
+		try
+		{
+			using var doc = System.Text.Json.JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+			var root = doc.RootElement;
+			if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+			{
+				builder.AddMarkupContent(0, "<div class=\"text-muted small\">Invalid JSON</div>");
+				return;
+			}
+
+			// Build a simple 2-col table of top-level properties
+			builder.AddMarkupContent(1, "<table class=\"table table-sm table-striped mb-0 small\"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>");
+			int seq = 2;
+			foreach (var prop in root.EnumerateObject())
+			{
+				var key = prop.Name;
+				var val = FormatJsonValue(prop.Value);
+				builder.OpenElement(seq++, "tr");
+				builder.OpenElement(seq++, "td");
+				builder.AddContent(seq++, key);
+				builder.CloseElement();
+				builder.OpenElement(seq++, "td");
+				builder.AddContent(seq++, val);
+				builder.CloseElement();
+				builder.CloseElement();
+			}
+			builder.AddMarkupContent(seq++, "</tbody></table>");
+		}
+		catch
+		{
+			builder.AddMarkupContent(1000, "<div class=\"text-muted small\">Failed to parse JSON</div>");
+		}
+	};
+
+	private static string FormatJsonValue(System.Text.Json.JsonElement el)
+	{
+		switch (el.ValueKind)
+		{
+			case System.Text.Json.JsonValueKind.String:
+				return el.GetString() ?? "—";
+			case System.Text.Json.JsonValueKind.Number:
+				return el.ToString();
+			case System.Text.Json.JsonValueKind.True:
+			case System.Text.Json.JsonValueKind.False:
+				return el.GetBoolean().ToString();
+			case System.Text.Json.JsonValueKind.Array:
+			case System.Text.Json.JsonValueKind.Object:
+				// Compact representation for nested content
+				return System.Text.Json.JsonSerializer.Serialize(el);
+			case System.Text.Json.JsonValueKind.Null:
+			default:
+				return "—";
+		}
+	}
+}
+
+

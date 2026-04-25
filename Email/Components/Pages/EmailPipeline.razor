@@ -1,0 +1,2585 @@
+@page "/email-pipeline"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Services.GmailProcessing.Dtos
+@using Email.Services.GmailProcessing.Models
+@using Email.Services.GmailCollection.Models
+@using Microsoft.AspNetCore.Components
+@inject Email.Services.GmailProcessing.GmailProcessingV2Service ProcessingService
+@inject Email.Services.ITourEmailsService TourEmailsService
+@inject Email.Services.TourDataErrorReportsSqlService ErrorReportsService
+@inject ILogger<EmailPipeline> Logger
+@inject IJSRuntime JS
+
+<PageTitle>Email Pipeline</PageTitle>
+
+<div class="container-fluid py-3">
+	<h5 class="mb-3">Email Processing Pipeline (Visualization)</h5>
+	@* commented out the first tab item for processed threads, we are building up the other list (processed emails)*@
+	<div class="row">
+		<div class="col-3">
+			<ul class="nav nav-tabs nav-fill small mb-2">
+				@* <li class="nav-item">
+					<button class="nav-link @(listScope == "processed" ? "active" : "")" @onclick="SetScopeProcessed">Processed Threads</button>
+				</li> *@
+				<li class="nav-item">
+					<button class="nav-link @(listScope == "processed_emails" ? "active" : "")" @onclick="SetScopeProcessedEmails">Processed Emails</button>
+				</li>
+			</ul>
+			<div class="d-flex align-items-center gap-2 mb-2">
+				<button class="btn btn-primary btn-sm" @onclick="RefreshListAsync" disabled="@isBusy">Reload</button>
+			</div>
+
+			@if (detailTab == "errors")
+			{
+				<div class="list-group" style="max-height: 70vh; overflow-y: auto;">
+					@if (errorReports.Count == 0)
+					{
+						<div class="list-group-item p-2 text-muted">No errors.</div>
+					}
+					else
+					{
+						@foreach (var er in errorReports)
+						{
+							<button type="button" class="list-group-item list-group-item-action p-2"
+							        title="Open error report"
+							        @onclick="(() => SelectError(er))">
+								<div class="d-flex justify-content-between align-items-center">
+									<div class="d-flex align-items-center gap-2">
+										<span class="badge bg-danger">ERR</span>
+										<small class="text-truncate">@((er.VendorName ?? "—") + " " + (er.BookingCode ?? "—"))</small>
+									</div>
+									<small class="text-muted ms-2">@er.CreatedAt.ToString("MM/dd HH:mm")</small>
+								</div>
+								<div class="d-flex justify-content-between">
+									<small class="text-muted">@ShortMessageId(er.MessageId)</small>
+								</div>
+							</button>
+						}
+					}
+				</div>
+			}
+			else
+			{
+				@if (listScope == "processed")
+				{
+					<div class="list-group" style="max-height: 70vh; overflow-y: auto;">
+						@foreach (var g in leftGroups)
+						{
+							<button type="button" class="list-group-item list-group-item-action p-2"
+							        title="Open booking thread"
+							        @onclick="(() => SelectByBookingCodeAsync(g.BookingCode))">
+								<div class="d-flex justify-content-between">
+									<strong class="text-truncate">@g.BookingCode</strong>
+									<small class="text-muted ms-2">@g.LatestAt.ToString("MM/dd HH:mm")</small>
+								</div>
+								<small class="text-muted">@g.Count processed emails</small>
+							</button>
+						}
+					</div>
+				}
+				@if (listScope == "processed_emails")
+				{
+					<div class="mb-2 small">
+						<div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+							<button type="button" class='@GetTypeChipClass("Booking")' @onclick='() => ToggleType("Booking")'>Booking</button>
+							<button type="button" class='@GetTypeChipClass("Modification")' @onclick='() => ToggleType("Modification")'>Modification</button>
+							<button type="button" class='@GetTypeChipClass("Cancellation")' @onclick='() => ToggleType("Cancellation")'>Cancellation</button>
+						</div>
+						<div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+							<button type="button" class="@GetDatePresetBtnClass(DatePreset.Today)" @onclick="(() => SetDatePreset(DatePreset.Today))">Today</button>
+							<button type="button" class="@GetDatePresetBtnClass(DatePreset.Last7)" @onclick="(() => SetDatePreset(DatePreset.Last7))">7 days</button>
+							<button type="button" class="@GetDatePresetBtnClass(DatePreset.Last30)" @onclick="(() => SetDatePreset(DatePreset.Last30))">30 days</button>
+							<button type="button" class="@GetDatePresetBtnClass(DatePreset.Custom)" @onclick="(() => SetDatePreset(DatePreset.Custom))">Custom</button>
+							@if (datePreset == DatePreset.Custom)
+							{
+								<div class="d-flex align-items-center gap-1">
+									<input type="date" class="form-control form-control-sm" value="@fromDateStr" @onchange="OnFromDateChanged" />
+									<span class="text-muted">to</span>
+									<input type="date" class="form-control form-control-sm" value="@toDateStr" @onchange="OnToDateChanged" />
+								</div>
+							}
+						</div>
+						<div class="d-flex align-items-center gap-1">
+							<div class="btn-group btn-group-sm" role="group">
+								<button type="button" class="@GetSearchModeBtnClass(SearchMode.Customer)" @onclick="(() => SetSearchMode(SearchMode.Customer))">Customer</button>
+								<button type="button" class="@GetSearchModeBtnClass(SearchMode.BookingCode)" @onclick="(() => SetSearchMode(SearchMode.BookingCode))">Booking Code</button>
+								<button type="button" class="@GetSearchModeBtnClass(SearchMode.MessageId)" @onclick="(() => SetSearchMode(SearchMode.MessageId))">MessageId</button>
+							</div>
+							<input type="text" class="form-control form-control-sm" placeholder="Search..." value="@searchText" @oninput="OnSearchInput" />
+						</div>
+
+						@if (HasActiveFilters())
+						{
+							<div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+								@foreach (var t in new[] { "Booking", "Modification", "Cancellation" })
+								{
+									if (selectedTypes.Contains(t))
+									{
+										<span class="badge bg-light text-dark border">Type: @t</span>
+									}
+								}
+								@if (datePreset != DatePreset.None)
+								{
+									<span class="badge bg-light text-dark border">
+										@((datePreset == DatePreset.Last7) ? "Last 7 days" : (datePreset == DatePreset.Last30) ? "Last 30 days" : (datePreset == DatePreset.Today) ? "Today" : "Custom date")
+									</span>
+								}
+								@if (datePreset == DatePreset.Custom && (!string.IsNullOrWhiteSpace(fromDateStr) || !string.IsNullOrWhiteSpace(toDateStr)))
+								{
+									<span class="badge bg-light text-dark border">Range: @(string.IsNullOrWhiteSpace(fromDateStr) ? "—" : fromDateStr) → @(string.IsNullOrWhiteSpace(toDateStr) ? "—" : toDateStr)</span>
+								}
+								@if (!string.IsNullOrWhiteSpace(searchText))
+								{
+									<span class="badge bg-light text-dark border">
+										@((searchMode == SearchMode.Customer) ? "Customer" : (searchMode == SearchMode.BookingCode) ? "Booking" : "Message"): @searchText
+									</span>
+								}
+								<button type="button" class="btn btn-link btn-sm p-0 ms-1" title="Clear all filters" @onclick="ClearAllFilters">clear all</button>
+							</div>
+						}
+					</div>
+
+					<div class="list-group" style="max-height: 70vh; overflow-y: auto;">
+						@if (leftFiltered.Count == 0)
+						{
+							<div class="list-group-item p-2 text-muted">No results.</div>
+						}
+						else
+						{
+							@foreach (var p in leftFiltered)
+							{
+								<button type="button" class="list-group-item list-group-item-action p-2"
+								        title="Open processed email"
+								        @onclick="(() => SelectByMessageIdAsync(p.MessageId))">
+									<div class="d-flex justify-content-between align-items-center">
+										<div class="d-flex align-items-center gap-2">
+											<span class="@GetTypePillClass(p.EmailType)">@NormalizeTypeForDisplay(p.EmailType)</span>
+											<span class="badge bg-light text-dark border">@GetVendorInitials(p.VendorName)</span>
+											<small class="text-truncate">@p.CustomerName</small>
+										</div>
+										<small class="text-muted ms-2">@((p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MinValue).ToString("MM/dd HH:mm"))</small>
+									</div>
+									<div class="d-flex justify-content-between">
+										<small class="text-muted">@ShortMessageId(p.MessageId)</small>
+										@if (!string.Equals(p.ProcessingStatus ?? string.Empty, "completed", StringComparison.OrdinalIgnoreCase))
+										{
+											<span class="@GetStatusPillClass(p.ProcessingStatus)">@p.ProcessingStatus</span>
+										}
+									</div>
+								</button>
+							}
+						}
+					</div>
+				}
+			}
+		</div>
+
+		<div class="col-9">
+			<div class="mb-2 d-flex gap-2 align-items-center">
+				<button class="btn btn-success btn-sm" @onclick="ProcessSelectedAsync" disabled="@(!CanProcess)">Process This</button>
+				<button class="btn btn-secondary btn-sm" @onclick="ReloadSelectedAsync" disabled="@string.IsNullOrWhiteSpace(selectedMessageId)">Load Processed</button>
+				@if (!string.IsNullOrWhiteSpace(selectedMessageId))
+				{
+					<small class="text-muted">Selected: <code>@selectedMessageId</code></small>
+				}
+				@if (!string.IsNullOrWhiteSpace(selectedBookingCode))
+				{
+					<small class="text-muted">Booking: <code>@selectedBookingCode</code></small>
+				}
+			</div>
+
+			@if (!string.IsNullOrWhiteSpace(selectedBookingCode))
+			{
+				<div class="card mb-2">
+					<div class="card-body py-2">
+						<div class="d-flex flex-wrap gap-3 align-items-center">
+							<div><small class="text-muted">Booking Code:</small> @selectedBookingCode</div>
+							@if (finalBooking != null)
+							{
+								<div><small class="text-muted">Customer Id:</small> @finalBooking.CustomerId</div>
+							}
+						</div>
+					</div>
+				</div>
+
+				@if (hydratedDiagnostic != null)
+				{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">diagnostic (inbox / processed / booking / customer)</small></div>
+						<div class="card-body p-2 small">
+							<div class="row row-cols-1 row-cols-md-2 g-2">
+								<div>
+									<div class="fw-bold text-uppercase mb-1">inbox</div>
+									<div><small class="text-muted">subject</small><div>@(Fmt(hydratedDiagnostic.InboxDiagnostic?.Subject))</div></div>
+									<div><small class="text-muted">from</small><div>@(Fmt(hydratedDiagnostic.InboxDiagnostic?.FromEmail))</div></div>
+									<div><small class="text-muted">to</small><div>@(Fmt(hydratedDiagnostic.InboxDiagnostic?.ToEmail))</div></div>
+									<div><small class="text-muted">received</small><div><strong>@(hydratedDiagnostic.InboxDiagnostic?.ReceivedDate.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									<div><small class="text-muted">attachments</small><div>@(hydratedDiagnostic.InboxDiagnostic?.AttachmentCount ?? 0) @(Fmt(hydratedDiagnostic.InboxDiagnostic?.AttachmentNames))</div></div>
+									<div><small class="text-muted">status</small><div>@(hydratedDiagnostic.InboxDiagnostic?.ProcessingStatus.ToString() ?? "—")</div></div>
+								</div>
+								<div>
+									<div class="fw-bold text-uppercase mb-1">processed</div>
+									<div class="row row-cols-1 row-cols-md-2 g-2">
+										<div><small class="text-muted">type</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.EmailType))</div></div>
+										<div><small class="text-muted">vendor</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.VendorName))</div></div>
+										<div><small class="text-muted">tour</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.TourName))</div></div>
+										<div><small class="text-muted">date</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.TourDate))</div></div>
+										<div><small class="text-muted">time</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.TourTime))</div></div>
+										<div><small class="text-muted">location</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.TourLocation))</div></div>
+										<div><small class="text-muted">customer</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.CustomerName))</div></div>
+										<div><small class="text-muted">email</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.CustomerEmail))</div></div>
+										<div><small class="text-muted">phone</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.CustomerPhone))</div></div>
+										<div><small class="text-muted">language</small><div>@(Fmt(hydratedDiagnostic.ProcessedDiagnostic?.Language))</div></div>
+										<div><small class="text-muted">started</small><div>@(hydratedDiagnostic.ProcessedDiagnostic?.ProcessingStartedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</div></div>
+										<div><small class="text-muted">completed</small><div><strong>@(hydratedDiagnostic.ProcessedDiagnostic?.ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									</div>
+									@if (!string.IsNullOrWhiteSpace(GetDiagnosticPlainText(hydratedDiagnostic)))
+									{
+										<div class="card mt-2">
+											<div class="card-body p-2">
+												<pre @key="hydratedDiagnostic?.ProcessedDiagnostic?.MessageId"
+													 class="mb-0"
+													 style="white-space: pre-wrap; font-size: .825rem;"
+													 @ref="diagnosticPlainRef">@GetDiagnosticPlainText(hydratedDiagnostic)</pre>
+											</div>
+										</div>
+									}
+								</div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-2 g-2 mt-2">
+								<div>
+									<div class="fw-bold text-uppercase mb-1">booking</div>
+									@if (hydratedDiagnostic.BookingDiagnostic == null)
+									{
+										<div><small class="text-muted">—</small></div>
+									}
+									else
+									{
+										<div class="row row-cols-1 row-cols-md-2 g-2">
+											<div><small class="text-muted">code</small><div>@(Fmt(hydratedDiagnostic.BookingDiagnostic.BookingCode))</div></div>
+											<div><small class="text-muted">status</small><div>@(Fmt(hydratedDiagnostic.BookingDiagnostic.BookingStatus))</div></div>
+											<div><small class="text-muted">is active</small><div>@hydratedDiagnostic.BookingDiagnostic.IsActive</div></div>
+											<div><small class="text-muted">flags</small><div>@(hydratedDiagnostic.BookingDiagnostic.IsConfirmation ? "confirmation " : "")@(hydratedDiagnostic.BookingDiagnostic.IsModification ? "modification " : "")@(hydratedDiagnostic.BookingDiagnostic.IsCancellation ? "cancellation" : "")</div></div>
+											<div><small class="text-muted">updated</small><div><strong>@hydratedDiagnostic.BookingDiagnostic.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</strong></div></div>
+										</div>
+									}
+								</div>
+								<div>
+									<div class="fw-bold text-uppercase mb-1">customer</div>
+									@if (hydratedDiagnostic.CustomerDiagnostic == null)
+									{
+										<div><small class="text-muted">—</small></div>
+									}
+									else
+									{
+										<div class="row row-cols-1 row-cols-md-2 g-2">
+											<div><small class="text-muted">name</small><div>@(Fmt(hydratedDiagnostic.CustomerDiagnostic.FullName))</div></div>
+											<div><small class="text-muted">email</small><div>@(Fmt(hydratedDiagnostic.CustomerDiagnostic.Email))</div></div>
+											<div><small class="text-muted">phone</small><div>@(Fmt(hydratedDiagnostic.CustomerDiagnostic.PhoneNumber))</div></div>
+											<div><small class="text-muted">identifier</small><div>@(Fmt(hydratedDiagnostic.CustomerDiagnostic.CustomerIdentifier))</div></div>
+											<div><small class="text-muted">total bookings</small><div>@hydratedDiagnostic.CustomerDiagnostic.TotalBookings</div></div>
+											<div><small class="text-muted">updated</small><div>@hydratedDiagnostic.CustomerDiagnostic.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+										</div>
+									}
+								</div>
+							</div>
+						</div>
+					</div>
+				}
+
+				@if (initialProcessed != null)
+				{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">booking/confirmation info</small></div>
+						<div class="card-body p-2">
+							<div class="row row-cols-2 row-cols-md-4 g-2 small">
+								<div><small class="text-muted">date</small><div>@initialProcessedFull?.TourDate?.ToString("yyyy-MM-dd")</div></div>
+								<div><small class="text-muted">tour</small><div>@initialProcessedFull?.TourName</div></div>
+								<div><small class="text-muted">customer</small><div>@initialProcessedFull?.CustomerName</div></div>
+								<div><small class="text-muted">time</small><div>@initialProcessedFull?.TourTime</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-2 g-2 small mt-1">
+								<div><small class="text-muted">customer email</small><div>@(Fmt(initialProcessedFull?.CustomerEmail))</div></div>
+								<div><small class="text-muted">customer phone</small><div>@(Fmt(initialProcessedFull?.CustomerPhone))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">language</small><div>@(Fmt(initialProcessedFull?.Language))</div></div>
+								<div><small class="text-muted">tour location</small><div>@(Fmt(initialProcessedFull?.TourLocation))</div></div>
+								<div><small class="text-muted">vendor</small><div>@(Fmt(initialProcessedFull?.VendorName))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">booking</small><div>@(selectedBookingCode ?? initialProcessed?.BookingCode ?? "—")</div></div>
+								<div><small class="text-muted">received</small><div><strong>@(initialInboxEmail?.ReceivedDate.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+								<div><small class="text-muted">processed</small><div><strong>@(initialProcessed?.ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+							</div>
+							@if (!string.IsNullOrWhiteSpace(initialPlainText))
+							{
+								<div class="card mt-2">
+									<div class="card-body p-2">
+										<pre class="mb-0" style="white-space: pre-wrap; font-size: .825rem;">@initialPlainText</pre>
+									</div>
+								</div>
+							}
+						</div>
+					</div>
+				}
+
+				@* 2025-12-01 00:00 UTC - Admin tab also available in booking-code view *@
+				<ul class="nav nav-tabs nav-fill small mb-2">
+					<li class="nav-item"><button class='@GetDetailTabBtnClass("processed")' @onclick='(() => SetDetailTab("processed"))'>Processed Email</button></li>
+					<li class="nav-item"><button class='@GetDetailTabBtnClass("admin")' @onclick='(() => SetDetailTab("admin"))'>Admin</button></li>
+					<li class="nav-item"><button class='@GetDetailTabBtnClass("errors")' @onclick='(() => SetDetailTab("errors"))'>Tour Errors</button></li>
+					<li class="nav-item"><button class="nav-link" disabled>Booking</button></li>
+					<li class="nav-item"><button class="nav-link" disabled>Customer</button></li>
+				</ul>
+
+				@if (detailTab == "errors")
+				{
+					<Email.Components.Diagnostics.TourErrorReportsView SelectedReport="selectedErrorReport" />
+				}
+
+				@if (detailTab == "admin")
+				{
+					<div class="card mb-2">
+						<div class="card-header py-2 d-flex align-items-center justify-content-between">
+							<small class="fw-bold">admin</small>
+							<div class="d-flex align-items-center gap-2">
+								<button type="button"
+										class="btn btn-link btn-sm p-0"
+										title="Admin functions help"
+										@onclick="(() => showAdminHelp = true)">?</button>
+							</div>
+						</div>
+						<div class="card-body p-2">
+							<table class="table table-sm table-striped mb-2 small">
+								<thead><tr><th>Action</th><th>Description</th><th class="text-end">Run</th></tr></thead>
+								<tbody>
+									<tr>
+										<td>Repair Booking Codes (All)</td>
+										<td>Fixes AutomaticGmail_ProcessedEmails.BookingCode for Modification/Cancellation rows.</td>
+										<td class="text-end">
+											<button class="btn btn-outline-danger btn-sm"
+													disabled="@isBusy"
+													@onclick="RepairCodesAsync">Run</button>
+										</td>
+									</tr>
+									<tr>
+										<td>Reprocess Mods Missing Tour Fields (All)</td>
+										<td>Finds modification emails with blank tour name/date/time/location/language and reprocesses them.</td>
+										<td class="text-end">
+											<button class="btn btn-outline-primary btn-sm"
+													disabled="@isBusy"
+													@onclick="ReprocessMissingTourFieldsAsync">Run</button>
+										</td>
+									</tr>
+									<tr>
+										<td>Rebuild Origin Pointers (All)</td>
+										<td>Overrides OriginalBooking* fields across inbox to canonical root bookings.</td>
+										<td class="text-end">
+											<button class="btn btn-outline-warning btn-sm"
+													disabled="@isBusy"
+													@onclick="RebuildOriginsAsync">Run</button>
+										</td>
+									</tr>
+									<tr>
+										<td>Backfill Origins (All)</td>
+										<td>Populate missing OriginalBooking* via COALESCE (no overwrite).</td>
+										<td class="text-end">
+											<button class="btn btn-outline-secondary btn-sm"
+													disabled="@isBusy"
+													@onclick="BackfillOriginsAsync">Run</button>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+							@if (!string.IsNullOrWhiteSpace(repairStatus) || !string.IsNullOrWhiteSpace(rebuildStatus) || !string.IsNullOrWhiteSpace(backfillStatus) || !string.IsNullOrWhiteSpace(reprocessMissingStatus))
+							{
+								<div class="small text-muted">
+									@if (!string.IsNullOrWhiteSpace(repairStatus)) { <div>@repairStatus</div> }
+									@if (!string.IsNullOrWhiteSpace(reprocessMissingStatus)) { <div>@reprocessMissingStatus</div> }
+									@if (!string.IsNullOrWhiteSpace(rebuildStatus)) { <div>@rebuildStatus</div> }
+									@if (!string.IsNullOrWhiteSpace(backfillStatus)) { <div>@backfillStatus</div> }
+								</div>
+							}
+						</div>
+					</div>
+				}
+
+				@if (modificationProcessed.Count > 0)
+				{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">modification</small></div>
+						<div class="card-body p-2">
+							<div class="row row-cols-1 row-cols-md-3 g-2 small">
+								<div><small class="text-muted">received</small><div><strong>@(latestModInboxEmail?.ReceivedDate.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+								<div><small class="text-muted">processed</small><div><strong>@(modificationProcessed[^1].ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+								<div><small class="text-muted">type</small><div>modification</div></div>
+							</div>
+							@if (!string.IsNullOrWhiteSpace(modificationPlainText))
+							{
+								<div class="card mb-2">
+									<div class="card-body p-2">
+										<pre class="mb-0" style="white-space: pre-wrap; font-size: .825rem;">@modificationPlainText</pre>
+									</div>
+								</div>
+							}
+							<div class="row g-2 small">
+								<div class="col-md-4">
+									<small class="text-muted">modification booking id</small>
+									<div>@(modificationProcessed[^1].BookingCode)</div>
+								</div>
+								<div class="col-md-4">
+									<small class="text-muted">previous id (if any)</small>
+									<div>@(initialProcessed?.BookingCode)</div>
+								</div>
+								<div class="col-md-4">
+									<small class="text-muted">new id (if any)</small>
+									<div>@(modificationProcessed[^1].BookingCode)</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				}
+
+				<div class="card mb-2">
+					<div class="card-header py-2 d-flex align-items-center justify-content-between">
+						<small class="fw-bold">final booking</small>
+						<div class="d-flex align-items-center gap-2">
+							@if (cancellationWarningActiveBookingPresent)
+							{
+								<span class="badge bg-warning text-dark" title="@cancellationWarningDetail">cancelled booking still active</span>
+							}
+							@if (modificationWarningOldBookingActive)
+							{
+								<span class="badge bg-warning text-dark" title="@modificationWarningDetail">old booking code still active</span>
+							}
+						</div>
+					</div>
+					<div class="card-body p-2">
+						@if (finalBooking == null)
+						{
+							<small class="text-muted">No booking found.</small>
+						}
+						else
+						{
+							<div class="row row-cols-2 row-cols-md-4 g-2 small">
+								<div><small class="text-muted">date</small><div>@finalBooking.TourDate?.ToString("yyyy-MM-dd")</div></div>
+								<div><small class="text-muted">tour name</small><div>@finalBooking.TourName</div></div>
+								<div><small class="text-muted">time</small><div>@finalBooking.TourTime</div></div>
+								<div><small class="text-muted">attendees</small><div>@finalBooking.NumberOfAttendees</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">customer</small><div>@(Fmt(finalBooking.CustomerName))</div></div>
+								<div><small class="text-muted">email</small><div>@(Fmt(finalBooking.CustomerEmail))</div></div>
+								<div><small class="text-muted">phone</small><div>@(Fmt(finalBooking.CustomerPhone))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">language</small><div>@(Fmt(finalBooking.Language))</div></div>
+								<div><small class="text-muted">location</small><div>@(Fmt(finalBooking.TourLocation))</div></div>
+								<div><small class="text-muted">status</small><div>@(Fmt(finalBooking.BookingStatus))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">vendor</small><div>@(Fmt(finalBooking.VendorName))</div></div>
+								<div><small class="text-muted">email type</small><div>@(Fmt(finalBooking.EmailType))</div></div>
+								<div><small class="text-muted">active</small><div>@finalBooking.IsActive</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">booking code</small><div>@(Fmt(finalBooking.BookingCode))</div></div>
+								<div><small class="text-muted">message id</small><div>@(Fmt(finalBooking.MessageId))</div></div>
+								<div><small class="text-muted">country</small><div>@(Fmt(finalBooking.CountryOfOrigin))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">adults</small><div>@(finalBooking.NumberOfAdults?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">children</small><div>@(finalBooking.NumberOfChildren?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">infants</small><div>@finalBooking.NumberOfInfants</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">customer identifier</small><div>@(Fmt(finalBooking.CustomerIdentifier))</div></div>
+								<div><small class="text-muted">created</small><div>@finalBooking.CreatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+								<div><small class="text-muted">updated</small><div><strong>@finalBooking.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</strong></div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">display date</small><div>@(Fmt(finalBooking.DisplayDate))</div></div>
+								<div><small class="text-muted">display time</small><div>@(Fmt(finalBooking.DisplayTime))</div></div>
+								<div><small class="text-muted">day / tz</small><div>@(Fmt(finalBooking.TourDayOfWeek)) / @(Fmt(finalBooking.TourTimeZone))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">amount</small><div>@(finalBooking.BookingAmount?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">currency</small><div>@(Fmt(finalBooking.Currency))</div></div>
+								<div><small class="text-muted">guide</small><div>@(Fmt(finalBooking.GuideAssigned))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">calendar id</small><div>@(Fmt(finalBooking.CalendarEventId))</div></div>
+								<div><small class="text-muted">calendar ok</small><div>@finalBooking.IsCalendarExportSuccess</div></div>
+								<div><small class="text-muted">sheet ok</small><div>@finalBooking.IsSheetExportSuccess</div></div>
+							</div>
+							<div class="row row-cols-1 g-2 small mt-1">
+								<div><small class="text-muted">notes</small><div>@(Fmt(finalBooking.ProcessingNotes))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">display date</small><div>@(Fmt(finalBooking.DisplayDate))</div></div>
+								<div><small class="text-muted">display time</small><div>@(Fmt(finalBooking.DisplayTime))</div></div>
+								<div><small class="text-muted">day / tz</small><div>@(Fmt(finalBooking.TourDayOfWeek)) / @(Fmt(finalBooking.TourTimeZone))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">amount</small><div>@(finalBooking.BookingAmount?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">currency</small><div>@(Fmt(finalBooking.Currency))</div></div>
+								<div><small class="text-muted">guide</small><div>@(Fmt(finalBooking.GuideAssigned))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">calendar id</small><div>@(Fmt(finalBooking.CalendarEventId))</div></div>
+								<div><small class="text-muted">calendar ok</small><div>@finalBooking.IsCalendarExportSuccess</div></div>
+								<div><small class="text-muted">sheet ok</small><div>@finalBooking.IsSheetExportSuccess</div></div>
+							</div>
+							<div class="row row-cols-1 g-2 small mt-1">
+								<div><small class="text-muted">notes</small><div>@(Fmt(finalBooking.ProcessingNotes))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">vendor</small><div>@(Fmt(finalBooking.VendorName))</div></div>
+								<div><small class="text-muted">email type</small><div>@(Fmt(finalBooking.EmailType))</div></div>
+								<div><small class="text-muted">active</small><div>@finalBooking.IsActive</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">booking code</small><div>@(Fmt(finalBooking.BookingCode))</div></div>
+								<div><small class="text-muted">message id</small><div>@(Fmt(finalBooking.MessageId))</div></div>
+								<div><small class="text-muted">country</small><div>@(Fmt(finalBooking.CountryOfOrigin))</div></div>
+							</div>
+							<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+								<div><small class="text-muted">adults</small><div>@(finalBooking.NumberOfAdults?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">children</small><div>@(finalBooking.NumberOfChildren?.ToString() ?? "—")</div></div>
+								<div><small class="text-muted">infants</small><div>@finalBooking.NumberOfInfants</div></div>
+							</div>
+						}
+					</div>
+				</div>
+
+				@if (relatedProcessed.Count > 0)
+				{
+					<div class="card mb-2">
+						<div class="card-header py-2 d-flex align-items-center justify-content-between">
+							<small class="fw-bold">related processed emails</small>
+							<button type="button"
+									class="btn btn-link btn-sm p-0"
+									title="Preview original booking email"
+									disabled="@string.IsNullOrWhiteSpace(GetOriginalBookingMessageId())"
+									@onclick="OpenRightPreviewOriginalBookingAsync">
+								<i class="bi bi-eye"></i>
+							</button>
+						</div>
+						<div class="card-body p-2">
+							<table class="table table-sm table-striped mb-0 small">
+								<thead><tr><th>Id</th><th>Type</th><th>Completed</th><th>Status</th><th>Message</th></tr></thead>
+								<tbody>
+									@foreach (var rp in relatedProcessed)
+									{
+										<tr>
+											<td>@rp.Id</td>
+											<td>@rp.EmailType</td>
+											<td>@rp.ProcessingCompletedAt</td>
+											<td>@rp.ProcessingStatus</td>
+											<td>
+												@if (!string.IsNullOrWhiteSpace(rp.MessageId))
+												{
+													<a href="#"
+													   @onclick="(() => SelectByMessageIdAsync(rp.MessageId))"
+													   @onclick:preventDefault="true"
+													   class="link-primary text-decoration-underline">@ShortMessageId(rp.MessageId)</a>
+												}
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				}
+			}
+			else if (selectedInbox != null)
+			{
+				var useNewDiagnosticLayout = true;
+
+				@if (useNewDiagnosticLayout)
+				{
+					<!-- Header (selection summary) -->
+					<div class="card mb-2">
+						<div class="card-body py-2">
+							<div class="d-flex flex-wrap gap-3 align-items-center">
+								<div><small class="text-muted">Inbox Id:</small> @selectedInbox.Id</div>
+								@if (!string.IsNullOrWhiteSpace(currentBookingCode))
+								{
+									<div><small class="text-muted">Booking Code:</small> @currentBookingCode</div>
+								}
+								<div><small class="text-muted">Status:</small> @selectedInbox.ProcessingStatus</div>
+								@if (!string.IsNullOrWhiteSpace(selectedMessageId))
+								{
+									<div><small class="text-muted">MessageId:</small> <code>@ShortMessageId(selectedMessageId)</code></div>
+								}
+							</div>
+						</div>
+					</div>
+
+					<!-- Cards tab (optional) -->
+					<ul class="nav nav-tabs nav-fill small mb-2">
+						<li class="nav-item"><button class='@GetDetailTabBtnClass("processed")' @onclick='(() => SetDetailTab("processed"))'>Processed Email</button></li>
+						<li class="nav-item"><button class='@GetDetailTabBtnClass("admin")' @onclick='(() => SetDetailTab("admin"))'>Admin</button></li>
+						<li class="nav-item"><button class='@GetDetailTabBtnClass("errors")' @onclick='(() => SetDetailTab("errors"))'>Tour Errors</button></li>
+						<li class="nav-item"><button class="nav-link" disabled>Booking</button></li>
+						<li class="nav-item"><button class="nav-link" disabled>Customer</button></li>
+					</ul>
+
+					@if (detailTab == "errors")
+					{
+						<Email.Components.Diagnostics.TourErrorReportsView SelectedReport="selectedErrorReport" />
+					}
+
+					@* 2025-12-01 00:00 UTC - Admin tab: moved DB administrative actions and help *@
+					@if (detailTab == "admin")
+					{
+						<div class="card mb-2">
+							<div class="card-header py-2 d-flex align-items-center justify-content-between">
+								<small class="fw-bold">admin</small>
+								<div class="d-flex align-items-center gap-2">
+									<button type="button"
+											class="btn btn-link btn-sm p-0"
+											title="Admin functions help"
+											@onclick="(() => showAdminHelp = true)">?</button>
+								</div>
+							</div>
+							<div class="card-body p-2">
+								<table class="table table-sm table-striped mb-2 small">
+									<thead><tr><th>Action</th><th>Description</th><th class="text-end">Run</th></tr></thead>
+									<tbody>
+										<tr>
+											<td>Repair Booking Codes (All)</td>
+											<td>Fixes AutomaticGmail_ProcessedEmails.BookingCode for Modification/Cancellation rows.</td>
+											<td class="text-end">
+												<button class="btn btn-outline-danger btn-sm"
+														disabled="@isBusy"
+														@onclick="RepairCodesAsync">Run</button>
+											</td>
+										</tr>
+										<tr>
+											<td>Reprocess Mods Missing Tour Fields (All)</td>
+											<td>Finds modification emails with blank tour name/date/time/location/language and reprocesses them.</td>
+											<td class="text-end">
+												<button class="btn btn-outline-primary btn-sm"
+														disabled="@isBusy"
+														@onclick="ReprocessMissingTourFieldsAsync">Run</button>
+											</td>
+										</tr>
+										<tr>
+											<td>Rebuild Origin Pointers (All)</td>
+											<td>Overrides OriginalBooking* fields across inbox to canonical root bookings.</td>
+											<td class="text-end">
+												<button class="btn btn-outline-warning btn-sm"
+														disabled="@isBusy"
+														@onclick="RebuildOriginsAsync">Run</button>
+											</td>
+										</tr>
+										<tr>
+											<td>Backfill Origins (All)</td>
+											<td>Populate missing OriginalBooking* via COALESCE (no overwrite).</td>
+											<td class="text-end">
+												<button class="btn btn-outline-secondary btn-sm"
+														disabled="@isBusy"
+														@onclick="BackfillOriginsAsync">Run</button>
+											</td>
+										</tr>
+									</tbody>
+								</table>
+								@if (!string.IsNullOrWhiteSpace(repairStatus) || !string.IsNullOrWhiteSpace(rebuildStatus) || !string.IsNullOrWhiteSpace(backfillStatus) || !string.IsNullOrWhiteSpace(reprocessMissingStatus))
+								{
+									<div class="small text-muted">
+										@if (!string.IsNullOrWhiteSpace(repairStatus)) { <div>@repairStatus</div> }
+										@if (!string.IsNullOrWhiteSpace(reprocessMissingStatus)) { <div>@reprocessMissingStatus</div> }
+										@if (!string.IsNullOrWhiteSpace(rebuildStatus)) { <div>@rebuildStatus</div> }
+										@if (!string.IsNullOrWhiteSpace(backfillStatus)) { <div>@backfillStatus</div> }
+									</div>
+								}
+							</div>
+						</div>
+					}
+
+					<!-- Tour History Summary (top table) -->
+					@using Email.Components.Diagnostics
+					@if (detailTab != "errors")
+					{
+						<TourHistorySummary InitialProcessed="initialProcessedFull"
+						                    Modifications="modificationProcessed"
+						                    LatestCancellation="latestCancellation"
+						                    CurrentBooking="finalBooking"
+						                    OriginalBooking="originBookingForSummary"
+						                    BookingCodeForThread="currentBookingCode" />
+					}
+
+					<!-- Processed Email (SELECT * from AutomaticGmail_ProcessedEmails by MessageId) -->
+					@if (detailTab != "errors")
+					{
+					<div class="card mb-2">
+						<div class="card-header py-2 d-flex align-items-center justify-content-between">
+							<small class="fw-bold">processed email</small>
+							<div class="d-flex align-items-center gap-2">
+								@{
+									var originMsg = hydratedDiagnostic?.InboxDiagnostic?.OriginalBookingMessageId ?? GetOriginalBookingMessageId();
+								}
+								<button type="button"
+										class="btn btn-link btn-sm p-0"
+										title="Preview original booking email"
+										disabled="@string.IsNullOrWhiteSpace(originMsg)"
+										@onclick="(() => OpenRightPreviewByMessageIdAsync(originMsg!))">
+									<i class="bi bi-eye"></i>
+								</button>
+								@if (!string.IsNullOrWhiteSpace(hydratedDiagnostic?.InboxDiagnostic?.OriginalBookingCode))
+								{
+									<span class="badge bg-light text-dark" title="origin code">
+										origin: @hydratedDiagnostic!.InboxDiagnostic!.OriginalBookingCode
+									</span>
+								}
+								@if (!string.IsNullOrWhiteSpace(hydratedDiagnostic?.InboxDiagnostic?.OriginalBookingMessageId))
+								{
+									<a href="#"
+									   class="badge bg-secondary text-decoration-none"
+									   title="open origin message"
+									   @onclick="(() => OpenRightPreviewByMessageIdAsync(hydratedDiagnostic!.InboxDiagnostic!.OriginalBookingMessageId!))"
+									   @onclick:preventDefault="true">
+										@ShortMessageId(hydratedDiagnostic!.InboxDiagnostic!.OriginalBookingMessageId!)
+									</a>
+								}
+								@if (cancellationWarningActiveBookingPresent)
+								{
+									<span class="badge bg-warning text-dark" title="@cancellationWarningDetail">cancelled booking still active</span>
+								}
+								@if (modificationWarningOldBookingActive)
+								{
+									<span class="badge bg-warning text-dark" title="@modificationWarningDetail">old booking code still active</span>
+								}
+							</div>
+						</div>
+						<div class="card-body p-2">
+							@if (processedFullDiagnostic == null)
+							{
+								<small class="text-muted">No processed row found for this message.</small>
+							}
+							else
+							{
+								<div class="row row-cols-1 row-cols-md-3 g-2 small">
+									<div><small class="text-muted">id</small><div>@processedFullDiagnostic.Id</div></div>
+									<div><small class="text-muted">inbox id</small><div>@processedFullDiagnostic.InboxEmailId</div></div>
+									<div><small class="text-muted">message id</small><div>
+										<a href="#"
+										   @onclick="(() => OpenRightPreviewByMessageIdAsync(processedFullDiagnostic.MessageId))"
+										   @onclick:preventDefault="true"
+										   class="link-primary text-decoration-underline">@processedFullDiagnostic.MessageId</a>
+									</div></div>
+									<div><small class="text-muted">vendor</small><div>@(Fmt(processedFullDiagnostic.VendorName))</div></div>
+									<div><small class="text-muted">type</small><div>@(Fmt(processedFullDiagnostic.EmailType))</div></div>
+									<div><small class="text-muted">tour name</small><div>@(Fmt(processedFullDiagnostic.TourName))</div></div>
+									<div><small class="text-muted">tour date</small><div>@(Fmt(processedFullDiagnostic.TourDate))</div></div>
+									<div><small class="text-muted">tour time</small><div>@(Fmt(processedFullDiagnostic.TourTime))</div></div>
+									<div><small class="text-muted">tour location</small><div>@(Fmt(processedFullDiagnostic.TourLocation))</div></div>
+									<div><small class="text-muted">customer</small><div>@(Fmt(processedFullDiagnostic.CustomerName))</div></div>
+									<div><small class="text-muted">customer email</small><div>@(Fmt(processedFullDiagnostic.CustomerEmail))</div></div>
+									<div><small class="text-muted">customer phone</small><div>@(Fmt(processedFullDiagnostic.CustomerPhone))</div></div>
+									<div><small class="text-muted">booking</small><div>@(Fmt(processedFullDiagnostic.BookingCode))</div></div>
+									<div><small class="text-muted">language</small><div>@(Fmt(processedFullDiagnostic.Language))</div></div>
+									<div><small class="text-muted">attendees</small><div>@(processedFullDiagnostic.NumberOfAttendees?.ToString() ?? "—")</div></div>
+									<div><small class="text-muted">adults</small><div>@(processedFullDiagnostic.NumberOfAdults?.ToString() ?? "—")</div></div>
+									<div><small class="text-muted">children</small><div>@(processedFullDiagnostic.NumberOfChildren?.ToString() ?? "—")</div></div>
+									<div><small class="text-muted">status</small><div>@(Fmt(processedFullDiagnostic.ProcessingStatus))</div></div>
+									<div><small class="text-muted">started</small><div>@(processedFullDiagnostic.ProcessingStartedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</div></div>
+									<div><small class="text-muted">completed</small><div><strong>@(processedFullDiagnostic.ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									<div><small class="text-muted">extracted</small><div>@(processedFullDiagnostic.ExtractedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</div></div>
+									<div><small class="text-muted">rule id</small><div>@(processedFullDiagnostic.ClassificationRuleId?.ToString() ?? "—")</div></div>
+									<div><small class="text-muted">latest action</small><div>@processedFullDiagnostic.IsLatestAction</div></div>
+									<div><small class="text-muted">created</small><div>@processedFullDiagnostic.CreatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+									<div><small class="text-muted">updated</small><div>@processedFullDiagnostic.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+									<div><small class="text-muted">extracted code</small><div>@(Fmt(processedFullDiagnostic.ExtractedBookingCode))</div></div>
+									<div><small class="text-muted">new code</small><div>@(Fmt(processedFullDiagnostic.NewBookingCode))</div></div>
+									<div><small class="text-muted">previous code</small><div>@(Fmt(processedFullDiagnostic.PreviousBookingCode))</div></div>
+									<div><small class="text-muted">is cancellation</small><div>@processedFullDiagnostic.IsCancellation</div></div>
+									<div><small class="text-muted">is modification</small><div>@processedFullDiagnostic.IsModification</div></div>
+									<div><small class="text-muted">is booking</small><div>@processedFullDiagnostic.IsBooking</div></div>
+									<div><small class="text-muted">error</small><div>@(Fmt(processedFullDiagnostic.ProcessingError))</div></div>
+									<div><small class="text-muted">attempts</small><div>@processedFullDiagnostic.ProcessingAttempts</div></div>
+									<div><small class="text-muted">next attempt</small><div>@(processedFullDiagnostic.NextProcessingAttempt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</div></div>
+									<div><small class="text-muted">rate limit reset</small><div>@(processedFullDiagnostic.RateLimitResetAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</div></div>
+									<div><small class="text-muted">action required</small><div>@(Fmt(processedFullDiagnostic.ActionRequired))</div></div>
+									<div><small class="text-muted">customer identifier</small><div>@(Fmt(processedFullDiagnostic.CustomerIdentifier))</div></div>
+									<div><small class="text-muted">related email ids</small><div>@(Fmt(processedFullDiagnostic.RelatedEmailIds))</div></div>
+								</div>
+								@if (!string.IsNullOrWhiteSpace(processedFullDiagnostic.PlainTextContent))
+								{
+									<div class="card mt-2">
+										<div class="card-header py-2">
+											@if (string.Equals(processedFullDiagnostic.EmailType, "Modification", StringComparison.OrdinalIgnoreCase)
+												&& !string.IsNullOrWhiteSpace(processedPlainHeaderSummary))
+											{
+												<small class="text-muted">plain text: @processedPlainHeaderSummary</small>
+											}
+											else
+											{
+												<small class="text-muted">plaintext</small>
+											}
+										</div>
+										<div class="card-body p-2">
+											<pre @key="processedFullDiagnostic?.MessageId"
+												 class="mb-0"
+												 style="white-space: pre-wrap; font-size: .825rem; max-height: 30vh; overflow:auto;"
+												 @ref="processedPlainRef">@processedFullDiagnostic.PlainTextContent</pre>
+										</div>
+									</div>
+								}
+								@if (!string.IsNullOrWhiteSpace(processedFullDiagnostic.HtmlContent))
+								{
+									@* <div class="card mt-2">
+										<div class="card-header py-2"><small class="text-muted">html</small></div>
+										<div class="card-body p-2">
+											<pre class="mb-0" style="white-space: pre-wrap; font-size: .825rem; max-height: 30vh; overflow:auto;">@processedFullDiagnostic.HtmlContent</pre>
+										</div>
+									</div> *@
+								}
+							}
+						</div>
+					</div>
+					}
+
+					<!-- Processed Email (FULL ROW JSON) -->
+					@if (processedFullDiagnostic != null && !string.IsNullOrWhiteSpace(processedFullJsonDiagnostic))
+					{
+						@* <div class="card mb-2">
+							<div class="card-header py-2"><small class="fw-bold">processed email (raw full)</small></div>
+							<div class="card-body p-2">
+								<pre class="mb-0" style="white-space: pre-wrap; font-size: .775rem; max-height: 40vh; overflow:auto;">@processedFullJsonDiagnostic</pre>
+							</div>
+						</div> *@
+					}
+
+					<!-- Modification (latest, if any) -->
+					@if (detailTab != "errors" && modificationProcessed.Count > 0)
+					{
+						<div class="card mb-2">
+							<div class="card-header py-2"><small class="fw-bold">modification</small></div>
+							<div class="card-body p-2">
+								<div class="row row-cols-1 row-cols-md-3 g-2 small">
+									<div><small class="text-muted">received</small><div><strong>@(latestModInboxEmail?.ReceivedDate.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									<div><small class="text-muted">processed</small><div><strong>@(modificationProcessed[^1].ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									<div><small class="text-muted">type</small><div>modification</div></div>
+								</div>
+								@if (!string.IsNullOrWhiteSpace(modificationPlainText))
+								{
+									<div class="card mb-2">
+										<div class="card-body p-2">
+											<pre @key="modificationProcessed[^1]?.MessageId"
+												 class="mb-0"
+												 style="white-space: pre-wrap; font-size: .825rem;"
+												 @ref="modPlainRef">@modificationPlainText</pre>
+										</div>
+									</div>
+								}
+								<div class="row g-2 small">
+									<div class="col-md-4">
+										<small class="text-muted">modification booking id</small>
+										<div>@(modificationProcessed[^1].BookingCode)</div>
+									</div>
+									<div class="col-md-4">
+										<small class="text-muted">previous id (if any)</small>
+										<div>@(processed?.PreviousBookingCode)</div>
+									</div>
+									<div class="col-md-4">
+										<small class="text-muted">new id (if any)</small>
+										<div>@(processed?.NewBookingCode)</div>
+									</div>
+								</div>
+
+								@if (modificationTimeline.Count > 0)
+								{
+									<div class="card mt-2">
+										<div class="card-header py-2"><small class="text-muted">modifications timeline</small></div>
+										<div class="card-body p-2">
+											<table class="table table-sm table-striped mb-0 small">
+												<thead><tr><th>Completed</th><th>Message</th><th>Changes</th><th></th></tr></thead>
+												<tbody>
+													@foreach (var step in modificationTimeline)
+													{
+														<tr>
+															<td>@(step.CompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</td>
+															<td>
+																<a href="#"
+																   @onclick="(() => OpenRightPreviewByMessageIdAsync(step.MessageId))"
+																   @onclick:preventDefault="true"
+																   class="link-primary text-decoration-underline">@ShortMessageId(step.MessageId)</a>
+															</td>
+															<td>@step.Summary</td>
+															<td>
+																<button type="button"
+																		class="btn btn-link btn-sm p-0"
+																		title="Preview HTML"
+																		@onclick="(() => OpenRightPreviewByMessageIdAsync(step.MessageId))">
+																	<i class="bi bi-eye"></i>
+																</button>
+															</td>
+														</tr>
+													}
+												</tbody>
+											</table>
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+					}
+
+					<!-- Cancellation (latest, if any) -->
+					@if (detailTab != "errors" && latestCancellation != null)
+					{
+						<div class="card mb-2">
+							<div class="card-header py-2"><small class="fw-bold">cancellation</small></div>
+							<div class="card-body p-2">
+								<div class="row row-cols-1 row-cols-md-3 g-2 small">
+									<div><small class="text-muted">processed</small><div><strong>@(latestCancellation.ProcessingCompletedAt?.ToString("MM/dd/yyyy h:mm:ss tt") ?? "—")</strong></div></div>
+									<div><small class="text-muted">type</small><div>cancellation</div></div>
+									<div><small class="text-muted">booking</small><div>@(hydratedDiagnostic?.ProcessedDiagnostic?.BookingCode ?? "—")</div></div>
+								</div>
+								@if (!string.IsNullOrWhiteSpace(cancellationPlainText))
+								{
+									<div class="card mt-2">
+										<div class="card-body p-2">
+											<pre class="mb-0" style="white-space: pre-wrap; font-size: .825rem;">@cancellationPlainText</pre>
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+					}
+
+					<!-- Booking (by MessageId) -->
+					@if (detailTab != "errors")
+					{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">booking (by message)</small></div>
+						<div class="card-body p-2">
+							@if (hydratedDiagnostic?.BookingDiagnostic == null)
+							{
+								<small class="text-muted">No booking found for this message.</small>
+							}
+							else
+							{
+								var b = hydratedDiagnostic.BookingDiagnostic;
+								<div class="row row-cols-2 row-cols-md-4 g-2 small">
+									<div><small class="text-muted">date</small><div>@b.TourDate?.ToString("yyyy-MM-dd")</div></div>
+									<div><small class="text-muted">tour name</small><div>@(Fmt(b.TourName))</div></div>
+									<div><small class="text-muted">time</small><div>@(Fmt(b.TourTime))</div></div>
+									<div><small class="text-muted">attendees</small><div>@b.NumberOfAttendees</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">customer</small><div>@(Fmt(b.CustomerName))</div></div>
+									<div><small class="text-muted">email</small><div>@(Fmt(b.CustomerEmail))</div></div>
+									<div><small class="text-muted">phone</small><div>@(Fmt(b.CustomerPhone))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">language</small><div>@(Fmt(b.Language))</div></div>
+									<div><small class="text-muted">location</small><div>@(Fmt(b.TourLocation))</div></div>
+									<div><small class="text-muted">status</small><div>@(Fmt(b.BookingStatus))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">vendor</small><div>@(Fmt(b.VendorName))</div></div>
+									<div><small class="text-muted">email type</small><div>@(Fmt(b.EmailType))</div></div>
+									<div><small class="text-muted">active</small><div>@b.IsActive</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">booking code</small><div>@(Fmt(b.BookingCode))</div></div>
+									<div><small class="text-muted">message id</small><div>@(Fmt(b.MessageId))</div></div>
+									<div><small class="text-muted">country</small><div>@(Fmt(b.CountryOfOrigin))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">created</small><div>@b.CreatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+									<div><small class="text-muted">updated</small><div><strong>@b.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</strong></div></div>
+									<div><small class="text-muted">customer id</small><div>@b.CustomerId</div></div>
+								</div>
+							}
+						</div>
+					</div>
+					}
+
+					<!-- Customer (from booking.CustomerId) -->
+					@if (detailTab != "errors")
+					{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">customer</small></div>
+						<div class="card-body p-2">
+							@if (hydratedDiagnostic?.CustomerDiagnostic == null)
+							{
+								<small class="text-muted">No customer found.</small>
+							}
+							else
+							{
+								var c = hydratedDiagnostic.CustomerDiagnostic;
+								<div class="row row-cols-1 row-cols-md-3 g-2 small">
+									<div><small class="text-muted">name</small><div>@(Fmt(c.FullName))</div></div>
+									<div><small class="text-muted">email</small><div>@(Fmt(c.Email))</div></div>
+									<div><small class="text-muted">phone</small><div>@(Fmt(c.PhoneNumber))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">identifier</small><div>@(Fmt(c.CustomerIdentifier))</div></div>
+									<div><small class="text-muted">total bookings</small><div>@c.TotalBookings</div></div>
+									<div><small class="text-muted">updated</small><div>@c.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+								</div>
+							}
+						</div>
+					</div>
+					}
+
+					<!-- Booking (by ANY code) -->
+					@if (detailTab != "errors")
+					{
+					<div class="card mb-2">
+						<div class="card-header py-2"><small class="fw-bold">booking (by code)</small></div>
+						<div class="card-body p-2">
+							@if (bookingByCodeDiagnostic == null)
+							{
+								<small class="text-muted">No booking found by code.</small>
+							}
+							else
+							{
+								var b2 = bookingByCodeDiagnostic;
+								<div class="row row-cols-2 row-cols-md-4 g-2 small">
+									<div><small class="text-muted">date</small><div>@b2.TourDate?.ToString("yyyy-MM-dd")</div></div>
+									<div><small class="text-muted">tour name</small><div>@(Fmt(b2.TourName))</div></div>
+									<div><small class="text-muted">time</small><div>@(Fmt(b2.TourTime))</div></div>
+									<div><small class="text-muted">attendees</small><div>@b2.NumberOfAttendees</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">customer</small><div>@(Fmt(b2.CustomerName))</div></div>
+									<div><small class="text-muted">email</small><div>@(Fmt(b2.CustomerEmail))</div></div>
+									<div><small class="text-muted">phone</small><div>@(Fmt(b2.CustomerPhone))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+                                    <div><small class="text-muted">language</small><div>@(Fmt(b2.Language))</div></div>
+                                    <div><small class="text-muted">location</small><div>@(Fmt(b2.TourLocation))</div></div>
+                                    <div><small class="text-muted">status</small><div>@(Fmt(b2.BookingStatus))</div></div>
+                                </div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">vendor</small><div>@(Fmt(b2.VendorName))</div></div>
+									<div><small class="text-muted">email type</small><div>@(Fmt(b2.EmailType))</div></div>
+									<div><small class="text-muted">active</small><div>@b2.IsActive</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">booking code</small><div>@(Fmt(b2.BookingCode))</div></div>
+									<div><small class="text-muted">message id</small><div>@(Fmt(b2.MessageId))</div></div>
+									<div><small class="text-muted">country</small><div>@(Fmt(b2.CountryOfOrigin))</div></div>
+								</div>
+								<div class="row row-cols-1 row-cols-md-3 g-2 small mt-1">
+									<div><small class="text-muted">created</small><div>@b2.CreatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</div></div>
+									<div><small class="text-muted">updated</small><div><strong>@b2.UpdatedAt.ToString("MM/dd/yyyy h:mm:ss tt")</strong></div></div>
+									<div><small class="text-muted">customer id</small><div>@b2.CustomerId</div></div>
+								</div>
+							}
+						</div>
+					</div>
+					}
+
+					@if (detailTab != "errors" && relatedProcessed.Count > 0)
+					{
+						<div class="card mb-2">
+							<div class="card-header py-2 d-flex align-items-center justify-content-between">
+								<small class="fw-bold">related processed emails</small>
+								<button type="button"
+										class="btn btn-link btn-sm p-0"
+										title="Preview original booking email"
+										disabled="@string.IsNullOrWhiteSpace(GetOriginalBookingMessageId())"
+										@onclick="OpenRightPreviewOriginalBookingAsync">
+									<i class="bi bi-eye"></i>
+								</button>
+							</div>
+							<div class="card-body p-2">
+								<table class="table table-sm table-striped mb-0 small">
+									<thead><tr><th>Id</th><th>Type</th><th>Completed</th><th>Status</th><th>Message</th></tr></thead>
+									<tbody>
+										@foreach (var rp in relatedProcessed)
+										{
+											<tr>
+												<td>@rp.Id</td>
+												<td>@rp.EmailType</td>
+												<td>@rp.ProcessingCompletedAt</td>
+												<td>@rp.ProcessingStatus</td>
+												<td>
+													@if (!string.IsNullOrWhiteSpace(rp.MessageId))
+													{
+														<a href="#"
+														   @onclick="(() => SelectByMessageIdAsync(rp.MessageId))"
+														   @onclick:preventDefault="true"
+														   class="link-primary text-decoration-underline">@ShortMessageId(rp.MessageId)</a>
+														<button type="button"
+																class="btn btn-link btn-sm p-0 ms-2"
+																title="Preview HTML"
+																disabled="@string.IsNullOrWhiteSpace(rp.MessageId)"
+																@onclick="(() => OpenRightPreviewByMessageIdAsync(rp.MessageId!))">
+															<i class="bi bi-eye"></i>
+														</button>
+													}
+												</td>
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					}
+				}
+				else
+				{
+					<!-- legacy layout (hidden while new layout flag is true) -->
+				}
+			}
+		</div>
+	</div>
+</div>
+
+@if (showAdminHelp)
+{
+	<div class="modal d-block" tabindex="-1">
+		<div class="modal-dialog modal-lg modal-dialog-scrollable">
+			<div class="modal-content">
+				<div class="modal-header py-2">
+					<h6 class="modal-title">Admin functions: order &amp; purpose</h6>
+					<button type="button" class="btn-close" aria-label="Close" @onclick="(() => showAdminHelp = false)"></button>
+				</div>
+				<div class="modal-body">
+					<ol class="small">
+						<li>
+							<strong>Repair Booking Codes (All)</strong><br />
+							Fixes <code>AutomaticGmail_ProcessedEmails.BookingCode</code> for <em>Modification</em>/<em>Cancellation</em> rows to match the selection rules
+							(Cancellation uses <code>PreviousBookingCode</code>; Modification prefers <code>NewBookingCode</code>).
+							Run this first so the thread associations are correct.
+						</li>
+						<li class="mt-2">
+							<strong>Rebuild Origin Pointers (All)</strong><br />
+							Computes the canonical root booking for each inbox row (walking the code chain) and <em>overrides</em>
+							<code>OriginalBookingId</code>, <code>OriginalBookingCode</code>, <code>OriginalBookingMessageId</code>.
+							Run this second. Safe to re-run; it will correct non-root pointers.
+						</li>
+						<li class="mt-2">
+							<strong>Backfill Origins (All)</strong> (optional / legacy)<br />
+							Populates missing <code>OriginalBooking*</code> via COALESCE (no overwrite). Useful for initial fill,
+							but does not correct previously set non-root pointers. Prefer “Rebuild Origin Pointers” for accuracy.
+						</li>
+					</ol>
+					<div class="alert alert-warning small mb-0">
+						<strong>Recommended order:</strong> 1) Repair Booking Codes → 2) Rebuild Origin Pointers.<br />
+						The UI will then build full history from the true original booking across code changes.
+					</div>
+				</div>
+				<div class="modal-footer py-2">
+					<button class="btn btn-secondary btn-sm" @onclick="(() => showAdminHelp = false)">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="modal-backdrop fade show"></div>
+}
+
+@* 2025-11-30 00:00 UTC - Right-side email preview (fixed, 50vw) *@
+@if (isRightPreviewOpen)
+{
+	<div class="position-fixed top-0 end-0 h-100" style="width: 50vw; z-index: 1050;">
+		<div class="card h-100 rounded-0 border-start">
+			<div class="card-header py-2 d-flex align-items-center justify-content-between">
+				<div class="d-flex align-items-center gap-2">
+					<small class="fw-bold text-uppercase">email preview</small>
+					@if (!string.IsNullOrWhiteSpace(rightPreviewTitle))
+					{
+						<small class="text-muted"><code>@rightPreviewTitle</code></small>
+					}
+				</div>
+				<div class="d-flex align-items-center gap-2">
+					<button type="button" class="btn btn-sm btn-outline-secondary" title="Close preview" @onclick="CloseRightPreview">
+						<i class="bi bi-x-lg"></i>
+					</button>
+				</div>
+			</div>
+			<div class="card-body p-0" style="height: calc(100% - 42px);">
+				<iframe class="w-100 h-100 border-0" @ref="rightPreviewFrameRef"></iframe>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	private bool isBusy = false;
+	private string listScope = "processed_emails"; // "processed" | "processed_emails"
+	private List<LeftItem> leftList = new();
+	private List<LeftGroup> leftGroups = new();
+	private List<ProcessedEmailDisplayDto> leftProcessedEmails = new();
+
+	// 2025-12-01 00:00 UTC - Admin tab state
+	private string detailTab = "processed";
+
+	// 2025-12-01 00:00 UTC - Tour error reports state
+	private bool errorsBusy = false;
+	private List<Email.Models.TourDataErrorReport> errorReports = new();
+	private Email.Models.TourDataErrorReport? selectedErrorReport;
+
+	private string? selectedMessageId;
+	private string? selectedBookingCode;
+	private Email.Services.GmailCollection.Models.InboxEmailRecord? selectedInbox;
+	private Email.Models.ProcessedEmail? processed;
+	private string plainText = string.Empty;
+	private string? currentBookingCode;
+	private Email.Services.GmailProcessing.Models.Booking? finalBooking;
+	private Email.Services.GmailProcessing.Models.Customer? bookingCustomer;
+	private List<ProcessedEmailDisplayDto> relatedProcessed = new();
+	private ProcessedEmailDisplayDto? initialProcessed;
+	private ProcessedEmailDisplayDto? latestCancellation;
+	private List<ProcessedEmailDisplayDto> modificationProcessed = new();
+	private Email.Services.GmailCollection.Models.InboxEmailRecord? latestCancelInboxEmail;
+	private HydratedEmailDiagnosticContext? hydratedDiagnostic;
+	private Email.Services.GmailProcessing.Models.ProcessedEmailRecord? processedFullDiagnostic;
+	private string processedFullJsonDiagnostic = string.Empty;
+	private HydratedEmailDiagnosticContext? initialHydratedDiagnostic;
+	private HydratedEmailDiagnosticContext? modificationHydratedDiagnostic;
+	private HydratedEmailDiagnosticContext? cancellationHydratedDiagnostic;
+	private Email.Services.GmailProcessing.Models.Booking? bookingByCodeDiagnostic;
+	private Email.Services.GmailProcessing.Models.Booking? originBookingFromPointer;
+	private Email.Services.GmailProcessing.Models.Booking? originBookingForSummary;
+	private string initialPlainText = string.Empty;
+	private string modificationPlainText = string.Empty;
+	private string cancellationPlainText = string.Empty;
+	private Email.Models.ProcessedEmail? initialProcessedFull;
+	private Email.Models.ProcessedEmail? latestModificationFull;
+	private Email.Models.ProcessedEmail? latestCancellationFull;
+	private Email.Services.GmailCollection.Models.InboxEmailRecord? initialInboxEmail;
+	private Email.Services.GmailCollection.Models.InboxEmailRecord? latestModInboxEmail;
+
+	// 2025-11-30 00:00 UTC - JS highlighter refs/flag for modification plaintext highlighting
+	private ElementReference processedPlainRef;
+	private ElementReference modPlainRef;
+	private ElementReference diagnosticPlainRef;
+	private ElementReference rightPreviewFrameRef;
+	private bool pendingHighlight = false;
+	private bool pendingPreviewSet = false;
+
+	// 2025-11-30 00:00 UTC - Right-side HTML email preview
+	private bool isRightPreviewOpen = false;
+	private string rightPreviewHtml = string.Empty;
+	private string rightPreviewTitle = string.Empty;
+
+	// 2025-11-30 00:00 UTC - Modification summary header for processed plaintext
+	private string processedPlainHeaderSummary = string.Empty;
+
+	// 2025-11-30 00:00 UTC - Warnings for inconsistent DB booking states after cancellation/modification
+	private bool cancellationWarningActiveBookingPresent = false;
+	private string cancellationWarningDetail = string.Empty;
+	private bool modificationWarningOldBookingActive = false;
+	private string modificationWarningDetail = string.Empty;
+
+	// 2025-11-30 00:00 UTC - Modifications timeline (multi-step diffs)
+	private sealed class ModificationStepSummary
+	{
+		public string MessageId { get; set; } = string.Empty;
+		public DateTime? CompletedAt { get; set; }
+		public string Summary { get; set; } = string.Empty;
+		public string? BookingCode { get; set; }
+		public string? VendorName { get; set; }
+	}
+	private readonly List<ModificationStepSummary> modificationTimeline = new();
+
+	// 2025-11-30 00:00 UTC - Cached original booking message id (across unified codes)
+	private string? originalBookingMessageId;
+
+	// 2025-12-01 00:00 UTC - Admin tab helpers
+	private string GetDetailTabBtnClass(string tab) => detailTab == tab ? "nav-link active" : "nav-link";
+	private void SetDetailTab(string tab)
+	{
+		detailTab = tab;
+		if (detailTab == "errors")
+		{
+			_ = LoadErrorReportsAsync();
+		}
+		StateHasChanged();
+	}
+
+	// 2025-11-30 00:00 UTC - Left list filtering: state (types/date/search) and buffer
+	private enum DatePreset { None, Today, Last7, Last30, Custom }
+	private enum SearchMode { Customer, BookingCode, MessageId }
+	private readonly HashSet<string> selectedTypes = new(StringComparer.OrdinalIgnoreCase);
+	private DatePreset datePreset = DatePreset.None;
+	private string fromDateStr = string.Empty;
+	private string toDateStr = string.Empty;
+	private string searchText = string.Empty;
+	private SearchMode searchMode = SearchMode.Customer;
+	private List<ProcessedEmailDisplayDto> leftFiltered = new();
+	private System.Threading.CancellationTokenSource? _filterCts;
+
+	private bool CanProcess => !string.IsNullOrWhiteSpace(selectedMessageId) && selectedInbox != null;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LoadLeftAsync();
+	}
+
+	private async Task LoadLeftAsync()
+	{
+		try
+		{
+			leftList.Clear();
+			leftGroups.Clear();
+			if (listScope == "pending")
+			{
+				var rows = await ProcessingService.GetUnprocessedAsync(200, CancellationToken.None);
+				leftList = rows.Select(r => new LeftItem
+				{
+					MessageId = r.MessageId,
+					Title = string.IsNullOrWhiteSpace(r.Subject) ? r.MessageId : r.Subject,
+					Subtitle = r.FromEmail,
+					Date = r.ReceivedDate
+				}).ToList();
+			}
+			else if (listScope == "processed")
+			{
+				var rows = await ProcessingService.GetRecentProcessedAsync(200, CancellationToken.None);
+				var grouped = rows
+					.Where(r => !string.IsNullOrWhiteSpace(r.BookingCode))
+					.GroupBy(r => r.BookingCode!.Trim())
+					.OrderByDescending(g => g.Max(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MinValue));
+
+				leftGroups = grouped.Select(g => new LeftGroup
+				{
+					BookingCode = g.Key,
+					Count = g.Count(),
+					LatestAt = g.Max(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MinValue)
+				}).ToList();
+			}
+			else if (listScope == "processed_emails")
+			{
+				var rows = await ProcessingService.GetRecentProcessedAsync(200, CancellationToken.None);
+				leftProcessedEmails = rows.ToList();
+				ApplyLeftFiltersNow();
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[EmailPipeline] LoadLeftAsync failed: {Message}", ex.Message);
+		}
+		StateHasChanged();
+	}
+
+	private Task RefreshListAsync() => LoadLeftAsync();
+
+	private string backfillStatus = string.Empty;
+	private string repairStatus = string.Empty;
+	private string rebuildStatus = string.Empty;
+	private string reprocessMissingStatus = string.Empty;
+	private bool showAdminHelp = false;
+
+	private async Task LoadErrorReportsAsync()
+	{
+		try
+		{
+			errorsBusy = true;
+			errorReports = await ErrorReportsService.GetRecentAsync(200, CancellationToken.None);
+			if (selectedErrorReport == null && errorReports.Count > 0)
+			{
+				selectedErrorReport = errorReports.First();
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[EmailPipeline] LoadErrorReportsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			errorsBusy = false;
+			StateHasChanged();
+		}
+	}
+
+	private void SelectError(Email.Models.TourDataErrorReport er)
+	{
+		selectedErrorReport = er;
+		StateHasChanged();
+	}
+	private async Task BackfillOriginsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			backfillStatus = "Running backfill…";
+			StateHasChanged();
+
+			// No limit as requested - process all
+			var updated = await ProcessingService.BackfillOriginalBookingsAsync(int.MaxValue, CancellationToken.None);
+
+			backfillStatus = $"Backfill completed. Updated {updated} inbox rows.";
+
+			// Refresh left list and keep selection current
+			await LoadLeftAsync();
+			if (!string.IsNullOrWhiteSpace(selectedMessageId))
+			{
+				await ReloadSelectedAsync();
+			}
+		}
+		catch (Exception ex)
+		{
+			backfillStatus = $"Backfill failed: {ex.Message}";
+			Logger.LogError(ex, "[EmailPipeline] BackfillOriginsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task RepairCodesAsync()
+	{
+		try
+		{
+			isBusy = true;
+			repairStatus = "Repairing booking codes…";
+			StateHasChanged();
+
+			var fixedCount = await ProcessingService.RepairProcessedBookingCodesAsync(int.MaxValue, CancellationToken.None);
+			repairStatus = $"Repair completed. Updated {fixedCount} processed rows.";
+
+			await LoadLeftAsync();
+			if (!string.IsNullOrWhiteSpace(selectedMessageId))
+			{
+				await ReloadSelectedAsync();
+			}
+		}
+		catch (Exception ex)
+		{
+			repairStatus = $"Repair failed: {ex.Message}";
+			Logger.LogError(ex, "[EmailPipeline] RepairCodesAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task ReprocessMissingTourFieldsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			reprocessMissingStatus = "Reprocessing modifications with missing tour fields…";
+			StateHasChanged();
+
+			// Use a high limit to cover the dataset; repository uses READPAST+TOP
+			var result = await ProcessingService.ReprocessModificationsMissingTourFieldsAsync(int.MaxValue, CancellationToken.None);
+			reprocessMissingStatus = result.Success
+				? $"Reprocess completed. Processed {result.ProcessedCount}, errors {result.ErrorCount}."
+				: $"Reprocess failed: {result.Message}";
+
+			await LoadLeftAsync();
+			if (!string.IsNullOrWhiteSpace(selectedMessageId))
+			{
+				await ReloadSelectedAsync();
+			}
+		}
+		catch (Exception ex)
+		{
+			reprocessMissingStatus = $"Reprocess failed: {ex.Message}";
+			Logger.LogError(ex, "[EmailPipeline] ReprocessMissingTourFieldsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			StateHasChanged();
+		}
+	}
+	private async Task RebuildOriginsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			rebuildStatus = "Rebuilding origin pointers…";
+			StateHasChanged();
+
+			// Batch size 5000 by default
+			var updated = await ProcessingService.RebuildInboxOriginalPointersAsync(5000, CancellationToken.None);
+			rebuildStatus = $"Rebuild completed. Updated {updated} inbox rows.";
+
+			await LoadLeftAsync();
+			if (!string.IsNullOrWhiteSpace(selectedMessageId))
+			{
+				await ReloadSelectedAsync();
+			}
+		}
+		catch (Exception ex)
+		{
+			rebuildStatus = $"Rebuild failed: {ex.Message}";
+			Logger.LogError(ex, "[EmailPipeline] RebuildOriginsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task SelectByMessageIdAsync(string messageId)
+	{
+		selectedMessageId = messageId;
+		selectedBookingCode = null;
+		hydratedDiagnostic = null;
+		initialHydratedDiagnostic = null;
+		modificationHydratedDiagnostic = null;
+		cancellationHydratedDiagnostic = null;
+		await ReloadSelectedAsync();
+	}
+
+	private async Task SelectByBookingCodeAsync(string bookingCode)
+	{
+		selectedBookingCode = bookingCode;
+		selectedMessageId = null;
+		hydratedDiagnostic = null;
+		initialHydratedDiagnostic = null;
+		modificationHydratedDiagnostic = null;
+		cancellationHydratedDiagnostic = null;
+		await ReloadSelectedByBookingAsync();
+	}
+
+	private async Task ReloadSelectedAsync()
+	{
+		if (string.IsNullOrWhiteSpace(selectedMessageId)) return;
+		try
+		{
+			isBusy = true;
+			processedPlainHeaderSummary = string.Empty;
+			originalBookingMessageId = null;
+			cancellationWarningActiveBookingPresent = false;
+			cancellationWarningDetail = string.Empty;
+			modificationWarningOldBookingActive = false;
+			modificationWarningDetail = string.Empty;
+			selectedInbox = await ProcessingService.GetInboxByMessageIdAsync(selectedMessageId, CancellationToken.None);
+
+			// Allow nulls and type mismatches gracefully
+			try
+			{
+				processed = await TourEmailsService.GetProcessedEmailByMessageIdAsync(selectedMessageId);
+			}
+			catch
+			{
+				processed = null;
+			}
+
+			try
+			{
+				plainText = processed?.PlainTextContent
+							?? processed?.HtmlContent
+							?? (await TourEmailsService.GetInboxEmailByMessageIdAsync(selectedMessageId))?.TextBody
+							?? string.Empty;
+			}
+			catch
+			{
+				plainText = string.Empty;
+			}
+
+			currentBookingCode = SelectBookingCodeForDisplayDiagnostic(processed?.BookingCode, processed?.NewBookingCode, processed?.PreviousBookingCode, processed?.EmailType);
+
+			// Hydrated diagnostic (inbox + processed + booking + customer)
+			try
+			{
+				hydratedDiagnostic = await ProcessingService.GetHydratedDiagnosticByMessageIdAsync(selectedMessageId, CancellationToken.None);
+			}
+			catch
+			{
+				hydratedDiagnostic = null;
+			}
+			try
+			{
+				processedFullDiagnostic = await ProcessingService.GetProcessedFullByMessageIdAsync(selectedMessageId, CancellationToken.None);
+				processedFullJsonDiagnostic = processedFullDiagnostic == null
+					? string.Empty
+					: System.Text.Json.JsonSerializer.Serialize(processedFullDiagnostic, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+			}
+			catch
+			{
+				processedFullDiagnostic = null;
+				processedFullJsonDiagnostic = string.Empty;
+			}
+
+			// Prefer DB-stored origin pointer for baseline to avoid cross-tour bleeding
+			// If available, load that original booking email as our baseline and cache message id
+			var originPointerMsgId = hydratedDiagnostic?.InboxDiagnostic?.OriginalBookingMessageId;
+			bool baselineFromOriginPointer = false;
+			if (!string.IsNullOrWhiteSpace(originPointerMsgId))
+			{
+				try
+				{
+					var pe = await TourEmailsService.GetProcessedEmailByMessageIdAsync(originPointerMsgId!);
+					if (pe != null)
+					{
+						initialProcessedFull = pe;
+						originalBookingMessageId = originPointerMsgId;
+						baselineFromOriginPointer = true;
+					}
+
+					// Resolve original booking via pointer to surface original tour name/time
+					try
+					{
+						var hd = await ProcessingService.GetHydratedDiagnosticByMessageIdAsync(originPointerMsgId!, CancellationToken.None);
+						originBookingFromPointer = hd?.BookingDiagnostic;
+					}
+					catch { originBookingFromPointer = null; }
+				}
+				catch { /* ignore */ }
+			}
+
+			// Load booking by ANY available booking code (bottom card)
+			bookingByCodeDiagnostic = null;
+			var codeFromProcessed = SelectBookingCodeForDisplayDiagnostic(processed?.BookingCode, processed?.NewBookingCode, processed?.PreviousBookingCode, processed?.EmailType);
+			var codeFromFull = SelectBookingCodeForDisplayDiagnostic(processedFullDiagnostic?.BookingCode, processedFullDiagnostic?.NewBookingCode, processedFullDiagnostic?.PreviousBookingCode, processedFullDiagnostic?.EmailType);
+			var bestCode = !string.IsNullOrWhiteSpace(codeFromProcessed) ? codeFromProcessed
+				: (!string.IsNullOrWhiteSpace(codeFromFull) ? codeFromFull
+				: processedFullDiagnostic?.ExtractedBookingCode);
+			if (!string.IsNullOrWhiteSpace(bestCode))
+			{
+				try
+				{
+					bookingByCodeDiagnostic = await ProcessingService.GetBookingByCodeAsync(bestCode!, CancellationToken.None);
+				}
+				catch { /* ignore */ }
+			}
+
+			// Load thread-related items (modification / cancellation) for the same booking code
+			relatedProcessed.Clear();
+			finalBooking = null;
+			bookingCustomer = null;
+			if (!string.IsNullOrWhiteSpace(currentBookingCode))
+			{
+				// Load full thread by computed canonical root so history includes A->B->C chains
+				// Do not rely on inbox original pointer here; it may be stale or non-root for historical rows.
+				var computedRoot = await ProcessingService.ResolveRootBookingCodeAsync(currentBookingCode!, CancellationToken.None);
+				relatedProcessed = (await ProcessingService.GetProcessedThreadByRootBookingCodeAsync(computedRoot, CancellationToken.None)).ToList();
+				// Compute initial (booking/confirmation) in this thread
+				initialProcessed = relatedProcessed
+					.Where(p => string.Equals(p.EmailType, "Booking", StringComparison.OrdinalIgnoreCase) ||
+								string.Equals(p.EmailType, "Confirmation", StringComparison.OrdinalIgnoreCase))
+					.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+					.FirstOrDefault();
+				finalBooking = await ProcessingService.GetBookingByCodeAsync(currentBookingCode, CancellationToken.None);
+				bookingCustomer = await ProcessingService.GetCustomerForBookingCodeAsync(currentBookingCode, CancellationToken.None);
+
+				// Determine latest modification and cancellation in this thread
+				modificationProcessed = relatedProcessed
+					.Where(p => string.Equals(p.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+					.GroupBy(p => p.MessageId)
+					.Select(g => g.OrderBy(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MaxValue).First())
+					.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+					.ToList();
+
+				// Determine initial booking/confirmation (ensure unique by MessageId)
+				initialProcessed = relatedProcessed
+					.Where(p => string.Equals(p.EmailType, "Booking", StringComparison.OrdinalIgnoreCase) ||
+								string.Equals(p.EmailType, "Confirmation", StringComparison.OrdinalIgnoreCase))
+					.GroupBy(p => p.MessageId)
+					.Select(g => g.OrderBy(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MaxValue).First())
+					.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+					.FirstOrDefault();
+
+				latestCancellation = relatedProcessed
+					.Where(p => string.Equals(p.EmailType, "Cancellation", StringComparison.OrdinalIgnoreCase))
+					.GroupBy(p => p.MessageId)
+					.Select(g => g.OrderByDescending(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MinValue).First())
+					.OrderByDescending(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MinValue)
+					.FirstOrDefault();
+
+				// Load content/inbox for latest modification
+				modificationPlainText = string.Empty;
+				if (modificationProcessed.Count > 0 && !string.IsNullOrWhiteSpace(modificationProcessed[^1].MessageId))
+				{
+					var me = await TourEmailsService.GetProcessedEmailByMessageIdAsync(modificationProcessed[^1].MessageId!);
+					latestModificationFull = me;
+					modificationPlainText = me?.PlainTextContent ?? me?.HtmlContent ?? string.Empty;
+					latestModInboxEmail = await ProcessingService.GetInboxByMessageIdAsync(modificationProcessed[^1].MessageId!, CancellationToken.None);
+				}
+
+				// Load content/inbox for latest cancellation
+				cancellationPlainText = string.Empty;
+				if (latestCancellation != null && !string.IsNullOrWhiteSpace(latestCancellation.MessageId))
+				{
+					var ce = await TourEmailsService.GetProcessedEmailByMessageIdAsync(latestCancellation.MessageId);
+					latestCancellationFull = ce;
+					cancellationPlainText = ce?.PlainTextContent ?? ce?.HtmlContent ?? string.Empty;
+					latestCancelInboxEmail = await ProcessingService.GetInboxByMessageIdAsync(latestCancellation.MessageId, CancellationToken.None);
+				}
+
+				// Load initial processed full for comparison
+				if (initialProcessed != null && !string.IsNullOrWhiteSpace(initialProcessed.MessageId))
+				{
+					initialProcessedFull = await TourEmailsService.GetProcessedEmailByMessageIdAsync(initialProcessed.MessageId);
+					// Also resolve the Booking row for the true initial (root) to drive the summary's "original" row
+					try
+					{
+						originBookingForSummary = null;
+						if (!string.IsNullOrWhiteSpace(initialProcessedFull?.BookingCode))
+						{
+							originBookingForSummary = await ProcessingService.GetBookingByCodeAsync(initialProcessedFull.BookingCode!, CancellationToken.None);
+						}
+					}
+					catch { originBookingForSummary = null; }
+				}
+
+				// Build plaintext header summary for modifications (compare initial vs current)
+				if (processedFullDiagnostic != null &&
+					string.Equals(processedFullDiagnostic.EmailType, "Modification", StringComparison.OrdinalIgnoreCase) &&
+					initialProcessedFull != null)
+				{
+					var prev = MapToSimple(initialProcessedFull);
+					var curr = MapToSimple(processedFullDiagnostic);
+					processedPlainHeaderSummary = BuildModificationSummary(prev, curr);
+				}
+
+				// Compute warnings for cancellation/modification inconsistent DB bookings
+				await ComputeBookingStateWarningsAsync(processedFullDiagnostic, relatedProcessed, currentBookingCode, CancellationToken.None);
+
+				// 2025-11-30 00:00 UTC - Improve modification baseline by unifying across new/previous/current codes
+			if (!baselineFromOriginPointer &&
+				processedFullDiagnostic != null &&
+					string.Equals(processedFullDiagnostic.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+				{
+					var codeSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+					void add(string? s) { if (!string.IsNullOrWhiteSpace(s)) codeSet.Add(s!.Trim()); }
+					// include codes from both processed models
+					add(processed?.BookingCode); add(processed?.NewBookingCode); add(processed?.PreviousBookingCode);
+					add(processedFullDiagnostic.BookingCode); add(processedFullDiagnostic.NewBookingCode); add(processedFullDiagnostic.PreviousBookingCode);
+
+					var unionThread = await LoadThreadByCodesAsync(codeSet, CancellationToken.None);
+					var unionInitial = unionThread
+						.Where(p => string.Equals(p.EmailType, "Booking", StringComparison.OrdinalIgnoreCase) ||
+									string.Equals(p.EmailType, "Confirmation", StringComparison.OrdinalIgnoreCase))
+						.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+						.FirstOrDefault();
+					if (unionInitial != null && !string.IsNullOrWhiteSpace(unionInitial.MessageId))
+					{
+						try
+						{
+							var pe = await TourEmailsService.GetProcessedEmailByMessageIdAsync(unionInitial.MessageId);
+							if (pe != null)
+							{
+								var prev = MapToSimple(pe);
+								var curr = MapToSimple(processedFullDiagnostic);
+								var unifiedSummary = BuildModificationSummary(prev, curr);
+								if (!string.IsNullOrWhiteSpace(unifiedSummary))
+								{
+									processedPlainHeaderSummary = unifiedSummary;
+								}
+								initialProcessedFull = pe; // adopt better baseline
+								originalBookingMessageId = unionInitial.MessageId;
+
+								// Build the timeline based on unified baseline
+								await BuildModificationTimelineAsync(MapToSimple(initialProcessedFull), CancellationToken.None);
+							}
+						}
+						catch { /* ignore */ }
+					}
+					else
+					{
+						// Build timeline from existing baseline if available
+						if (initialProcessed != null && !string.IsNullOrWhiteSpace(initialProcessed.MessageId))
+						{
+							originalBookingMessageId = initialProcessed.MessageId;
+						}
+						await BuildModificationTimelineAsync(initialProcessedFull != null ? MapToSimple(initialProcessedFull) : null, CancellationToken.None);
+					}
+				}
+				else
+				{
+					// Not a modification; clear timeline
+					modificationTimeline.Clear();
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[EmailPipeline] ReloadSelectedAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+		}
+		pendingHighlight = true;
+		StateHasChanged();
+	}
+
+	private async Task ReloadSelectedByBookingAsync()
+	{
+		if (string.IsNullOrWhiteSpace(selectedBookingCode)) return;
+		try
+		{
+			isBusy = true;
+			processedPlainHeaderSummary = string.Empty;
+			originalBookingMessageId = null;
+			cancellationWarningActiveBookingPresent = false;
+			cancellationWarningDetail = string.Empty;
+			modificationWarningOldBookingActive = false;
+			modificationWarningDetail = string.Empty;
+			modificationTimeline.Clear();
+
+			// Load full processed thread starting from canonical root
+			{
+				var rootCode = await ProcessingService.ResolveRootBookingCodeAsync(selectedBookingCode!, CancellationToken.None);
+				relatedProcessed = (await ProcessingService.GetProcessedThreadByRootBookingCodeAsync(rootCode, CancellationToken.None)).ToList();
+			}
+
+			// Determine timeline buckets
+			initialProcessed = relatedProcessed
+				.Where(p => string.Equals(p.EmailType, "Booking", StringComparison.OrdinalIgnoreCase) ||
+				            string.Equals(p.EmailType, "Confirmation", StringComparison.OrdinalIgnoreCase))
+				.GroupBy(p => p.MessageId)
+				.Select(g => g.OrderBy(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MaxValue).First())
+				.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+				.FirstOrDefault();
+			if (initialProcessed != null && !string.IsNullOrWhiteSpace(initialProcessed.MessageId))
+			{
+				originalBookingMessageId = initialProcessed.MessageId;
+			}
+
+			modificationProcessed = relatedProcessed
+				.Where(p => string.Equals(p.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+				.GroupBy(p => p.MessageId)
+				.Select(g => g.OrderBy(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MaxValue).First())
+				.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+				.ToList();
+
+			latestCancellation = relatedProcessed
+				.Where(p => string.Equals(p.EmailType, "Cancellation", StringComparison.OrdinalIgnoreCase))
+				.GroupBy(p => p.MessageId)
+				.Select(g => g.OrderByDescending(x => x.ProcessingCompletedAt ?? x.ExtractedAt ?? DateTime.MinValue).First())
+				.OrderByDescending(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MinValue)
+				.FirstOrDefault();
+
+			// Load content for initial + most recent modification (if any)
+			initialPlainText = string.Empty;
+			modificationPlainText = string.Empty;
+			if (initialProcessed != null && !string.IsNullOrWhiteSpace(initialProcessed.MessageId))
+			{
+				var pe = await TourEmailsService.GetProcessedEmailByMessageIdAsync(initialProcessed.MessageId);
+				initialProcessedFull = pe;
+				initialPlainText = pe?.PlainTextContent ?? pe?.HtmlContent ?? string.Empty;
+				initialInboxEmail = await ProcessingService.GetInboxByMessageIdAsync(initialProcessed.MessageId, CancellationToken.None);
+				initialHydratedDiagnostic = await ProcessingService.GetHydratedDiagnosticByMessageIdAsync(initialProcessed.MessageId, CancellationToken.None);
+				// Resolve original booking from the true initial processed for summary display
+				try
+				{
+					originBookingForSummary = null;
+					if (!string.IsNullOrWhiteSpace(pe?.BookingCode))
+					{
+						originBookingForSummary = await ProcessingService.GetBookingByCodeAsync(pe.BookingCode!, CancellationToken.None);
+					}
+				}
+				catch { originBookingForSummary = null; }
+			}
+			if (modificationProcessed.Count > 0 && !string.IsNullOrWhiteSpace(modificationProcessed[^1].MessageId))
+			{
+				var me = await TourEmailsService.GetProcessedEmailByMessageIdAsync(modificationProcessed[^1].MessageId!);
+				latestModificationFull = me;
+				modificationPlainText = me?.PlainTextContent ?? me?.HtmlContent ?? string.Empty;
+				latestModInboxEmail = await ProcessingService.GetInboxByMessageIdAsync(modificationProcessed[^1].MessageId!, CancellationToken.None);
+				modificationHydratedDiagnostic = await ProcessingService.GetHydratedDiagnosticByMessageIdAsync(modificationProcessed[^1].MessageId!, CancellationToken.None);
+			}
+
+			// Final booking record and linked customer
+			finalBooking = await ProcessingService.GetBookingByCodeAsync(selectedBookingCode!, CancellationToken.None);
+			bookingCustomer = finalBooking != null
+				? await ProcessingService.GetCustomerForBookingCodeAsync(selectedBookingCode!, CancellationToken.None)
+				: null;
+			currentBookingCode = selectedBookingCode;
+			selectedInbox = null;
+			processed = null;
+			plainText = string.Empty;
+
+			// Cancellation content (if any)
+			cancellationPlainText = string.Empty;
+			if (latestCancellation != null && !string.IsNullOrWhiteSpace(latestCancellation.MessageId))
+			{
+				var ce = await TourEmailsService.GetProcessedEmailByMessageIdAsync(latestCancellation.MessageId);
+				latestCancellationFull = ce;
+				cancellationPlainText = ce?.PlainTextContent ?? ce?.HtmlContent ?? string.Empty;
+				cancellationHydratedDiagnostic = await ProcessingService.GetHydratedDiagnosticByMessageIdAsync(latestCancellation.MessageId, CancellationToken.None);
+			}
+
+			// Compute warnings for cancellation/modification inconsistent DB bookings
+			await ComputeBookingStateWarningsAsync(null, relatedProcessed, currentBookingCode, CancellationToken.None);
+
+			// Build modifications timeline when applicable
+			if (modificationProcessed.Count > 0)
+			{
+				await BuildModificationTimelineAsync(initialProcessedFull != null ? MapToSimple(initialProcessedFull) : null, CancellationToken.None);
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[EmailPipeline] ReloadSelectedByBookingAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+		}
+		pendingHighlight = true;
+		StateHasChanged();
+	}
+
+	private async Task ProcessSelectedAsync()
+	{
+		if (string.IsNullOrWhiteSpace(selectedMessageId)) return;
+		try
+		{
+			isBusy = true;
+			var inboxId = await ProcessingService.GetInboxIdByMessageIdAsync(selectedMessageId, CancellationToken.None);
+			if (inboxId.HasValue)
+			{
+				await ProcessingService.ProcessSpecificAsync(new List<int> { inboxId.Value }, CancellationToken.None);
+				await ReloadSelectedAsync();
+				if (listScope == "pending")
+				{
+					await LoadLeftAsync();
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[EmailPipeline] ProcessSelectedAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+		}
+	}
+
+	private void SetScope(string scope)
+	{
+		listScope = scope;
+		_ = LoadLeftAsync();
+	}
+
+	private void SetScopePending() => SetScope("pending");
+	private void SetScopeProcessed() => SetScope("processed");
+	private void SetScopeProcessedEmails() => SetScope("processed_emails");
+
+	private string GetPendingButtonClass()
+	{
+		return listScope == "pending"
+			? "btn btn-outline-primary btn-sm active"
+			: "btn btn-outline-primary btn-sm";
+	}
+
+	private string GetProcessedButtonClass()
+	{
+		return listScope == "processed"
+			? "btn btn-outline-secondary btn-sm active"
+			: "btn btn-outline-secondary btn-sm";
+	}
+
+	private static string ShortMessageId(string? messageId)
+	{
+		if (string.IsNullOrWhiteSpace(messageId)) return "";
+		if (messageId.Length <= 24) return messageId;
+		return messageId[..12] + "..." + messageId[^9..];
+	}
+
+	private static string Fmt(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+	private static string StripHtml(string? html)
+	{
+		if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+		var s = html.Replace("<br>", "\n", StringComparison.OrdinalIgnoreCase)
+			.Replace("<br/>", "\n", StringComparison.OrdinalIgnoreCase)
+			.Replace("<br />", "\n", StringComparison.OrdinalIgnoreCase);
+		return System.Text.RegularExpressions.Regex.Replace(s, "<.*?>", string.Empty);
+	}
+
+	// 2025-12-02 00:00 UTC - Flow-aware booking code selection for display/use
+	// Mirrors processing rules:
+	// - Modification: New -> Booking -> Previous
+	// - Cancellation: Previous -> Booking
+	// - Booking/Confirmation/Other: Booking
+	private static string? SelectBookingCodeForDisplayDiagnostic(string? bookingCode, string? newBookingCode, string? previousBookingCode, string? emailType = null)
+	{
+		var type = (emailType ?? string.Empty).Trim();
+		if (string.Equals(type, "Modification", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!string.IsNullOrWhiteSpace(newBookingCode)) return newBookingCode!.Trim();
+			if (!string.IsNullOrWhiteSpace(bookingCode)) return bookingCode!.Trim();
+			if (!string.IsNullOrWhiteSpace(previousBookingCode)) return previousBookingCode!.Trim();
+			return null;
+		}
+		if (string.Equals(type, "Cancellation", StringComparison.OrdinalIgnoreCase))
+		{
+			if (!string.IsNullOrWhiteSpace(previousBookingCode)) return previousBookingCode!.Trim();
+			if (!string.IsNullOrWhiteSpace(bookingCode)) return bookingCode!.Trim();
+			return null;
+		}
+		// Default: Booking/Confirmation/Other
+		if (!string.IsNullOrWhiteSpace(bookingCode)) return bookingCode!.Trim();
+		if (!string.IsNullOrWhiteSpace(newBookingCode)) return newBookingCode!.Trim();
+		if (!string.IsNullOrWhiteSpace(previousBookingCode)) return previousBookingCode!.Trim();
+		return null;
+	}
+
+	private string GetDiagnosticPlainText(HydratedEmailDiagnosticContext? ctx)
+	{
+		if (ctx == null) return string.Empty;
+		if (!string.IsNullOrWhiteSpace(ctx.ProcessedDiagnostic?.PlainTextContent))
+		{
+			return ctx.ProcessedDiagnostic!.PlainTextContent!;
+		}
+		if (!string.IsNullOrWhiteSpace(ctx.ProcessedDiagnostic?.HtmlContent))
+		{
+			return StripHtml(ctx.ProcessedDiagnostic!.HtmlContent);
+		}
+		return ctx.InboxDiagnostic?.TextBody ?? string.Empty;
+	}
+
+	// 2025-11-30 00:00 UTC - Modification summary helpers
+	private sealed class SimpleProcessed
+	{
+		public string? CustomerName { get; set; }
+		public string? CustomerPhone { get; set; }
+		public DateTime? TourDate { get; set; }
+		public string? TourTime { get; set; }
+		public string? TourName { get; set; }
+		public int? NumberOfAttendees { get; set; }
+		public int? NumberOfAdults { get; set; }
+		public int? NumberOfChildren { get; set; }
+	}
+
+	private static SimpleProcessed MapToSimple(Email.Models.ProcessedEmail pe) => new SimpleProcessed
+	{
+		CustomerName = pe.CustomerName,
+		CustomerPhone = pe.CustomerPhone,
+		TourDate = pe.TourDate,
+		TourTime = pe.TourTime,
+		TourName = pe.TourName,
+		NumberOfAttendees = pe.NumberOfAttendees,
+		NumberOfAdults = pe.NumberOfAdults,
+		NumberOfChildren = pe.NumberOfChildren
+	};
+
+	private static SimpleProcessed MapToSimple(Email.Services.GmailProcessing.Models.ProcessedEmailRecord pe) => new SimpleProcessed
+	{
+		CustomerName = pe.CustomerName,
+		CustomerPhone = pe.CustomerPhone,
+		TourDate = DateTime.TryParse(pe.TourDate, out var d) ? d : (DateTime?)null,
+		TourTime = pe.TourTime,
+		TourName = pe.TourName,
+		NumberOfAttendees = pe.NumberOfAttendees,
+		NumberOfAdults = pe.NumberOfAdults,
+		NumberOfChildren = pe.NumberOfChildren
+	};
+
+	private static string BuildModificationSummary(SimpleProcessed? previous, SimpleProcessed? current)
+	{
+		if (previous == null || current == null) return string.Empty;
+		var changes = new List<string>();
+		// Tour date
+		var prevDate = previous.TourDate?.ToString("M/d/yy");
+		var currDate = current.TourDate?.ToString("M/d/yy");
+		if (!string.Equals(prevDate, currDate, StringComparison.Ordinal))
+		{
+			if (!string.IsNullOrWhiteSpace(prevDate) || !string.IsNullOrWhiteSpace(currDate))
+				changes.Add($"tour date: {prevDate ?? "—"} -> {currDate ?? "—"}");
+		}
+		// Tour time
+		if (!string.Equals(previous.TourTime ?? string.Empty, current.TourTime ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+		{
+			changes.Add($"tour time {previous.TourTime ?? "—"} -> {current.TourTime ?? "—"}");
+		}
+		// Tour name
+		if (!string.Equals(previous.TourName ?? string.Empty, current.TourName ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+		{
+			changes.Add($"tour: {previous.TourName ?? "—"} -> {current.TourName ?? "—"}");
+		}
+		// Customer name
+		if (!string.Equals(previous.CustomerName ?? string.Empty, current.CustomerName ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+		{
+			changes.Add($"walker: {previous.CustomerName ?? "—"} -> {current.CustomerName ?? "—"}");
+		}
+		// Phone
+		if (!string.Equals(previous.CustomerPhone ?? string.Empty, current.CustomerPhone ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+		{
+			changes.Add($"phone: {previous.CustomerPhone ?? "—"} -> {current.CustomerPhone ?? "—"}");
+		}
+		// Attendees
+		var prevAtt = previous.NumberOfAttendees;
+		var currAtt = current.NumberOfAttendees;
+		if ((prevAtt ?? -1) != (currAtt ?? -1))
+		{
+			// format arrow without spaces as requested
+			changes.Add($"attendees: {(prevAtt?.ToString() ?? "—")}->{(currAtt?.ToString() ?? "—")}");
+		}
+		// Adults
+		var prevAdults = previous.NumberOfAdults;
+		var currAdults = current.NumberOfAdults;
+		if ((prevAdults ?? -1) != (currAdults ?? -1))
+		{
+			changes.Add($"adults: {(prevAdults?.ToString() ?? "—")}->{(currAdults?.ToString() ?? "—")}");
+		}
+		// Children
+		var prevChildren = previous.NumberOfChildren;
+		var currChildren = current.NumberOfChildren;
+		if ((prevChildren ?? -1) != (currChildren ?? -1))
+		{
+			changes.Add($"children: {(prevChildren?.ToString() ?? "—")}->{(currChildren?.ToString() ?? "—")}");
+		}
+		return string.Join(" | ", changes);
+	}
+
+	private async Task ComputeBookingStateWarningsAsync(Email.Services.GmailProcessing.Models.ProcessedEmailRecord? currentProcessedFull, List<ProcessedEmailDisplayDto> thread, string? threadBookingCode, CancellationToken ct)
+	{
+		try
+		{
+			// Cancellation: if thread has a cancellation (or current is cancellation), ensure the booking is not active
+			var hasCancellation = thread.Any(p => string.Equals(p.EmailType, "Cancellation", StringComparison.OrdinalIgnoreCase))
+				|| (currentProcessedFull?.IsCancellation ?? false);
+			if (hasCancellation)
+			{
+				var code = threadBookingCode
+					?? currentProcessedFull?.BookingCode
+					?? currentProcessedFull?.PreviousBookingCode;
+				if (!string.IsNullOrWhiteSpace(code))
+				{
+					Email.Services.GmailProcessing.Models.Booking? b = null;
+					try { b = await ProcessingService.GetBookingByCodeAsync(code!, ct); } catch { }
+					if (b != null && (b.IsActive || !string.Equals(b.BookingStatus ?? string.Empty, "Cancelled", StringComparison.OrdinalIgnoreCase)))
+					{
+						cancellationWarningActiveBookingPresent = true;
+						cancellationWarningDetail = $"Booking {code} is still active (status: {b.BookingStatus ?? "Unknown"})";
+					}
+				}
+			}
+
+			// Modification: if thread has a modification (or current is modification), ensure the previous code is not active
+			var hasModification = thread.Any(p => string.Equals(p.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+				|| (currentProcessedFull?.IsModification ?? false);
+			if (hasModification)
+			{
+				// Prefer latest modification from thread for codes
+				var latestMod = thread
+					.Where(p => string.Equals(p.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+					.OrderByDescending(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MinValue)
+					.FirstOrDefault();
+				string? prevCode = currentProcessedFull?.PreviousBookingCode;
+				if (string.IsNullOrWhiteSpace(prevCode) && latestMod != null && !string.IsNullOrWhiteSpace(latestMod.MessageId))
+				{
+					try
+					{
+						var latestModFull = await ProcessingService.GetProcessedFullByMessageIdAsync(latestMod.MessageId!, ct);
+						prevCode = latestModFull?.PreviousBookingCode;
+					}
+					catch { /* ignore */ }
+				}
+				if (!string.IsNullOrWhiteSpace(prevCode))
+				{
+					Email.Services.GmailProcessing.Models.Booking? prev = null;
+					try { prev = await ProcessingService.GetBookingByCodeAsync(prevCode!, ct); } catch { }
+					if (prev != null && prev.IsActive)
+					{
+						modificationWarningOldBookingActive = true;
+						modificationWarningDetail = $"Previous booking {prevCode} is still active (status: {prev.BookingStatus ?? "Unknown"})";
+					}
+				}
+			}
+		}
+		catch
+		{
+			// ignore warning calc errors
+		}
+	}
+
+	private async Task<List<ProcessedEmailDisplayDto>> LoadThreadByCodesAsync(IEnumerable<string?> codes, CancellationToken ct)
+	{
+		var all = new List<ProcessedEmailDisplayDto>();
+		var seen = new HashSet<int>();
+		foreach (var code in codes)
+		{
+			if (string.IsNullOrWhiteSpace(code)) continue;
+			List<ProcessedEmailDisplayDto> rows;
+			try { rows = (await ProcessingService.GetProcessedByBookingCodeAsync(code!, ct)).ToList(); }
+			catch { continue; }
+			foreach (var r in rows)
+			{
+				if (seen.Add(r.Id)) all.Add(r);
+			}
+		}
+		return all;
+	}
+
+	private async Task BuildModificationTimelineAsync(SimpleProcessed? baseline, CancellationToken ct)
+	{
+		modificationTimeline.Clear();
+		var prev = baseline;
+		foreach (var mp in modificationProcessed.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue))
+		{
+			if (string.IsNullOrWhiteSpace(mp.MessageId)) continue;
+			Email.Models.ProcessedEmail? pe = null;
+			try { pe = await TourEmailsService.GetProcessedEmailByMessageIdAsync(mp.MessageId); } catch { }
+			if (pe == null) continue;
+			var curr = MapToSimple(pe);
+			var summary = BuildModificationSummary(prev, curr);
+			modificationTimeline.Add(new ModificationStepSummary
+			{
+				MessageId = mp.MessageId!,
+				CompletedAt = mp.ProcessingCompletedAt ?? mp.ExtractedAt,
+				Summary = summary,
+				BookingCode = pe.BookingCode,
+				VendorName = pe.VendorName
+			});
+			prev = curr;
+		}
+	}
+
+	private void CloseRightPreview()
+	{
+		isRightPreviewOpen = false;
+		StateHasChanged();
+	}
+
+	private async Task OpenRightPreviewByMessageIdAsync(string messageId)
+	{
+		try
+		{
+			var inbox = await ProcessingService.GetInboxByMessageIdAsync(messageId, CancellationToken.None);
+			var html = inbox?.HtmlBody ?? string.Empty;
+			if (string.IsNullOrWhiteSpace(html))
+			{
+				// Fallback: try processed html if available
+				if (!string.IsNullOrWhiteSpace(processedFullDiagnostic?.HtmlContent) && string.Equals(processedFullDiagnostic?.MessageId, messageId, StringComparison.OrdinalIgnoreCase))
+				{
+					html = processedFullDiagnostic!.HtmlContent!;
+				}
+			}
+			if (string.IsNullOrWhiteSpace(html))
+			{
+				html = "<!doctype html><html><head><meta charset=\"utf-8\"><title>No HTML</title></head><body><div style=\"padding:1rem;font-family:system-ui\">No HTML body available for this message.</div></body></html>";
+			}
+			rightPreviewHtml = html;
+			rightPreviewTitle = ShortMessageId(messageId);
+			isRightPreviewOpen = true;
+			pendingPreviewSet = true;
+		}
+		catch
+		{
+			rightPreviewHtml = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Error</title></head><body><div style=\"padding:1rem;font-family:system-ui;color:#b02a37\">Failed to load HTML for this message.</div></body></html>";
+			rightPreviewTitle = ShortMessageId(messageId);
+			isRightPreviewOpen = true;
+			pendingPreviewSet = true;
+		}
+		StateHasChanged();
+	}
+
+	// 2025-11-30 00:00 UTC - Apply plaintext highlighting post-render using FreeTourModificationParser/BaseParser patterns
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (pendingHighlight)
+		{
+			pendingHighlight = false;
+			await ApplyPlainTextHighlightsAsync();
+		}
+		if (pendingPreviewSet && isRightPreviewOpen)
+		{
+			pendingPreviewSet = false;
+			try
+			{
+				await JS.InvokeVoidAsync("emailModHighlighter.setIframeSrcdoc", rightPreviewFrameRef, rightPreviewHtml);
+			}
+			catch
+			{
+				// ignore interop errors
+			}
+		}
+	}
+
+	private async Task ApplyPlainTextHighlightsAsync()
+	{
+		try
+		{
+			// processed plaintext → only if this item is a modification
+			if (processedFullDiagnostic != null &&
+			    string.Equals(processedFullDiagnostic.EmailType, "Modification", StringComparison.OrdinalIgnoreCase) &&
+			    !string.IsNullOrWhiteSpace(processedFullDiagnostic.PlainTextContent))
+			{
+				await JS.InvokeVoidAsync("emailModHighlighter.highlight", processedPlainRef, processedFullDiagnostic.VendorName ?? "");
+			}
+
+			// latest modification plaintext
+			if (!string.IsNullOrWhiteSpace(modificationPlainText))
+			{
+				var vendor = latestModificationFull?.VendorName
+				             ?? processedFullDiagnostic?.VendorName
+				             ?? hydratedDiagnostic?.ProcessedDiagnostic?.VendorName
+				             ?? string.Empty;
+				await JS.InvokeVoidAsync("emailModHighlighter.highlight", modPlainRef, vendor);
+			}
+
+			// diagnostic plaintext → only highlight when selected processed is a modification
+			if (hydratedDiagnostic?.ProcessedDiagnostic != null &&
+			    string.Equals(hydratedDiagnostic.ProcessedDiagnostic.EmailType, "Modification", StringComparison.OrdinalIgnoreCase))
+			{
+				await JS.InvokeVoidAsync("emailModHighlighter.highlight", diagnosticPlainRef, hydratedDiagnostic.ProcessedDiagnostic.VendorName ?? "");
+			}
+		}
+		catch
+		{
+			// ignore interop errors
+		}
+	}
+
+	private string? GetOriginalBookingMessageId()
+	{
+		if (!string.IsNullOrWhiteSpace(originalBookingMessageId)) return originalBookingMessageId;
+		if (initialProcessed != null && !string.IsNullOrWhiteSpace(initialProcessed.MessageId))
+			return initialProcessed.MessageId;
+		if (relatedProcessed.Count > 0)
+		{
+			var init = relatedProcessed
+				.Where(p => string.Equals(p.EmailType, "Booking", StringComparison.OrdinalIgnoreCase) ||
+				            string.Equals(p.EmailType, "Confirmation", StringComparison.OrdinalIgnoreCase))
+				.OrderBy(p => p.ProcessingCompletedAt ?? p.ExtractedAt ?? DateTime.MaxValue)
+				.FirstOrDefault();
+			if (!string.IsNullOrWhiteSpace(init?.MessageId)) return init!.MessageId!;
+		}
+		return null;
+	}
+
+	private async Task OpenRightPreviewOriginalBookingAsync()
+	{
+		var msgId = GetOriginalBookingMessageId();
+		if (!string.IsNullOrWhiteSpace(msgId))
+		{
+			await OpenRightPreviewByMessageIdAsync(msgId!);
+		}
+	}
+
+	// 2025-11-30 00:00 UTC - Left list filtering logic and helpers
+	private void ToggleType(string type)
+	{
+		if (string.IsNullOrWhiteSpace(type)) return;
+		if (selectedTypes.Contains(type))
+		{
+			selectedTypes.Remove(type);
+		}
+		else
+		{
+			selectedTypes.Add(type);
+		}
+		ApplyLeftFiltersDebounced();
+	}
+	private string GetTypeChipClass(string type)
+	{
+		var active = selectedTypes.Contains(type);
+		return active ? "btn btn-outline-secondary btn-sm active" : "btn btn-outline-secondary btn-sm";
+	}
+	private string GetDatePresetBtnClass(DatePreset preset)
+	{
+		return datePreset == preset ? "btn btn-outline-secondary btn-sm active" : "btn btn-outline-secondary btn-sm";
+	}
+	private void SetDatePreset(DatePreset preset)
+	{
+		datePreset = preset;
+		if (datePreset != DatePreset.Custom)
+		{
+			fromDateStr = string.Empty;
+			toDateStr = string.Empty;
+		}
+		ApplyLeftFiltersDebounced();
+	}
+	private void OnFromDateChanged(ChangeEventArgs e)
+	{
+		fromDateStr = e?.Value?.ToString() ?? string.Empty;
+		if (datePreset != DatePreset.Custom) datePreset = DatePreset.Custom;
+		ApplyLeftFiltersDebounced();
+	}
+	private void OnToDateChanged(ChangeEventArgs e)
+	{
+		toDateStr = e?.Value?.ToString() ?? string.Empty;
+		if (datePreset != DatePreset.Custom) datePreset = DatePreset.Custom;
+		ApplyLeftFiltersDebounced();
+	}
+	private string GetSearchModeBtnClass(SearchMode mode)
+	{
+		return searchMode == mode ? "btn btn-outline-secondary active" : "btn btn-outline-secondary";
+	}
+	private void SetSearchMode(SearchMode mode)
+	{
+		searchMode = mode;
+		ApplyLeftFiltersDebounced();
+	}
+	private void OnSearchInput(ChangeEventArgs e)
+	{
+		searchText = e?.Value?.ToString() ?? string.Empty;
+		ApplyLeftFiltersDebounced();
+	}
+	private void ClearAllFilters()
+	{
+		selectedTypes.Clear();
+		datePreset = DatePreset.None;
+		fromDateStr = string.Empty;
+		toDateStr = string.Empty;
+		searchText = string.Empty;
+		searchMode = SearchMode.Customer;
+		ApplyLeftFiltersNow();
+	}
+	private static string NormalizeTypeForDisplay(string? emailType)
+	{
+		if (string.Equals(emailType ?? string.Empty, "Confirmation", StringComparison.OrdinalIgnoreCase)) return "Booking";
+		return string.IsNullOrWhiteSpace(emailType) ? "Unknown" : emailType!;
+	}
+	private static string GetTypePillClass(string? emailType)
+	{
+		if (string.Equals(emailType ?? string.Empty, "Cancellation", StringComparison.OrdinalIgnoreCase)) return "badge rounded-pill bg-danger";
+		if (string.Equals(emailType ?? string.Empty, "Modification", StringComparison.OrdinalIgnoreCase)) return "badge rounded-pill bg-warning text-dark";
+		// Booking/Confirmation → Booking
+		return "badge rounded-pill bg-primary";
+	}
+	private static string GetStatusPillClass(string? status)
+	{
+		var s = status?.Trim() ?? string.Empty;
+		if (string.Equals(s, "failed", StringComparison.OrdinalIgnoreCase) || string.Equals(s, "error", StringComparison.OrdinalIgnoreCase)) return "badge rounded-pill bg-danger";
+		if (string.Equals(s, "pending", StringComparison.OrdinalIgnoreCase)) return "badge rounded-pill bg-secondary";
+		return "badge rounded-pill bg-success";
+	}
+	private static string GetVendorInitials(string? vendorName)
+	{
+		var v = (vendorName ?? string.Empty).Trim();
+		if (string.IsNullOrEmpty(v)) return "—";
+		var parts = v.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		if (parts.Length == 1)
+		{
+			return parts[0].Length >= 2 ? $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[0][1])}" : parts[0][0].ToString().ToUpperInvariant();
+		}
+		return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
+	}
+	private static bool ContainsInvariant(string? haystack, string needle)
+	{
+		if (string.IsNullOrWhiteSpace(needle)) return true;
+		return (haystack ?? string.Empty).IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+	}
+	private static string NormalizeSpaces(string s) => string.Join(" ", (s ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+	private static DateTime? EffectiveTimestamp(ProcessedEmailDisplayDto p) => p.ProcessingCompletedAt ?? p.ExtractedAt;
+	private static string NormalizeTypeForFilter(string? emailType)
+	{
+		if (string.Equals(emailType ?? string.Empty, "Confirmation", StringComparison.OrdinalIgnoreCase)) return "Booking";
+		return emailType ?? string.Empty;
+	}
+	private void ApplyLeftFiltersDebounced()
+	{
+		_filterCts?.Cancel();
+		_filterCts?.Dispose();
+		_filterCts = new System.Threading.CancellationTokenSource();
+		var token = _filterCts.Token;
+		_ = Task.Run(async () =>
+		{
+			try
+			{
+				await Task.Delay(200, token);
+				if (token.IsCancellationRequested) return;
+				await InvokeAsync(ApplyLeftFiltersNow);
+			}
+			catch { /* ignore */ }
+		}, token);
+	}
+	private void ApplyLeftFiltersNow()
+	{
+		IEnumerable<ProcessedEmailDisplayDto> query = leftProcessedEmails;
+
+		// Sort: CompletedAt desc (fallback ExtractedAt desc)
+		query = query.OrderByDescending(p => EffectiveTimestamp(p) ?? DateTime.MinValue);
+
+		// Type chips
+		if (selectedTypes.Count > 0)
+		{
+			query = query.Where(p => selectedTypes.Contains(NormalizeTypeForFilter(p.EmailType)));
+		}
+
+		// Dates
+		DateTime today = DateTime.UtcNow.Date;
+		if (datePreset == DatePreset.Today)
+		{
+			query = query.Where(p => (EffectiveTimestamp(p)?.Date ?? DateTime.MinValue.Date) == today);
+		}
+		else if (datePreset == DatePreset.Last7)
+		{
+			var from = today.AddDays(-6);
+			query = query.Where(p =>
+			{
+				var d = EffectiveTimestamp(p)?.Date;
+				return d.HasValue && d.Value >= from && d.Value <= today;
+			});
+		}
+		else if (datePreset == DatePreset.Last30)
+		{
+			var from = today.AddDays(-29);
+			query = query.Where(p =>
+			{
+				var d = EffectiveTimestamp(p)?.Date;
+				return d.HasValue && d.Value >= from && d.Value <= today;
+			});
+		}
+		else if (datePreset == DatePreset.Custom && (!string.IsNullOrWhiteSpace(fromDateStr) || !string.IsNullOrWhiteSpace(toDateStr)))
+		{
+			DateTime? from = DateTime.TryParse(fromDateStr, out var fd) ? fd.Date : (DateTime?)null;
+			DateTime? to = DateTime.TryParse(toDateStr, out var td) ? td.Date : (DateTime?)null;
+			query = query.Where(p =>
+			{
+				var d = EffectiveTimestamp(p)?.Date;
+				if (!d.HasValue) return false;
+				if (from.HasValue && d.Value < from.Value) return false;
+				if (to.HasValue && d.Value > to.Value) return false;
+				return true;
+			});
+		}
+
+		// Search
+		var term = (searchText ?? string.Empty).Trim();
+		if (!string.IsNullOrWhiteSpace(term))
+		{
+			if (searchMode == SearchMode.Customer)
+			{
+				query = query.Where(p => ContainsInvariant(p.CustomerName, term));
+			}
+			else if (searchMode == SearchMode.BookingCode)
+			{
+				var t = NormalizeSpaces(term);
+				query = query.Where(p => ContainsInvariant(NormalizeSpaces(p.BookingCode ?? string.Empty), t));
+			}
+			else if (searchMode == SearchMode.MessageId)
+			{
+				query = query.Where(p => ContainsInvariant(p.MessageId, term));
+			}
+		}
+
+		leftFiltered = query.ToList();
+		StateHasChanged();
+	}
+
+	private bool HasActiveFilters()
+	{
+		if (selectedTypes.Count > 0) return true;
+		if (datePreset != DatePreset.None) return true;
+		if (!string.IsNullOrWhiteSpace(fromDateStr) || !string.IsNullOrWhiteSpace(toDateStr)) return true;
+		if (!string.IsNullOrWhiteSpace(searchText)) return true;
+		return false;
+	}
+
+	private sealed class LeftItem
+	{
+		public string MessageId { get; set; } = string.Empty;
+		public string Title { get; set; } = string.Empty;
+		public string? Subtitle { get; set; }
+		public DateTime? Date { get; set; }
+	}
+
+	private sealed class LeftGroup
+	{
+		public string BookingCode { get; set; } = string.Empty;
+		public int Count { get; set; }
+		public DateTime LatestAt { get; set; }
+	}
+}
+
+

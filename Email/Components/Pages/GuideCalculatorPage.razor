@@ -1,0 +1,142 @@
+@page "/guide-calculator"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.GuideCalculator
+@using Email.Services
+@inject IGuideCalculatorService CalculatorService
+@inject IGuidesApiService GuidesService
+
+<!-- Created: 2026-01-09 - Guide Calculator page for calculating guide owed/earned amounts -->
+
+<PageTitle>Guide Calculator</PageTitle>
+
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="bi bi-calculator me-2"></i>Guide Calculator</h4>
+        
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <!-- Guide Selector -->
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small fw-semibold">Guide:</label>
+                <select class="form-select form-select-sm" style="width: 220px;"
+                        value="@SelectedGuideId"
+                        @onchange="OnGuideSelectChange">
+                    <option value="0">Select Guide...</option>
+                    @foreach (var g in Guides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                    {
+                        <option value="@g.Id">@g.FirstName @g.LastName</option>
+                    }
+                </select>
+            </div>
+            
+            <!-- Date Picker -->
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small fw-semibold">Date:</label>
+                <input type="date" class="form-control form-control-sm" style="width: 150px;"
+                       value="@SelectedDate.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateChanged" />
+            </div>
+            
+            <!-- Calculate Button -->
+            <button class="btn btn-primary btn-sm" @onclick="CalculateAsync" disabled="@(SelectedGuideId == 0 || isCalculating)">
+                @if (isCalculating)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                <i class="bi bi-calculator me-1"></i>Calculate
+            </button>
+        </div>
+    </div>
+    
+    <!-- Results -->
+    @if (isCalculating)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Calculating...</span>
+            </div>
+            <div class="mt-2 text-muted">Calculating guide amounts...</div>
+        </div>
+    }
+    else if (Result == null)
+    {
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-calculator" style="font-size: 3rem;"></i>
+                <div class="mt-3">Select a guide and date, then click Calculate</div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <GuideCalculator Result="@Result" />
+    }
+</div>
+
+@code {
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private int SelectedGuideId { get; set; }
+    private List<DbGuide> Guides { get; set; } = new();
+    private GuideCalculationResult? Result { get; set; }
+    private bool isCalculating = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGuidesAsync();
+    }
+
+    private async Task LoadGuidesAsync()
+    {
+        try
+        {
+            Guides = await GuidesService.GetGuidesAsync();
+        }
+        catch
+        {
+            Guides = new List<DbGuide>();
+        }
+    }
+
+    private void OnGuideSelectChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            SelectedGuideId = id;
+            Result = null; // Clear previous results
+        }
+    }
+
+    private void OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            SelectedDate = date;
+            Result = null; // Clear previous results
+        }
+    }
+
+    private async Task CalculateAsync()
+    {
+        if (SelectedGuideId == 0) return;
+
+        isCalculating = true;
+        StateHasChanged();
+
+        try
+        {
+            //ultimatly this will be for the logged in guide, but for now we will select a guide and date and calculate
+            Result = await CalculatorService.CalculateForGuideAsync(SelectedGuideId, SelectedDate);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Calculation error: {ex.Message}");
+            Result = null;
+        }
+        finally
+        {
+            isCalculating = false;
+            StateHasChanged();
+        }
+    }
+}

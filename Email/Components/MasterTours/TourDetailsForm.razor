@@ -1,0 +1,254 @@
+<div class="row g-3">
+    <div class="col-12">
+        <label class="form-label">
+            Master Tour Name
+            <span class="badge bg-info ms-1">New</span>
+            @if (string.IsNullOrWhiteSpace(Tour.MasterTourName))
+            {
+                <span class="badge bg-danger ms-1">Missing</span>
+            }
+        </label>
+        <input type="text" class="form-control" @bind="Tour.MasterTourName" disabled="@IsBusy" />
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">Master Name (Desktop)</label>
+        <input type="text" class="form-control" @bind="Tour.MasterTourNameDesktop" disabled="@IsBusy" />
+        <div class="form-text">If blank, this will default to Master Tour Name on save.</div>
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">Abbreviation (Mobile)</label>
+        <input type="text" class="form-control" @bind="Tour.MasterTourNameMobile" disabled="@IsBusy" />
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">
+            Tour Time
+            <span class="badge bg-secondary ms-1">All Schedules</span>
+        </label>
+        <select class="form-select"
+                @bind="SelectedTourTime"
+                @bind:after="HandleTimeChanged"
+                disabled="@IsBusy">
+            <option value="">-- Select Tour Time --</option>
+            @foreach (var slot in AvailableTimeSlots)
+            {
+                <option value="@slot.TourTime">@FormatTimeDisplay(slot.TourTime)@(slot.IsOverride ? " (Override)" : "")</option>
+            }
+        </select>
+        <div class="form-text">Showing all schedule times. Override labels are UI-only until the override dialog is added.</div>
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">Meeting Time</label>
+        <input type="text" class="form-control" value="@ComputedMeetingTime" readonly />
+        <div class="form-text">Computed from Tour Time (-10 min). UI-only for now and may be persisted later.</div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" id="@overrideSwitchId" @bind="useOverrideTime" disabled="@IsBusy" />
+            <label class="form-check-label" for="@overrideSwitchId">Override Tour Time</label>
+        </div>
+        @if (useOverrideTime)
+        {
+            <div class="input-group mt-2">
+                <select class="form-select" @bind="overrideTourTime" disabled="@IsBusy">
+                    <option value="">-- Select override time --</option>
+                    @foreach (var t in TimeOptions)
+                    {
+                        <option value="@t">@DateTime.Parse(t).ToString("h:mm tt")</option>
+                    }
+                </select>
+                <button class="btn btn-outline-primary" type="button" @onclick="ApplyOverrideTime" disabled="@IsBusy">
+                    Use
+                </button>
+            </div>
+            <div class="form-text">Overrides the schedule time selection for this tour (UI-only).</div>
+        }
+    </div>
+
+    <div class="col-md-6">
+        <label class="form-label">Default Guide</label>
+        <select class="form-select" @bind="Tour.DefaultGuideId" disabled="@IsBusy">
+            <option value="">-- none --</option>
+            @foreach (var guide in AvailableGuides)
+            {
+                <option value="@guide.Id">@FormatGuideName(guide)</option>
+            }
+        </select>
+    </div>
+
+    <div class="col-12">
+        <label class="form-label">Meeting Place</label>
+        <input type="text" class="form-control" @bind="Tour.MeetingPlace" disabled="@IsBusy" />
+    </div>
+
+    <div class="col-12">
+        <label class="form-label">Meeting Instructions</label>
+        <textarea class="form-control" rows="3" @bind="Tour.MeetingInstructions" disabled="@IsBusy"></textarea>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DbTour Tour { get; set; } = new();
+    [Parameter] public IReadOnlyList<MasterTourTimeSlot> AvailableTimeSlots { get; set; } = new List<MasterTourTimeSlot>();
+    [Parameter] public IReadOnlyList<DbGuide> AvailableGuides { get; set; } = new List<DbGuide>();
+    [Parameter] public string? SelectedTourTime { get; set; }
+    [Parameter] public EventCallback<string?> SelectedTourTimeChanged { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+
+    private bool useOverrideTime;
+    private string? overrideTourTime;
+    private readonly string overrideSwitchId = $"override-time-{Guid.NewGuid():N}";
+
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrWhiteSpace(overrideTourTime) && !string.IsNullOrWhiteSpace(SelectedTourTime))
+        {
+            overrideTourTime = SelectedTourTime;
+        }
+    }
+
+    /// <summary>
+    /// UI-only computed meeting time (Tour Time minus 10 minutes). May need persistence later.
+    /// </summary>
+    private string ComputedMeetingTime => ComputeMeetingTime(SelectedTourTime);
+
+    private void HandleTimeChanged()
+    {
+        // Created: 2026-02-12 00:00 UTC - Auto-fill meeting details when a tour time is selected.
+        try
+        {
+            if (string.IsNullOrWhiteSpace(SelectedTourTime))
+            {
+                return;
+            }
+
+            var normalized = NormalizeTime(SelectedTourTime);
+            var slot = AvailableTimeSlots.FirstOrDefault(x => NormalizeTime(x.TourTime) == normalized);
+            if (slot == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(slot.MeetingPlace))
+            {
+                Tour.MeetingPlace = slot.MeetingPlace;
+            }
+
+            if (!string.IsNullOrWhiteSpace(slot.MeetingInstructions))
+            {
+                Tour.MeetingInstructions = slot.MeetingInstructions;
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourDetailsForm] HandleTimeChanged failed: {ex}");
+#endif
+        }
+    }
+
+    private string ComputeMeetingTime(string? tourTime)
+    {
+        // Created: 2026-02-12 00:00 UTC - Compute meeting time as Tour Time minus 10 minutes.
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(tourTime) && DateTime.TryParse(tourTime, out var dt))
+            {
+                return dt.AddMinutes(-10).ToString("h:mm tt");
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourDetailsForm] ComputeMeetingTime failed: {ex}");
+#endif
+        }
+
+        return string.Empty;
+    }
+
+    private async Task ApplyOverrideTime()
+    {
+        // Created: 2026-02-12 00:00 UTC - Apply an override time selection.
+        try
+        {
+            if (string.IsNullOrWhiteSpace(overrideTourTime)) return;
+
+            SelectedTourTime = overrideTourTime;
+            await SelectedTourTimeChanged.InvokeAsync(SelectedTourTime);
+            HandleTimeChanged();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourDetailsForm] ApplyOverrideTime failed: {ex}");
+#endif
+        }
+    }
+
+    private string NormalizeTime(string rawTime)
+    {
+        // Created: 2026-02-12 00:00 UTC - Normalize time strings for comparison.
+        try
+        {
+            if (string.IsNullOrWhiteSpace(rawTime)) return string.Empty;
+
+            if (DateTime.TryParse(rawTime, out var dt))
+            {
+                return dt.ToString("HH:mm");
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourDetailsForm] NormalizeTime failed: {ex}");
+#endif
+        }
+
+        return rawTime.Trim();
+    }
+
+    private string FormatTimeDisplay(string rawTime)
+    {
+        // Created: 2026-02-12 00:00 UTC - Format a time string for dropdown display.
+        try
+        {
+            if (DateTime.TryParse(rawTime, out var dt))
+            {
+                return dt.ToString("h:mm tt");
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[TourDetailsForm] FormatTimeDisplay failed: {ex}");
+#endif
+        }
+
+        return rawTime;
+    }
+
+    private string FormatGuideName(DbGuide guide)
+    {
+        if (string.IsNullOrWhiteSpace(guide.LastName)) return guide.FirstName ?? string.Empty;
+        return $"{guide.FirstName} {guide.LastName}";
+    }
+
+    private List<string> TimeOptions
+    {
+        get
+        {
+            var list = new List<string>();
+            var start = TimeOnly.MinValue;
+            for (int i = 0; i < 288; i++)
+            {
+                list.Add(start.AddMinutes(i * 5).ToString("HH:mm"));
+            }
+            return list;
+        }
+    }
+}

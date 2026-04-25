@@ -1,0 +1,264 @@
+@using System
+@using System.Linq
+@using Email.Models
+@using Email.TourTreeViewShapedData.Enums
+
+@if (Toolbar)
+{
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <select class='@($"form-select form-select-sm")' style="width: 140px;" @bind="filterType">
+            <option value="@TreeDataFilterType.AllUnfiltered">All (unfiltered)</option>
+            <option value="@TreeDataFilterType.All">All</option>
+            <option value="@TreeDataFilterType.TodayOnly">Today Only</option>
+            <option value="@TreeDataFilterType.ConfirmationsOnly">Confirmations Only</option>
+            <option value="@TreeDataFilterType.CancellationsOnly">Cancellations Only</option>
+            <option value="@TreeDataFilterType.ModificationsOnly">Modifications Only</option>
+            <option value="@TreeDataFilterType.ActiveBookings">Active Bookings</option>
+        </select>
+
+        <div class="input-group input-group-sm" style="width: 170px;">
+            <span class="input-group-text">Start</span>
+            <InputDate @bind-Value="StartDateProxy" class="form-control form-control-sm" />
+        </div>
+
+        <div class="input-group input-group-sm" style="width: 170px;">
+            <span class="input-group-text">End</span>
+            <InputDate @bind-Value="EndDateProxy" class="form-control form-control-sm" />
+        </div>
+        <a href="#" class="small" @onclick="ClearEndDate" @onclick:preventDefault="true">(clear)</a>
+
+        <select class='@($"form-select form-select-sm")' style="width: 140px;" @bind="Args.Vendor">
+            <option value="">All</option>
+            @foreach (var vendor in normalizedVendorOptions)
+            {
+                <option value="@vendor">@vendor</option>
+            }
+        </select>
+
+        <button class="btn btn-outline-secondary btn-sm" @onclick="Today" title="Today (today + tomorrow)">
+            <i class="bi bi-calendar-day me-1"></i> Today
+        </button>
+
+        <button class="btn btn-primary btn-sm" @onclick="Apply">
+            <i class="bi bi-search me-1"></i> Apply
+        </button>
+    </div>
+}
+else
+{
+<div class="row g-2 align-items-end">
+    <div class="col-md-2 col-12">
+        <label class="form-label">Filter Type</label>
+        <select class='@($"form-select{(Compact ? " form-select-sm" : string.Empty)}")' @bind="filterType">
+            <option value="@TreeDataFilterType.AllUnfiltered">All (unfiltered)</option>
+            <option value="@TreeDataFilterType.All">All</option>
+            <option value="@TreeDataFilterType.TodayOnly">Today Only</option>
+            <option value="@TreeDataFilterType.ConfirmationsOnly">Confirmations Only</option>
+            <option value="@TreeDataFilterType.CancellationsOnly">Cancellations Only</option>
+            <option value="@TreeDataFilterType.ModificationsOnly">Modifications Only</option>
+            <option value="@TreeDataFilterType.ActiveBookings">Active Bookings</option>
+        </select>
+    </div>
+    <div class="col-md-2 col-12">
+        @if (InlineLabels)
+        {
+            <div class="d-flex align-items-center gap-1">
+                <label class="form-label mb-0 me-1">Start Date</label>
+                <InputDate @bind-Value="StartDateProxy" class='@($"form-control{(Compact ? " form-control-sm" : string.Empty)}")' />
+            </div>
+        }
+        else
+        {
+            <label class="form-label">Start Date</label>
+            <InputDate @bind-Value="StartDateProxy" class='@($"form-control{(Compact ? " form-control-sm" : string.Empty)}")' />
+        }
+    </div>
+    <div class="col-md-2 col-12">
+        @if (InlineLabels)
+        {
+            <div class="d-flex align-items-center gap-1">
+                <label class="form-label mb-0 me-1">End Date</label>
+                <InputDate @bind-Value="EndDateProxy" class='@($"form-control{(Compact ? " form-control-sm" : string.Empty)}")' />
+                <a href="#" class="ms-1 small" @onclick="ClearEndDate" @onclick:preventDefault="true">(clear)</a>
+            </div>
+        }
+        else
+        {
+            <label class="form-label">
+                End Date
+                <a href="#" class="ms-1 small" @onclick="ClearEndDate" @onclick:preventDefault="true">(clear)</a>
+            </label>
+            <InputDate @bind-Value="EndDateProxy" class='@($"form-control{(Compact ? " form-control-sm" : string.Empty)}")' />
+        }
+    </div>
+    <div class="col-md-2 col-12">
+        @if (InlineLabels)
+        {
+            <div class="d-flex align-items-center gap-1">
+                <label class="form-label mb-0 me-1">Vendor</label>
+                <select class='@($"form-select{(Compact ? " form-select-sm" : string.Empty)}")' @bind="Args.Vendor">
+                    <option value="">All</option>
+                    @foreach (var vendor in normalizedVendorOptions)
+                    {
+                        <option value="@vendor">@vendor</option>
+                    }
+                </select>
+            </div>
+        }
+        else
+        {
+            <label class="form-label">Vendor</label>
+            <select class='@($"form-select{(Compact ? " form-select-sm" : string.Empty)}")' @bind="Args.Vendor">
+                <option value="">All</option>
+                @foreach (var vendor in normalizedVendorOptions)
+                {
+                    <option value="@vendor">@vendor</option>
+                }
+            </select>
+        }
+    </div>
+    <div class="col-md-2 col-12 d-grid d-md-flex justify-content-md-end">
+        <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary @(Compact ? "btn-sm" : string.Empty)" @onclick="Today" title="Today (today + tomorrow)">
+            <i class="bi bi-calendar-day me-1"></i> Today
+        </button>
+        <button class="btn btn-primary @(Compact ? "btn-sm" : string.Empty)" @onclick="Apply">
+            <i class="bi bi-search me-1"></i> Apply
+        </button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    [Parameter] public ShapedTreeFilterArgs Args { get; set; } = new();
+    [Parameter] public EventCallback<ShapedTreeFilterArgs> OnApply { get; set; }
+    [Parameter] public bool Compact { get; set; } = false;
+    [Parameter] public bool InlineLabels { get; set; } = false;
+    [Parameter] public bool Toolbar { get; set; } = false;
+    [Parameter] public IReadOnlyList<string>? VendorOptions { get; set; }
+
+    private List<string> normalizedVendorOptions = new();
+
+    protected override void OnParametersSet()
+    {
+        // Ensure Args is always non-null even if parent passes null
+        Args ??= new ShapedTreeFilterArgs();
+
+        normalizedVendorOptions = (VendorOptions ?? Array.Empty<string>())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(Args.Vendor) &&
+            !normalizedVendorOptions.Any(v => string.Equals(v, Args.Vendor, StringComparison.OrdinalIgnoreCase)))
+        {
+            normalizedVendorOptions.Insert(0, Args.Vendor);
+        }
+    }
+
+    private async Task Apply()
+    {
+        await OnApply.InvokeAsync(Args);
+    }
+
+    private async Task Today()
+    {
+        Args ??= new ShapedTreeFilterArgs();
+        Args.FilterType = TreeDataFilterType.ActiveBookings;
+        Args.StartDate = DateTime.Today;
+        Args.EndDate = DateTime.Today.AddDays(2);
+        await OnApply.InvokeAsync(Args);
+        StateHasChanged();
+    }
+
+    private async Task ClearEndDate(Microsoft.AspNetCore.Components.Web.MouseEventArgs _)
+    {
+        (Args ??= new ShapedTreeFilterArgs()).EndDate = null;
+        await OnApply.InvokeAsync(Args);
+        StateHasChanged();
+    }
+
+    private TreeDataFilterType filterType
+    {
+        get => (Args ??= new ShapedTreeFilterArgs()).FilterType;
+        set
+        {
+            if ((Args ??= new ShapedTreeFilterArgs()).FilterType != value)
+            {
+                Args.FilterType = value;
+                // If user selects Today Only from dropdown, auto-snap dates to today + tomorrow
+                if (value == TreeDataFilterType.TodayOnly)
+                {
+                    Args.StartDate = DateTime.Today;
+                    Args.EndDate = DateTime.Today.AddDays(1);
+                }
+                _ = OnApply.InvokeAsync(Args);
+            }
+        }
+    }
+
+    // Proxies ensure filter type adjusts when multi-day ranges are chosen
+    private DateTime? StartDateProxy
+    {
+        get => (Args ??= new ShapedTreeFilterArgs()).StartDate;
+        set
+        {
+            (Args ??= new ShapedTreeFilterArgs()).StartDate = value;
+            
+            // 2026-02-03: Ensure EndDate is valid relative to new StartDate
+            if (value.HasValue && Args.EndDate.HasValue && value.Value >= Args.EndDate.Value)
+            {
+                 Args.EndDate = value.Value.AddDays(2);
+            }
+
+            NormalizeFilterTypeForDates();
+            _ = OnApply.InvokeAsync(Args);
+        }
+    }
+
+    private DateTime? EndDateProxy
+    {
+        get => (Args ??= new ShapedTreeFilterArgs()).EndDate;
+        set
+        {
+            (Args ??= new ShapedTreeFilterArgs()).EndDate = value;
+            NormalizeFilterTypeForDates();
+            _ = OnApply.InvokeAsync(Args);
+        }
+    }
+
+    private void NormalizeFilterTypeForDates()
+    {
+        var start = Args.StartDate?.Date;
+        var end = Args.EndDate?.Date;
+
+        if (start.HasValue && !end.HasValue)
+        {
+            // Single-day window: set end to start+1, do not force TodayOnly
+            Args.EndDate = start.Value.AddDays(1);
+            return;
+        }
+
+        if (start.HasValue && end.HasValue)
+        {
+            if (end.Value == start.Value.AddDays(1))
+            {
+                // keep existing filter type (e.g., ActiveBookings)
+            }
+            else if (end.Value == start.Value)
+            {
+                // Same-day makes little sense as a closed interval; normalize to start+1
+                Args.EndDate = start.Value.AddDays(1);
+            }
+            else
+            {
+                // Multi-day: do not auto-change filter type
+            }
+        }
+    }
+}
+
+

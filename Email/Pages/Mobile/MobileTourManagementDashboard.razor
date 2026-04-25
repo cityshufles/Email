@@ -1,0 +1,2606 @@
+@page "/mobile-tours"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Services
+@using Email.Models
+@using Email.Models.Reports
+@using Email.Models.Mobile
+@using Email.TourTreeViewShapedData.Enums
+@using Email.Components.Mobile
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@inject ITourTreeService TourTreeService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject ITourMessagesApiService TourMessagesApi
+@inject IGuidesApiService GuidesApi
+@inject IVendorsApiService VendorsApi
+@inject ITourLinkService TourLinkService
+@inject IToursApiService ToursApiService
+@inject ITourCatalogService TourCatalogService
+@inject TourDataErrorReportsSqlService ErrorReportsService
+@inject IBookingsInboxService BookingsInboxService
+@inject MessageTemplateService TemplateService
+@inject VCardExportService VCardExportService
+@inject VCardLogService VCardLogService
+@inject SmtpVCardEmailService SmtpVCardEmailService
+@inject Email.Services.State.MobileTourDashboardCacheState MobileDashboardCacheState
+
+<!-- Created: 10/7/2025 7:30 PM (local) | 2025-10-07T19:30:00 -->
+<!-- Purpose: Mobile-optimized Tour Management Dashboard (read-only essentials) -->
+
+<PageTitle>Mobile Tours</PageTitle>
+
+<div class="container-fluid p-2">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div aria-hidden="true"></div>
+        <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-success" @onclick="OpenNewTourSheet" disabled="@isLoading" title="New Tour">
+                <i class="bi bi-plus-lg"></i>
+                <span class="d-none d-md-inline ms-1">New Tour</span>
+            </button>
+            <button class="btn btn-sm btn-outline-info" @onclick="OpenTemplateManagementSheet" disabled="@isLoading" title="Templates">
+                <i class="bi bi-file-earmark-text"></i>
+            </button>
+            <div class="form-check form-switch m-0 d-flex align-items-center border rounded px-1" title="iPhone copy mode shows text dialog">
+                <input class="form-check-input my-0" type="checkbox" id="iphoneCopyToggle" @bind="useIPhoneCopyMode" @bind:after="SaveIPhoneCopyModeToLocalStorage" />
+                <label class="form-check-label small ms-1 d-none d-md-inline" for="iphoneCopyToggle">iPhone</label>
+                <i class="bi bi-apple d-md-none ms-1 text-muted" style="font-size: 0.8rem;"></i>
+            </div>
+            <button class="btn btn-sm btn-primary" @onclick="LoadForceFreshAsync" disabled="@isLoading" title="Refresh">
+                @if (isLoading)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status"></span>
+                }
+                else
+                {
+                    <i class="bi bi-arrow-clockwise"></i>
+                }
+                <span class="d-none d-md-inline ms-1">Refresh</span>
+            </button>
+            <a class="btn btn-sm btn-outline-info" href="/tour-management-dashboard" title="Switch to Desktop Dashboard" aria-label="Switch to Desktop Dashboard">
+                <i class="bi bi-display"></i>
+            </a>
+        </div>
+    </div>
+
+    <MobileDateFilter @bind-SelectedDate="selectedDate"
+                      OnApply="LoadForceFreshAsync" />
+
+    @if (!isLoading && mobileTours?.Any() == true)
+    {
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="badge bg-secondary">Guests: @dayGuestTotal</span>
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" style="width: 2.5rem; height: 2.5rem;" role="status"></div>
+            <div class="mt-2 small text-muted">Loading tours…</div>
+        </div>
+    }
+    else if (mobileTours?.Any() == true)
+    {
+        <div class="d-flex flex-column gap-2">
+            @foreach (var group in mobileTours.GroupBy(c => c.DateLabel))
+            {
+                var groupTotal = group.Sum(c => c.TotalGuests);
+                <div class="d-flex justify-content-between align-items-center px-1 mb-1">
+                    <div class="fw-semibold small text-muted">@group.Key</div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary">Guests: @groupTotal</span>
+                        <button class="btn btn-sm btn-outline-info" @onclick="() => ShowDayMessageLog(group.Key, group.ToList())" title="View day message log">
+                            <i class="bi bi-chat-square-quote-fill"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => EmailDayVcards(group.Key, group.ToList())" title="Email vCards for day" disabled="@isEmailingDayVcards">
+                            @if (isEmailingDayVcards)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-envelope-at"></i>
+                            }
+                        </button>
+                        <button class="btn btn-sm btn-outline-info" @onclick="() => DownloadDayVcards(group.Key, group.ToList())" title="Download vCards for day">
+                            <i class="bi bi-person-vcard"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => CopyDayWalkers(group.Key, group.ToList())" title="Copy all walker info for day">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                @foreach (var card in group)
+                {
+                            <MobileTourCard Card="card"
+                                    ShowDate="false"
+                                    OnCopyWalkers="CopyTourWalkers"
+                                    OnDownloadVcards="DownloadTourVcards"
+                                    OnEditWalker="OpenEditBookingSheet"
+                                    OnReportDataIssue="OpenReportIssueSheet"
+                                    OnDownloadVcard="DownloadVcard"
+                                    OnBulkSendToGuide="OpenBulkSmsDialog"
+                                    MessageTemplates="inMemoryMessages"
+                                    DbGuides="availableDbGuides"
+                                    AvailableTours="availableTours"
+                                    AvailableTourLinks="availableTourLinks"
+                                    AvailableVendors="availableVendors"
+                                    ActiveVendorAssignments="activeVendorAssignments"
+                                    GuideId="@selectedGuideIdByTour.GetValueOrDefault(GetTourKey(card.DateLabel, card.TourName))"
+                                    SelectedMessageId="@(selectedMessageIdByTour.TryGetValue(GetTourKey(card.DateLabel, card.TourName), out var mid) ? mid : string.Empty)"
+                                    OnMessageSelected="@((string msgId) => OnCardMessageSelected(card.DateLabel, card.TourName, msgId))"
+                                    OnGuideSelected="@((int? gid) => OnCardGuideSelected(card.DateLabel, card.TourName, gid))"
+                                    OnAddBookingFromTour="OpenNewTourSheetFromTourAsync" />
+                }
+            }
+        </div>
+    }
+    else
+    {
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-inbox" style="font-size:2rem;"></i>
+            <div class="mt-2">No tours found</div>
+        </div>
+    }
+
+    @if (showTemplateManagementSheet)
+    {
+        <div class="action-sheet-backdrop" @onclick="CloseTemplateManagementSheet"></div>
+        <div class="action-sheet">
+            <div class="action-sheet-header">
+                <i class="bi bi-file-earmark-text me-2"></i>Template Management
+            </div>
+            <div class="list-group">
+                <button class="list-group-item list-group-item-action" @onclick="OpenGuideManagement">
+                    <i class="bi bi-people me-2"></i> Manage Guides
+                </button>
+                <button class="list-group-item list-group-item-action" @onclick="OpenMessageManagement">
+                    <i class="bi bi-chat-text me-2"></i> Manage Messages
+                </button>
+                <button class="list-group-item list-group-item-action text-danger" @onclick="CloseTemplateManagementSheet">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (showEditBookingSheet)
+    {
+        <div class="action-sheet-backdrop" @onclick="CloseEditBookingSheet"></div>
+        <div class="action-sheet action-sheet-large bg-body">
+            <div class="action-sheet-header bg-body d-flex justify-content-between align-items-center border-bottom">
+                <h5 class="m-0">Edit Booking</h5>
+                <button class="btn-close" @onclick="CloseEditBookingSheet"></button>
+            </div>
+            <div class="action-sheet-content">
+                <MobileEditBooking MessageId="@selectedWalkerForEdit?.MessageId" 
+                                   OnSaved="HandleBookingEdited"
+                                   OnCancel="CloseEditBookingSheet" />
+            </div>
+        </div>
+    }
+
+    @if (showReportIssueSheet)
+    {
+        <div class="action-sheet-backdrop" @onclick="CloseReportIssueSheet"></div>
+        <div class="action-sheet action-sheet-large bg-body">
+            <div class="action-sheet-header bg-body d-flex justify-content-between align-items-center border-bottom">
+                <h5 class="m-0"><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Report Tour Data Error</h5>
+                <button class="btn-close" @onclick="CloseReportIssueSheet"></button>
+            </div>
+            <div class="action-sheet-content p-3">
+                @if (isReportIssueLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-danger" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else if (reportIssueOriginalEmail != null && reportIssueEditedEmail != null)
+                {
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label">Customer Name</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.CustomerName ?? "—")</div>
+                            <input type="text" class="form-control form-control-sm" @bind="reportIssueEditedEmail.CustomerName" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Customer Email</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.CustomerEmail ?? "—")</div>
+                            <input type="email" class="form-control form-control-sm" @bind="reportIssueEditedEmail.CustomerEmail" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Customer Phone</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.CustomerPhone ?? "—")</div>
+                            <input type="tel" class="form-control form-control-sm" @bind="reportIssueEditedEmail.CustomerPhone" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Number of Attendees</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.NumberOfAttendees?.ToString() ?? "—")</div>
+                            <input type="number" class="form-control form-control-sm" @bind="reportIssueEditedEmail.NumberOfAttendees" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Number of Adults</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.NumberOfAdults?.ToString() ?? "—")</div>
+                            <input type="number" class="form-control form-control-sm" @bind="reportIssueEditedEmail.NumberOfAdults" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Number of Children</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.NumberOfChildren?.ToString() ?? "—")</div>
+                            <input type="number" class="form-control form-control-sm" @bind="reportIssueEditedEmail.NumberOfChildren" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Email Type</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.EmailType ?? "—")</div>
+                            <select class="form-select form-select-sm" @bind="reportIssueEditedEmail.EmailType" @bind:event="onchange">
+                                <option value="booking">booking</option>
+                                <option value="modification">modification</option>
+                                <option value="cancellation">cancellation</option>
+                                <option value="other">other</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Tour Name</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.TourName ?? "—")</div>
+                            <select class="form-select form-select-sm" value="@reportIssueEditedEmail.TourName" @onchange="OnReportIssueTourNameChanged">
+                                @if (availableTourNames.Count == 0)
+                                {
+                                    <option value="">No tours available</option>
+                                }
+                                else
+                                {
+                                    @foreach (var tourName in availableTourNames)
+                                    {
+                                        <option value="@tourName">@tourName</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Tour Date</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.TourDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                            <input type="date" class="form-control form-control-sm" value="@GetReportIssueDateValue(reportIssueEditedEmail.TourDate)" @onchange="OnReportIssueDateChanged" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Tour Time</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.TourTime ?? "—")</div>
+                            <select class="form-select form-select-sm" value="@reportIssueEditedEmail.TourTime" @onchange="OnReportIssueTourTimeChanged">
+                                @if (reportIssueTimeOptions.Count == 0)
+                                {
+                                    <option value="">No time options</option>
+                                }
+                                else
+                                {
+                                    @foreach (var time in reportIssueTimeOptions)
+                                    {
+                                        <option value="@time">@time</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Tour Location</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.TourLocation ?? "—")</div>
+                            <input type="text" class="form-control form-control-sm" @bind="reportIssueEditedEmail.TourLocation" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Vendor Name</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.VendorName ?? "—")</div>
+                            <input type="text" class="form-control form-control-sm" @bind="reportIssueEditedEmail.VendorName" readonly />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Language</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.Language ?? "—")</div>
+                            <input type="text" class="form-control form-control-sm" @bind="reportIssueEditedEmail.Language" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Booking Code</label>
+                            <div class="form-text text-warning small">Original: @(reportIssueOriginalEmail.BookingCode ?? "—")</div>
+                            <input type="text" class="form-control form-control-sm" @bind="reportIssueEditedEmail.BookingCode" readonly />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Error Notes</label>
+                            <textarea class="form-control form-control-sm" rows="4" @bind="reportIssueNotes" placeholder="Describe what was wrong so the developer can fix it"></textarea>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseReportIssueSheet">Cancel</button>
+                        <button type="button" class="btn btn-danger btn-sm" @onclick="SubmitReportIssue">
+                            <i class="bi bi-flag-fill me-1"></i>Submit Report
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (showNewTourSheet)
+    {
+        <div class="action-sheet-backdrop" @onclick="CloseNewTourSheet"></div>
+        <div class="action-sheet action-sheet-large bg-body">
+            <div class="action-sheet-header bg-body">
+                <i class="bi bi-plus-circle me-2"></i>Add New Tour
+                <button class="btn-close ms-auto" @onclick="CloseNewTourSheet"></button>
+            </div>
+            <div class="action-sheet-content">
+                <MobileAddTour OnBookingAdded="HandleBookingAdded" Prefill="mobileAddBookingPrefill" />
+            </div>
+        </div>
+    }
+
+    <!-- Guide Management Dialog -->
+    @if (showGuideManagementDialog)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-people me-2"></i>
+                            Guide Management
+                        </h5>
+                        <button type="button" class="btn-close" @onclick="CloseGuideManagementDialog"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-4">
+                            <div class="col-lg-6 col-md-12">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add New Guide</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Guide Name:</label>
+                                            <input type="text" class="form-control" @bind="newGuideName" placeholder="Enter guide name" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Phone Number:</label>
+                                            <input type="tel" class="form-control" @bind="newGuidePhone" placeholder="Enter phone number" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Email:</label>
+                                            <input type="email" class="form-control" @bind="newGuideEmail" placeholder="Enter email address" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Where to Meet:</label>
+                                            <input type="text" class="form-control" @bind="newGuideMeetingLocation" placeholder="Enter meeting location" />
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Description/Info:</label>
+                                            <div class="mb-2">
+                                                <div class="d-flex flex-wrap gap-1 mb-2">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{name}"))" title="Customer name">
+                                                        <i class="bi bi-person me-1"></i>{name}
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{tour}"))" title="Tour name">
+                                                        <i class="bi bi-map me-1"></i>{tour}
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{date}"))" title="Tour date">
+                                                        <i class="bi bi-calendar me-1"></i>{date}
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{phone}"))" title="Contact phone">
+                                                        <i class="bi bi-telephone me-1"></i>{phone}
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guide}"))" title="Guide name">
+                                                        <i class="bi bi-person-badge me-1"></i>{guide}
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guidePhone}"))" title="Guide phone">
+                                                        <i class="bi bi-telephone-plus me-1"></i>{guidePhone}
+                                                    </button>
+                                                   @*  <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideEmail}"))" title="Guide email">
+                                                        <i class="bi bi-envelope me-1"></i>{guideEmail}
+                                                    </button> *@
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{meetingLocation}"))" title="Meeting location">
+                                                        <i class="bi bi-geo-alt me-1"></i>{meetingLocation}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <textarea class="form-control" rows="3" @bind="newGuideDescription" id="newGuideDescription" placeholder="Enter additional information, description, notes, etc."></textarea>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-success btn-sm" @onclick="AddGuide" disabled="@string.IsNullOrEmpty(newGuideName)">
+                                                <i class="bi bi-plus-circle me-1"></i>
+                                                Add Guide
+                                            </button>
+                                            <button class="btn btn-warning btn-sm" @onclick="ClearGuideForm">
+                                                <i class="bi bi-eraser me-1"></i>
+                                                Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6 col-md-12">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Guides (@inMemoryGuides.Count)</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        @if (inMemoryGuides.Any())
+                                        {
+                                            <div class="list-group list-group-flush">
+                                                @foreach (var guide in inMemoryGuides)
+                                                {
+                                                    <div class="list-group-item d-flex justify-content-between align-items-start border-0 px-0">
+                                                        <div class="flex-grow-1">
+                                                            <strong>@guide.Name</strong><br />
+                                                            <small class="text-muted">
+                                                                @guide.Phone | @guide.Email
+                                                                @if (!string.IsNullOrEmpty(guide.MeetingLocation))
+                                                                {
+                                                                    <br /> @guide.MeetingLocation
+                                                                }
+                                                            </small>
+                                                            @if (!string.IsNullOrEmpty(guide.Description))
+                                                            {
+                                                                <br /><small class="text-muted">@guide.Description</small>
+                                                            }
+                                                        </div>
+                                                        <div class="btn-group btn-group-sm">
+                                                            <button class="btn btn-outline-danger btn-sm" @onclick="@(() => RemoveGuide(guide))" title="Remove guide">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="mt-3">
+                                                <button class="btn btn-outline-danger btn-sm" @onclick="ClearAllGuides">
+                                                    <i class="bi bi-trash me-1"></i>
+                                                    Clear All Guides
+                                                </button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="alert alert-info mb-0">
+                                                <i class="bi bi-info-circle me-2"></i>
+                                                No guides added yet. Add your first guide using the form on the left.
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseGuideManagementDialog">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+
+
+    <!-- 2025-12-18 00:00 UTC - Message Management Dialog removed, using DB messages -->
+
+</div>
+
+@if (showCopyTextDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard me-2"></i>@copyTextDialogTitle
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseCopyTextDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea class="form-control" rows="15" readonly style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;" @ref="copyTextAreaRef">@copyTextDialogContent</textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCopyTextDialog">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="TryAutoCopyFromDialog">
+                        <i class="bi bi-clipboard me-1"></i>Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@* 2026-01-08 - Bulk SMS to Guide dialog *@
+@if (showBulkSmsDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-whatsapp me-2 text-success"></i>
+                        Bulk WhatsApp to Guide
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseBulkSmsDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row gy-3">
+                        <div class="col-12 col-md-6">
+                            <h6>Tour Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Tour:</strong></td>
+                                    <td>@(bulkSmsCard?.TourName ?? "Unknown")</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Walkers:</strong></td>
+                                    <td>@(bulkSmsCard?.TotalWalkers ?? 0) walkers</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Guide Name / Lookup</label>
+                            <input type="text"
+                                   class="form-control"
+                                   value="@bulkSmsGuideName"
+                                   list="bulkSmsGuideLookupMobile"
+                                   placeholder="Type or pick a guide"
+                                   @oninput="OnBulkSmsGuideNameInput" />
+                            <datalist id="bulkSmsGuideLookupMobile">
+                                @if (availableDbGuides != null && availableDbGuides.Count > 0)
+                                {
+                                    foreach (var g in availableDbGuides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                                    {
+                                        var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : ($"{g.FirstName} {g.LastName}");
+                                        <option value="@label"></option>
+                                    }
+                                }
+                            </datalist>
+                            <div class="mt-2">
+                                <label class="form-label">Guide WhatsApp Number:</label>
+                                <input type="tel" class="form-control" @bind="bulkSmsPhone" @bind:after="RefreshBulkWhatsAppUrls" placeholder="Enter guide phone number" />
+                                <small class="text-muted">Used to open WhatsApp with the walker list</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <ul class="nav nav-tabs mt-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 0 ? "active" : null)" type="button" role="tab" @onclick="() => SetBulkSmsActiveTab(0)">
+                                <i class="bi bi-phone me-1"></i>WhatsApp App
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 1 ? "active" : null)" type="button" role="tab" @onclick="() => SetBulkSmsActiveTab(1)">
+                                <i class="bi bi-globe me-1"></i>WhatsApp Web
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 2 ? "active" : null)" type="button" role="tab" @onclick="() => SetBulkSmsActiveTab(2)">
+                                <i class="bi bi-clipboard-check me-1"></i>Copy
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content mt-3">
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 0 ? "show active" : null)" role="tabpanel">
+                            <div class="mb-2">
+                                <label class="form-label">WhatsApp Message:</label>
+                                <textarea class="form-control" rows="8" @bind="bulkSmsAppMessage" @bind:after="RefreshBulkWhatsAppUrls"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 1 ? "show active" : null)" role="tabpanel">
+                            <div class="mb-2">
+                                <label class="form-label">WhatsApp Web Message:</label>
+                                <textarea class="form-control" rows="8" @bind="bulkSmsMessage" @bind:after="RefreshBulkWhatsAppUrls"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 2 ? "show active" : null)" role="tabpanel">
+                            <div class="mb-2">
+                                <label class="form-label">Walker List (copyable)</label>
+                                <textarea class="form-control" rows="8" readonly>@bulkSmsCopyText</textarea>
+                                <div class="d-flex justify-content-end mt-1">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyBulkSmsTextAsync" disabled="@string.IsNullOrWhiteSpace(bulkSmsCopyText)">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseBulkSmsDialog">Cancel</button>
+                    @if (bulkSmsActiveTabIndex == 0)
+                    {
+                        <a class="btn btn-success @(string.IsNullOrWhiteSpace(bulkSmsPhone) ? "disabled" : "")" 
+                           href="@GetBulkSmsAppUrl()" target="_blank" @onclick="CloseBulkSmsDialog" title="Open WhatsApp app">
+                            <i class="bi bi-whatsapp me-1"></i>
+                            Open WhatsApp App
+                        </a>
+                    }
+                    else if (bulkSmsActiveTabIndex == 1)
+                    {
+                        <a class="btn btn-primary @(string.IsNullOrWhiteSpace(bulkSmsPhone) ? "disabled" : "")" 
+                           href="@GetBulkSmsWebUrl()" target="_blank" @onclick="CloseBulkSmsDialog" title="Send via WhatsApp Web">
+                            <i class="bi bi-globe me-1"></i>
+                            Send via WhatsApp Web
+                        </a>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-success" disabled title="Select WhatsApp App/Web to send">
+                            <i class="bi bi-whatsapp me-1"></i>
+                            Open WhatsApp
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private static readonly TimeSpan MobileDashboardCacheTtl = TimeSpan.FromMinutes(5);
+    private bool isLoading = false;
+    private DateTime? selectedDate = DateTime.Today;
+    private List<MobileTourCardModel> mobileTours = new();
+    private int dayGuestTotal => mobileTours?.Sum(t => t.TotalGuests) ?? 0;
+    private Task LoadForceFreshAsync() => LoadAsync(forceFresh: true);
+
+    // Email/vCard fields
+    private bool isEmailingDayVcards = false;
+
+
+    // Template management fields
+    private bool showTemplateManagementSheet = false;
+    private bool showGuideManagementDialog = false;
+    // 2025-12-18 00:00 UTC - Removed showMessageManagementDialog, dialog replaced with toast stub
+    private bool showNewTourSheet = false;
+    private BookingPrefillRequest? mobileAddBookingPrefill;
+    private bool showEditBookingSheet = false;
+    private MobileWalkerInfoModel? selectedWalkerForEdit;
+    private bool showReportIssueSheet = false;
+    private bool isReportIssueLoading = false;
+    private MobileWalkerInfoModel? selectedWalkerForReport;
+    private ProcessedEmail? reportIssueOriginalEmail;
+    private ProcessedEmail? reportIssueEditedEmail;
+    private List<string> reportIssueTimeOptions = new();
+    private string reportIssueNotes = string.Empty;
+
+    // OpenNewTourSheet/CloseNewTourSheet/HandleBookingAdded already exist earlier in the file (lines ~1105).
+    // We only need to add the new Edit methods here.
+
+    private void OpenEditBookingSheet(MobileWalkerInfoModel walker)
+    {
+        selectedWalkerForEdit = walker;
+        showEditBookingSheet = true;
+    }
+
+    private void CloseEditBookingSheet()
+    {
+        showEditBookingSheet = false;
+        selectedWalkerForEdit = null;
+    }
+
+    private async Task HandleBookingEdited()
+    {
+        CloseEditBookingSheet();
+        await LoadAsync(forceFresh: true);
+    }
+
+    private async Task OpenReportIssueSheet(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.MessageId))
+        {
+            return;
+        }
+
+        selectedWalkerForReport = walker;
+        showReportIssueSheet = true;
+        isReportIssueLoading = true;
+        reportIssueOriginalEmail = null;
+        reportIssueEditedEmail = null;
+        reportIssueTimeOptions = new List<string>();
+        reportIssueNotes = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var catalogTask = EnsureCatalogAsync();
+            var processedEmailTask = TourTreeService.GetProcessedEmailByMessageIdAsync(walker.MessageId);
+            await Task.WhenAll(catalogTask, processedEmailTask);
+
+            var response = await processedEmailTask;
+            if (response == null)
+            {
+                CloseReportIssueSheet();
+                return;
+            }
+
+            reportIssueOriginalEmail = response;
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(reportIssueOriginalEmail);
+                reportIssueEditedEmail = System.Text.Json.JsonSerializer.Deserialize<ProcessedEmail>(json) ?? new ProcessedEmail();
+            }
+            catch
+            {
+                reportIssueEditedEmail = new ProcessedEmail
+                {
+                    Id = reportIssueOriginalEmail.Id,
+                    InboxEmailId = reportIssueOriginalEmail.InboxEmailId,
+                    MessageId = reportIssueOriginalEmail.MessageId,
+                    VendorName = reportIssueOriginalEmail.VendorName,
+                    EmailType = reportIssueOriginalEmail.EmailType,
+                    CustomerName = reportIssueOriginalEmail.CustomerName,
+                    CustomerEmail = reportIssueOriginalEmail.CustomerEmail,
+                    CustomerPhone = reportIssueOriginalEmail.CustomerPhone,
+                    NumberOfAttendees = reportIssueOriginalEmail.NumberOfAttendees,
+                    NumberOfAdults = reportIssueOriginalEmail.NumberOfAdults,
+                    NumberOfChildren = reportIssueOriginalEmail.NumberOfChildren,
+                    TourName = TourCatalogService.NormalizeName(reportIssueOriginalEmail.TourName ?? string.Empty),
+                    TourDate = reportIssueOriginalEmail.TourDate,
+                    TourTime = NormalizeTimeSafe(reportIssueOriginalEmail.TourTime),
+                    TourLocation = reportIssueOriginalEmail.TourLocation,
+                    Language = reportIssueOriginalEmail.Language,
+                    BookingCode = reportIssueOriginalEmail.BookingCode
+                };
+            }
+
+            reportIssueTimeOptions = GetReportIssueTimeOptionsFor(reportIssueEditedEmail?.TourName);
+            if (reportIssueEditedEmail != null && string.IsNullOrWhiteSpace(reportIssueEditedEmail.TourTime) && reportIssueTimeOptions.Count > 0)
+            {
+                reportIssueEditedEmail.TourTime = reportIssueTimeOptions.First();
+            }
+        }
+        catch
+        {
+            CloseReportIssueSheet();
+            return;
+        }
+        finally
+        {
+            isReportIssueLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseReportIssueSheet()
+    {
+        showReportIssueSheet = false;
+        isReportIssueLoading = false;
+        selectedWalkerForReport = null;
+        reportIssueOriginalEmail = null;
+        reportIssueEditedEmail = null;
+        reportIssueTimeOptions = new List<string>();
+        reportIssueNotes = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task SubmitReportIssue()
+    {
+        var original = reportIssueOriginalEmail;
+        var corrected = reportIssueEditedEmail;
+        if (original == null || corrected == null)
+        {
+            CloseReportIssueSheet();
+            return;
+        }
+
+        corrected.TourName = TourCatalogService.NormalizeName(corrected.TourName ?? string.Empty);
+        corrected.TourTime = NormalizeTimeSafe(corrected.TourTime);
+        if (string.IsNullOrWhiteSpace(corrected.TourName) || string.IsNullOrWhiteSpace(corrected.TourTime))
+        {
+            return;
+        }
+
+        try
+        {
+            var report = new TourDataErrorReport
+            {
+                ProcessedEmailId = original.Id,
+                MessageId = original.MessageId,
+                VendorName = original.VendorName,
+                BookingCode = original.BookingCode ?? corrected.BookingCode,
+                CustomerIdentifier = original.CustomerIdentifier,
+                ErrorNotes = reportIssueNotes,
+                OriginalSnapshotJson = System.Text.Json.JsonSerializer.Serialize(original),
+                CorrectedSnapshotJson = System.Text.Json.JsonSerializer.Serialize(corrected)
+            };
+
+            await ErrorReportsService.CreateAsync(report);
+            try { await ToastService.ShowSuccessAsync("Submitted", "Report data issue submitted."); } catch { }
+            CloseReportIssueSheet();
+        }
+        catch
+        {
+            try { await ToastService.ShowErrorAsync("Error", "Failed to submit report data issue."); } catch { }
+        }
+    }
+
+    private void OnReportIssueTourNameChanged(ChangeEventArgs e)
+    {
+        if (reportIssueEditedEmail == null) return;
+        reportIssueEditedEmail.TourName = TourCatalogService.NormalizeName(e.Value?.ToString() ?? string.Empty);
+        reportIssueTimeOptions = GetReportIssueTimeOptionsFor(reportIssueEditedEmail.TourName);
+        if (reportIssueTimeOptions.Count > 0 &&
+            !reportIssueTimeOptions.Contains(reportIssueEditedEmail.TourTime ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+        {
+            reportIssueEditedEmail.TourTime = reportIssueTimeOptions.First();
+        }
+    }
+
+    private void OnReportIssueTourTimeChanged(ChangeEventArgs e)
+    {
+        if (reportIssueEditedEmail == null) return;
+        reportIssueEditedEmail.TourTime = NormalizeTimeSafe(e.Value?.ToString());
+    }
+
+    private void OnReportIssueDateChanged(ChangeEventArgs e)
+    {
+        if (reportIssueEditedEmail == null) return;
+        reportIssueEditedEmail.TourDate = DateTime.TryParse(e.Value?.ToString(), out var dt) ? dt : null;
+    }
+
+    private string GetReportIssueDateValue(DateTime? date)
+    {
+        return date?.ToString("yyyy-MM-dd") ?? string.Empty;
+    }
+
+    // In-memory lists for templates
+    private List<Guide> inMemoryGuides = new();
+    // 2025-12-18 00:00 UTC - Now loaded from DB via SyncInMemoryMessagesFromDb()
+    private List<InMemoryMessageTemplate> inMemoryMessages = new();
+    private List<DbTourMessage> dbMessages = new();
+    private Dictionary<string, string> selectedMessageIdByTour = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeZoneInfo EasternTimeZone = ResolveEasternTimeZone();
+
+    // Guide/Template Context
+    private List<DbGuide> availableDbGuides = new();
+    private List<DbTour> availableTours = new();
+    private List<TourLink> availableTourLinks = new();
+    private List<DbVendor> availableVendors = new();
+    private Dictionary<string, HashSet<string>> activeVendorAssignments = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int?> selectedGuideIdByTour = new(StringComparer.OrdinalIgnoreCase);
+    private Email.Services.TourCatalogSnapshot? tourCatalog;
+    private List<string> availableTourNames = new();
+
+    // Local storage keys (shared with UpcomingTours and TourManagementDashboard)
+    private const string LOCAL_STORAGE_GUIDES_KEY = "cityshuffles_guides";
+
+    // Guide form fields
+    private string newGuideName = "";
+    private string newGuidePhone = "";
+    private string newGuideEmail = "";
+    private string newGuideMeetingLocation = "";
+    private string newGuideDescription = "";
+
+    // iPhone copy mode
+    private bool useIPhoneCopyMode = false;
+    private bool showCopyTextDialog = false;
+    private string copyTextDialogContent = "";
+    private string copyTextDialogTitle = "";
+    private const string LOCAL_STORAGE_IPHONE_MODE_KEY = "cityshuffles_iphone_copy_mode";
+    private ElementReference copyTextAreaRef;
+    private bool pendingCopyTextDialogSelect = false;
+
+    // 2026-01-08 - Bulk SMS to Guide dialog state
+    private bool showBulkSmsDialog = false;
+    private MobileTourCardModel? bulkSmsCard;
+    private string bulkSmsPhone = "";
+    private string bulkSmsGuideName = "";
+    private string bulkSmsMessage = "";
+    private string bulkSmsAppMessage = "";
+    private string bulkSmsCopyText = "";
+    private int bulkSmsActiveTabIndex = 0;
+    private int? bulkSmsSelectedGuideId = null;
+
+    // 2026-01-08 - Bulk SMS dialog handlers
+    private void OpenBulkSmsDialog(MobileTourCardModel card)
+    {
+        if (card == null) return;
+
+        bulkSmsCard = card;
+        bulkSmsActiveTabIndex = 0;
+
+        // Try to preselect guide if one is already selected for this tour
+        bulkSmsGuideName = "";
+        bulkSmsPhone = "";
+        bulkSmsSelectedGuideId = null;
+
+        if (!string.IsNullOrWhiteSpace(card.TourName) &&
+            selectedGuideIdByTour.TryGetValue(GetTourKey(card.DateLabel, card.TourName), out var selGuideId) &&
+            selGuideId.HasValue &&
+            availableDbGuides != null && availableDbGuides.Count > 0)
+        {
+            bulkSmsSelectedGuideId = selGuideId;
+            var g = availableDbGuides.FirstOrDefault(x => x.Id == selGuideId.Value);
+            if (g != null)
+            {
+                bulkSmsPhone = g.Phone ?? string.Empty;
+                bulkSmsGuideName = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : $"{g.FirstName} {g.LastName}";
+            }
+        }
+
+        bulkSmsCopyText = BuildBulkSmsCopyText(card);
+        bulkSmsAppMessage = bulkSmsCopyText;
+        bulkSmsMessage = bulkSmsCopyText;
+        showBulkSmsDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseBulkSmsDialog()
+    {
+        showBulkSmsDialog = false;
+        bulkSmsCard = null;
+        bulkSmsMessage = "";
+        bulkSmsAppMessage = "";
+        bulkSmsPhone = "";
+        bulkSmsGuideName = "";
+        bulkSmsSelectedGuideId = null;
+        bulkSmsActiveTabIndex = 0;
+        bulkSmsCopyText = "";
+        StateHasChanged();
+    }
+
+    private string BuildBulkSmsCopyText(MobileTourCardModel card)
+    {
+        if (card == null) return "";
+
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine($"{card.TourName}");
+        if (!string.IsNullOrWhiteSpace(card.DateLabel))
+        {
+            sb.AppendLine(card.DateLabel);
+        }
+        sb.AppendLine();
+
+        sb.AppendLine($"{card.TotalWalkers} bookings {card.TotalGuests} guests");
+        sb.AppendLine();
+
+        foreach (var vendor in card.Vendors)
+        {
+            var vendorGuestTotal = vendor.Walkers?.Sum(w => w.Attendees) ?? 0;
+            sb.AppendLine($"*{vendor.VendorName} {vendor.TotalWalkers}/{vendorGuestTotal}*");
+            sb.AppendLine();
+
+            foreach (var walker in vendor.Walkers)
+            {
+                sb.AppendLine($"{walker.DisplayName} {walker.Attendees}");
+                sb.AppendLine(string.IsNullOrWhiteSpace(walker.Phone) ? "No number" : walker.Phone);
+                sb.AppendLine();
+            }
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private void SetBulkSmsActiveTab(int index)
+    {
+        bulkSmsActiveTabIndex = index;
+        StateHasChanged();
+    }
+
+    private void OnBulkSmsGuideNameInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        bulkSmsGuideName = val;
+        bulkSmsSelectedGuideId = null;
+
+        if (availableDbGuides != null && availableDbGuides.Count > 0)
+        {
+            var trimmed = val.Trim();
+            if (!string.IsNullOrEmpty(trimmed))
+            {
+                var match = availableDbGuides.FirstOrDefault(g =>
+                {
+                    var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : $"{g.FirstName} {g.LastName}";
+                    return label.Equals(trimmed, StringComparison.OrdinalIgnoreCase);
+                });
+
+                if (match != null)
+                {
+                    bulkSmsSelectedGuideId = match.Id;
+                    bulkSmsPhone = match.Phone ?? "";
+                    bulkSmsGuideName = string.IsNullOrWhiteSpace(match.LastName) ? match.FirstName : $"{match.FirstName} {match.LastName}";
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private void RefreshBulkWhatsAppUrls()
+    {
+        // No-op - URLs are computed on demand via GetBulkSmsAppUrl/GetBulkSmsWebUrl
+        StateHasChanged();
+    }
+
+    private string GetWhatsappPhoneDigits(string? phone)
+    {
+        var digits = new string((phone ?? "").Where(char.IsDigit).ToArray());
+        // Ensure E.164 format (remove leading zeros, add 1 for US if 10 digits)
+        if (digits.Length == 10 && !digits.StartsWith("1"))
+        {
+            digits = "1" + digits;
+        }
+        return digits;
+    }
+
+    private string GetBulkSmsAppUrl()
+    {
+        var waPhone = GetWhatsappPhoneDigits(bulkSmsPhone);
+        if (string.IsNullOrWhiteSpace(waPhone)) return "#";
+
+        var body = bulkSmsAppMessage?.TrimEnd() ?? "";
+        var encodedBody = Uri.EscapeDataString(body);
+        return string.IsNullOrWhiteSpace(body)
+            ? $"whatsapp://send?phone={waPhone}"
+            : $"whatsapp://send?phone={waPhone}&text={encodedBody}";
+    }
+
+    private string GetBulkSmsWebUrl()
+    {
+        var waPhone = GetWhatsappPhoneDigits(bulkSmsPhone);
+        if (string.IsNullOrWhiteSpace(waPhone)) return "#";
+
+        var body = bulkSmsMessage?.TrimEnd() ?? "";
+        var encodedBody = Uri.EscapeDataString(body);
+        return string.IsNullOrWhiteSpace(body)
+            ? $"https://wa.me/{waPhone}"
+            : $"https://wa.me/{waPhone}?text={encodedBody}";
+    }
+
+    private async Task CopyBulkSmsTextAsync()
+    {
+        var text = bulkSmsCopyText ?? "";
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try { await JSRuntime.InvokeVoidAsync("blazorCopyText", text); } catch { }
+        try { await ToastService.ShowSuccessAsync("Copied", "Walker list copied to clipboard"); } catch { }
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        TryRestoreDashboardFromCache();
+        return Task.CompletedTask;
+    }
+
+    private bool TryRestoreDashboardFromCache()
+    {
+        if (!MobileDashboardCacheState.TryGetFreshSnapshot(MobileDashboardCacheTtl, out var snapshot) || snapshot == null)
+        {
+            return false;
+        }
+
+        selectedDate = snapshot.SelectedDate ?? DateTime.Today;
+        mobileTours = snapshot.MobileTours ?? new List<MobileTourCardModel>();
+        selectedGuideIdByTour = snapshot.SelectedGuideIdByTour == null
+            ? new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, int?>(snapshot.SelectedGuideIdByTour, StringComparer.OrdinalIgnoreCase);
+        selectedMessageIdByTour = snapshot.SelectedMessageIdByTour == null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(snapshot.SelectedMessageIdByTour, StringComparer.OrdinalIgnoreCase);
+        return true;
+    }
+
+    private void SaveDashboardSnapshotToCache()
+    {
+        MobileDashboardCacheState.SaveSnapshot(new Email.Services.State.MobileTourDashboardCacheSnapshot
+        {
+            SelectedDate = (selectedDate ?? DateTime.Today).Date,
+            MobileTours = mobileTours ?? new List<MobileTourCardModel>(),
+            SelectedGuideIdByTour = new Dictionary<string, int?>(selectedGuideIdByTour, StringComparer.OrdinalIgnoreCase),
+            SelectedMessageIdByTour = new Dictionary<string, string>(selectedMessageIdByTour, StringComparer.OrdinalIgnoreCase)
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    { 
+        if (firstRender)
+        {
+            try
+            {
+                // Load guides from local storage and messages from DB after first render
+                await LoadGuidesFromLocalStorage();
+                await LoadIPhoneCopyModeFromLocalStorage();
+
+                // 2025-12-18 00:00 UTC - Load messages from database
+                await LoadMessagesFromDatabaseAsync();
+
+                // Load guides and catalog
+                availableDbGuides = await GuidesApi.GetGuidesAsync();
+                await LoadVendorLinkContextAsync();
+                await EnsureCatalogAsync();
+
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't break the component
+                Console.WriteLine($"Error during first render operations: {ex.Message}");
+            }
+        }
+
+        if (showCopyTextDialog && pendingCopyTextDialogSelect)
+        {
+            pendingCopyTextDialogSelect = false;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("blazorFocusAndSelectTextArea", copyTextAreaRef);
+            }
+            catch
+            {
+                // Best effort for mobile text selection.
+            }
+        }
+    }
+
+    private async Task LoadAsync(bool forceFresh = false)
+    {
+        try
+        {
+            if (!forceFresh && TryRestoreDashboardFromCache())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            isLoading = true;
+            StateHasChanged();
+
+            // 2025-12-18 - Ensure catalog is available so we can apply meeting place/time fallbacks for templates (parity with desktop)
+            await EnsureCatalogAsync();
+            await LoadVendorLinkContextAsync();
+
+            var start = (selectedDate ?? DateTime.Today).Date;
+            var end = start.AddDays(2);
+            var tree = await TourTreeService.GetTourTreeDataShapedAsync(TreeDataFilterType.ActiveBookings, start, end, null);
+            mobileTours = TransformToMobile(tree);
+            await ApplyNeedsNumberLabelsAsync();
+
+            // 2025-12-18 - Apply catalog fallback chain for meeting place/time/start time so mobile template tokens match desktop behavior
+            if (tourCatalog != null && mobileTours != null && mobileTours.Count > 0)
+            {
+                foreach (var card in mobileTours)
+                {
+                    var (rawName, _) = SplitNameAndTimeLabel(card.TourName);
+                    var canonical = TourCatalogService.NormalizeName(rawName);
+                    var entry = FindCatalogEntry(canonical);
+                    if (entry == null) continue;
+
+                    var catalogMeetingPlace = entry.MeetingPlace ?? string.Empty;
+                    var catalogMeetingTime = entry.MeetingTime ?? entry.Times.FirstOrDefault() ?? string.Empty;
+
+                    if (card?.Vendors == null) continue;
+                    foreach (var vendor in card.Vendors)
+                    {
+                        if (vendor?.Walkers == null) continue;
+                        foreach (var walker in vendor.Walkers)
+                        {
+                            if (walker == null) continue;
+
+                            if (string.IsNullOrWhiteSpace(walker.MeetingPlace) && !string.IsNullOrWhiteSpace(catalogMeetingPlace))
+                            {
+                                walker.MeetingPlace = catalogMeetingPlace;
+                            }
+
+                            // If tour start is empty, use catalog meeting/time as a last resort (desktop uses catalog tiers when missing)
+                            if (string.IsNullOrWhiteSpace(walker.TourStartTime) &&
+                                string.IsNullOrWhiteSpace(walker.DisplayTime) &&
+                                !string.IsNullOrWhiteSpace(catalogMeetingTime))
+                            {
+                                walker.TourStartTime = catalogMeetingTime;
+                            }
+
+                            var effectiveTourStartTime = !string.IsNullOrWhiteSpace(walker.TourStartTime)
+                                ? walker.TourStartTime
+                                : (walker.DisplayTime ?? string.Empty);
+
+                            // If meeting time is missing or equals tour start, prefer catalog (desktop behavior), then service will apply -10m shift if still needed
+                            if (!string.IsNullOrWhiteSpace(catalogMeetingTime) &&
+                                (string.IsNullOrWhiteSpace(walker.MeetingTime) ||
+                                 (!string.IsNullOrWhiteSpace(effectiveTourStartTime) &&
+                                  string.Equals(walker.MeetingTime, effectiveTourStartTime, StringComparison.OrdinalIgnoreCase))))
+                            {
+                                walker.MeetingTime = catalogMeetingTime;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Resolve default guides
+            await PreselectGuidesFromDefaultsAsync();
+            PreselectMessagesFromDefaults();
+            SaveDashboardSnapshotToCache();
+        }
+        catch (Exception)
+        {
+            try { await ToastService.ShowErrorAsync("Error", "Failed to load tours"); } catch { }
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static List<MobileTourCardModel> TransformToMobile(Email.TourTreeViewShapedData.Models.ShapedTreeData? tree)
+    {
+        var result = new List<MobileTourCardModel>();
+        if (tree?.TreeNodes == null) return result;
+
+        foreach (var dateNode in tree.TreeNodes)
+        {
+            if (dateNode?.Children == null) continue;
+            foreach (var tourNode in dateNode.Children)
+            {
+                var card = new MobileTourCardModel
+                {
+                    DateLabel = dateNode.Label,
+                    TourName = tourNode.Label,
+                    TourNameDisplay = string.IsNullOrWhiteSpace(tourNode.MobileLabel) ? tourNode.Label : tourNode.MobileLabel,
+                    AssignedGuideId = tourNode.AssignedGuideId
+                };
+
+                if (tourNode.Children != null)
+                {
+                    foreach (var vendorNode in tourNode.Children)
+                    {
+                        var vendor = new MobileVendorGroupModel { VendorName = vendorNode.Label };
+                        if (vendorNode.Children != null)
+                        {
+                            foreach (var walkerNode in vendorNode.Children)
+                            {
+                                var (name, phone, attendees, attendeeDisplay) = ParseWalkerLabel(walkerNode.Label);
+                                var walkerData = walkerNode.WalkerData;
+                                var walkerVendorName = !string.IsNullOrWhiteSpace(walkerData?.VendorName)
+                                    ? walkerData!.VendorName
+                                    : vendorNode.Label;
+                                var displayPhone = !string.IsNullOrWhiteSpace(walkerData?.DisplayPhone) ? walkerData.DisplayPhone : phone;
+                                vendor.Walkers.Add(new MobileWalkerInfoModel
+                                {
+                                    DisplayName = name,
+                                    Phone = displayPhone,
+                                    Attendees = attendees,
+                                    AttendeeDisplay = attendeeDisplay,
+                                    VendorName = walkerVendorName,
+                                    TourName = tourNode.Label,
+                                    DateLabel = dateNode.Label,
+                                    CustomerId = walkerData?.CustomerId ?? 0,
+                                    CustomerIdentifier = walkerData?.CustomerIdentifier ?? string.Empty,
+                                    MessageId = walkerData?.MessageId ?? string.Empty,
+                                    BookingCode = walkerData?.BookingCode ?? string.Empty,
+                                    MessageSent = walkerData?.MessageSent ?? false,
+                                    MessageSentAtUtc = walkerData?.MessageSentAtUtc,
+                                    SmsContactState = walkerData?.SmsContactState ?? 0,
+                                    WaContactState = walkerData?.WaContactState ?? 0,
+                                    PlatformContactState = walkerData?.PlatformContactState ?? 0,
+                                    HasSubmittedGuideReport = walkerData?.HasSubmittedGuideReport ?? false,
+                                    HasUnsubmittedGuideReport = walkerData?.HasUnsubmittedGuideReport ?? false,
+                                    HasGuideGalleryInDb = walkerData?.HasGuideGalleryInDb ?? false,
+                                    GuideReportPublicId = walkerData?.GuideReportPublicId ?? string.Empty,
+                                    IsCheckedIn = walkerData?.IsCheckedIn ?? false,
+                                    BookingDate = walkerData?.BookingDate,
+                                    // 2025-12-18 - Pre-computed date/time fields from ShapedWalkerData
+                                    TourDayOfWeek = walkerData?.TourDayOfWeek,
+                                    TourMonthAndDayOrdinal = walkerData?.TourMonthAndDayOrdinal,
+                                    MonthOfTour = walkerData?.MonthOfTour,
+                                    DisplayDayOrdinal = walkerData?.DisplayDayOrdinal,
+                                    DisplayDate = walkerData?.DisplayDate,
+                                    DisplayTime = walkerData?.DisplayTime,
+                                    TourStartTime = walkerData?.TourStartTime,
+                                    MeetingTime = walkerData?.MeetingTime,
+                                    MeetingPlace = walkerData?.MeetingPlace,
+                                    MeetingInstructions = walkerData?.MeetingInstructions,
+                                    TourLocation = walkerData?.TourLocation
+                                });
+                            }
+                        }
+                        card.Vendors.Add(vendor);
+                    }
+                }
+
+                result.Add(card);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task ApplyNeedsNumberLabelsAsync()
+    {
+        if (mobileTours == null || mobileTours.Count == 0)
+        {
+            return;
+        }
+
+        var customerIds = mobileTours
+            .SelectMany(t => t.Vendors)
+            .SelectMany(v => v.Walkers)
+            .Select(w => w.CustomerId)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+
+        if (customerIds.Count == 0)
+        {
+            return;
+        }
+
+        var labelsByCustomer = await BookingsInboxService.GetCustomerLabelsAsync(customerIds);
+        foreach (var walker in mobileTours.SelectMany(t => t.Vendors).SelectMany(v => v.Walkers))
+        {
+            if (walker.CustomerId > 0 &&
+                labelsByCustomer.TryGetValue(walker.CustomerId, out var labels))
+            {
+                walker.NeedsNumber = labels.NeedsNumber;
+            }
+        }
+    }
+
+    private static (string Name, string Phone, int Attendees, string AttendeeDisplay) ParseWalkerLabel(string walkerLabel)
+    {
+        try
+        {
+            var remaining = walkerLabel ?? string.Empty;
+            string phone = string.Empty;
+
+            var phoneMatch = System.Text.RegularExpressions.Regex.Match(remaining, @"\+?\d[\d\s\-()]{6,}");
+            if (phoneMatch.Success)
+            {
+                phone = phoneMatch.Value.Trim();
+                remaining = remaining.Remove(phoneMatch.Index, phoneMatch.Length).Trim();
+            }
+
+            int attendees = 0;
+            string attendeeDisplay = string.Empty;
+            var plusMatch = System.Text.RegularExpressions.Regex.Match(remaining, @"\+(\d+)");
+            if (plusMatch.Success && int.TryParse(plusMatch.Groups[1].Value, out var plus))
+            {
+                attendees = Math.Max(0, plus) + 1;
+                attendeeDisplay = attendees.ToString();
+                remaining = remaining.Remove(plusMatch.Index, plusMatch.Length).Trim();
+            }
+            else
+            {
+                var decMatch = System.Text.RegularExpressions.Regex.Match(remaining, @"(?<!\d)(\d{1,2})\.(\d{1,2})(?!\d)");
+                if (decMatch.Success)
+                {
+                    var adults = int.Parse(decMatch.Groups[1].Value);
+                    var children = int.Parse(decMatch.Groups[2].Value);
+                    attendees = Math.Max(0, adults) + Math.Max(0, children);
+                    attendeeDisplay = decMatch.Value;
+                    remaining = remaining.Remove(decMatch.Index, decMatch.Length).Trim();
+                }
+                else
+                {
+                    var attendeesMatch = System.Text.RegularExpressions.Regex.Match(remaining, @"(?<!\d)([1-9]|10)(?!\d)");
+                    if (attendeesMatch.Success && int.TryParse(attendeesMatch.Groups[1].Value, out var att))
+                    {
+                        attendees = att;
+                        attendeeDisplay = att.ToString();
+                        remaining = remaining.Remove(attendeesMatch.Index, attendeesMatch.Length).Trim();
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(attendeeDisplay) && attendees > 0)
+            {
+                attendeeDisplay = attendees.ToString();
+            }
+
+            var name = remaining.Trim();
+            return (name, phone, attendees, attendeeDisplay);
+        }
+        catch
+        {
+            return (walkerLabel ?? string.Empty, string.Empty, 0, string.Empty);
+        }
+    }
+
+    private async Task CopyTourWalkers(MobileTourCardModel card)
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+
+            // Tour header with booking/guest totals
+            sb.AppendLine($"*{card.TourName}*");
+            sb.AppendLine($"{card.TotalWalkers} bookings {card.TotalGuests} guests");
+            sb.AppendLine();
+
+            // Vendor sections
+            foreach (var vendor in card.Vendors)
+            {
+                var vendorGuestTotal = vendor.Walkers?.Sum(w => w.Attendees) ?? 0;
+                sb.AppendLine($"*{vendor.VendorName} {vendor.TotalWalkers}/{vendorGuestTotal}*");
+                sb.AppendLine();
+
+                foreach (var w in vendor.Walkers)
+                {
+                    sb.AppendLine($"{w.DisplayName} {w.Attendees}");
+                    sb.AppendLine(string.IsNullOrWhiteSpace(w.Phone) ? "No number" : w.Phone);
+                    sb.AppendLine();
+                }
+            }
+
+            var text = sb.ToString().TrimEnd();
+            if (useIPhoneCopyMode)
+            {
+                copyTextDialogTitle = card.TourName;
+                copyTextDialogContent = text;
+                showCopyTextDialog = true;
+                pendingCopyTextDialogSelect = true;
+                StateHasChanged();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("blazorCopyText", text);
+                await ToastService.ShowSuccessAsync("Copied", "Walker information copied");
+            }
+        }
+        catch (Exception)
+        {
+            try { await ToastService.ShowErrorAsync("Copy Failed", "Unable to copy walkers"); } catch { }
+        }
+    }
+
+    private async Task DownloadTourVcards(MobileTourCardModel card)
+    {
+        var dateParam = (selectedDate ?? DateTime.Today).Date.ToString("yyyy-MM-dd");
+            var url = $"/vcards/tour?date={Uri.EscapeDataString(dateParam)}&tourLabel={Uri.EscapeDataString(card.TourName ?? string.Empty)}&filterType={Uri.EscapeDataString(TreeDataFilterType.ActiveBookings.ToString())}";
+        
+        VCardLogService.LogAction("Mobile Button Clicked", $"DownloadTourVcards button clicked. Tour: {card.TourName ?? "(no name)"}, Date: {dateParam}", url);
+
+        try
+        {
+            // Primary path (server headers): open download URL. Keep JS fallback for environments where open is blocked.
+            try
+            {
+                VCardLogService.LogAction("Mobile Primary Path Attempt", $"Attempting to open URL via window.open for tour: {card.TourName ?? "(no name)"}", url);
+                await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+                VCardLogService.LogAction("Mobile Primary Path Success", $"Successfully opened URL via window.open for tour: {card.TourName ?? "(no name)"}", url);
+                await ToastService.ShowSuccessAsync("vCards", "Downloading tour vCards...");
+                return;
+            }
+            catch (Exception ex)
+            {
+                VCardLogService.LogAction("Mobile Primary Path Failed", $"window.open failed, falling back to JS blob download. Tour: {card.TourName ?? "(no name)"}", url, ex);
+                Console.WriteLine($"[MobileVCard] window.open failed, falling back to JS blob download: {ex.Message}");
+            }
+
+            // Fallback: JS blob download using centralized vCard generation.
+            VCardLogService.LogAction("Mobile Fallback Started", $"Starting JS blob fallback download for tour: {card.TourName ?? "(no name)"}", url);
+            var vcards = card.EnumerateAllWalkers().Select(w => VCardExportService.GenerateVCard(w)).ToList();
+            var content = VCardExportService.GenerateVcf(vcards);
+            var fileName = $"walkers_{(card.TourName ?? "tour").Replace(" ", "_").Replace(",", "")}_{DateTime.Now:yyyyMMdd_HHmmss}.vcf";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", content, fileName, "text/vcard");
+            VCardLogService.LogAction("Mobile Fallback Success", $"JS blob download completed successfully. Tour: {card.TourName ?? "(no name)"}, File: {fileName}, vCards: {vcards.Count}", url);
+            await ToastService.ShowSuccessAsync("vCards", "Downloaded tour vCards");
+        }
+        catch (Exception ex)
+        {
+            VCardLogService.LogAction("Mobile Download Exception", $"Exception in DownloadTourVcards for tour: {card.TourName ?? "(no name)"}", url, ex);
+            try { await ToastService.ShowErrorAsync("Download Failed", "Unable to download vCards"); } catch { }
+        }
+    }
+
+    // 2025-12-18 - vCard generation with UID field for iPhone compatibility (iPhone may require UID for multiple contacts)
+    private static string GenerateVcard(MobileWalkerInfoModel w)
+    {
+        var sb = new System.Text.StringBuilder();
+        const string CRLF = "\r\n";
+        sb.Append("BEGIN:VCARD").Append(CRLF);
+        sb.Append("VERSION:3.0").Append(CRLF);
+        
+        // Generate unique UID for iPhone compatibility (iPhone may require UID for multiple contacts)
+        // Use deterministic UID based on contact data so same contact gets same UID on re-export
+        var uidSource = $"{w.Phone ?? ""}|{w.DisplayName ?? ""}|{w.BookingCode ?? ""}|{w.MessageId ?? ""}";
+        var uid = Guid.NewGuid().ToString("D").ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(uidSource))
+        {
+            // Create deterministic GUID from hash of contact data
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(uidSource));
+            uid = new Guid(hash).ToString("D").ToUpperInvariant();
+        }
+        sb.Append($"UID:{uid}").Append(CRLF);
+        
+        sb.Append($"FN:{EscapeV(w.DisplayName)}").Append(CRLF);
+        var parts = (w.DisplayName ?? string.Empty).Split(' ', 2);
+        var first = parts.Length > 0 ? parts[0] : string.Empty;
+        var last = parts.Length > 1 ? parts[1] : string.Empty;
+        sb.Append($"N:{EscapeV(last)};{EscapeV(first)};;;").Append(CRLF);
+        if (!string.IsNullOrWhiteSpace(w.Phone))
+        {
+            sb.Append($"item1.TEL;TYPE=CELL,VOICE:{EscapeV(w.Phone)}").Append(CRLF);
+            sb.Append("item1.X-ABLabel:").Append(CRLF);
+        }
+        var note = $"Vendor: {w.VendorName} | Tour: {w.TourName} | Date: {w.DateLabel}";
+        if (w.Attendees > 0) note += $" | Attendees: {w.Attendees}";
+        sb.Append($"NOTE:{EscapeV(note)}").Append(CRLF);
+        sb.Append("END:VCARD").Append(CRLF);
+        return sb.ToString();
+    }
+
+    private static string EscapeV(string v)
+        => (v ?? string.Empty).Replace("\\", "\\\\").Replace(";", "\\;").Replace(",", "\\,").Replace("\n", "\\n").Replace("\r", "\\r");
+
+    // Day-level copy - Updated: 10/8/2025
+    // Uses mobile asterisk format (matching per-tour copy)
+    private async Task CopyDayWalkers(string dateLabel, List<MobileTourCardModel> toursForDay)
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+
+            // Iterate through all tours on this date
+            foreach (var tour in toursForDay)
+            {
+                // Tour header with booking/guest totals
+                sb.AppendLine($"*{tour.TourName}*");
+                sb.AppendLine($"{tour.TotalWalkers} bookings {tour.TotalGuests} guests");
+                sb.AppendLine();
+
+                // Vendor sections
+                foreach (var vendor in tour.Vendors)
+                {
+                    var vendorGuestTotal = vendor.Walkers?.Sum(w => w.Attendees) ?? 0;
+                    sb.AppendLine($"*{vendor.VendorName} {vendor.TotalWalkers}/{vendorGuestTotal}*");
+                    sb.AppendLine();
+
+                    foreach (var w in vendor.Walkers)
+                    {
+                        sb.AppendLine($"{w.DisplayName} {w.Attendees}");
+                        sb.AppendLine(string.IsNullOrWhiteSpace(w.Phone) ? "No number" : w.Phone);
+                        sb.AppendLine();
+                    }
+                }
+            }
+
+            var text = sb.ToString().TrimEnd();
+            if (useIPhoneCopyMode)
+            {
+                copyTextDialogTitle = dateLabel;
+                copyTextDialogContent = text;
+                showCopyTextDialog = true;
+                pendingCopyTextDialogSelect = true;
+                StateHasChanged();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("blazorCopyText", text);
+                var totalWalkers = toursForDay.Sum(t => t.TotalWalkers);
+                await ToastService.ShowSuccessAsync("Copied", 
+                    $"Copied {totalWalkers} walkers from {toursForDay.Count} tours for {dateLabel}!");
+            }
+        }
+        catch (Exception ex)
+        {
+            try { await ToastService.ShowErrorAsync("Copy Failed", "Unable to copy day walker info"); } catch { }
+        }
+    }
+
+    // 2025-12-07 00:00 UTC - Day message log dialog (includes sent status/time EST)
+    private void ShowDayMessageLog(string dateLabel, List<MobileTourCardModel> toursForDay)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var tour in toursForDay)
+        {
+            sb.AppendLine($"*{tour.TourName}*");
+            sb.AppendLine();
+
+            foreach (var vendor in tour.Vendors)
+            {
+                sb.AppendLine($"*{vendor.VendorName}*");
+                sb.AppendLine();
+
+                foreach (var w in vendor.Walkers)
+                {
+                    sb.AppendLine($"{w.DisplayName} {w.Attendees}");
+                    var phoneLine = string.IsNullOrWhiteSpace(w.Phone) ? "No number" : w.Phone;
+                    if (w.MessageSent && w.MessageSentAtUtc.HasValue)
+                    {
+                        var est = ConvertUtcToEstString(w.MessageSentAtUtc.Value);
+                        phoneLine += $" - message sent - {est}";
+                    }
+                    else if (w.MessageSent)
+                    {
+                        phoneLine += " - message sent";
+                    }
+                    sb.AppendLine(phoneLine);
+                    sb.AppendLine();
+                }
+            }
+        }
+
+        copyTextDialogTitle = $"{dateLabel} - Message Log";
+        copyTextDialogContent = sb.ToString().TrimEnd();
+        showCopyTextDialog = true;
+        pendingCopyTextDialogSelect = true;
+        StateHasChanged();
+    }
+
+    private string ConvertUtcToEstString(DateTime utc)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            var utcSpecified = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+            var est = TimeZoneInfo.ConvertTimeFromUtc(utcSpecified, tz);
+            return est.ToString("yyyy-MM-dd h:mm tt 'EST'");
+        }
+        catch
+        {
+            return utc.ToString("yyyy-MM-dd h:mm tt 'UTC'");
+        }
+    }
+
+    // Day-level vCard download - Updated: 10/8/2025
+    private async Task DownloadDayVcards(string dateLabel, List<MobileTourCardModel> toursForDay)
+    {
+        // Primary path (server headers): use selectedDate (the page's active day) to avoid parsing the UI label.
+        var day = (selectedDate ?? DateTime.Today).Date;
+        var dateParam = day.ToString("yyyy-MM-dd");
+            var url = $"/vcards/day?date={Uri.EscapeDataString(dateParam)}&filterType={Uri.EscapeDataString(TreeDataFilterType.ActiveBookings.ToString())}";
+
+        VCardLogService.LogAction("Mobile Button Clicked", $"DownloadDayVcards button clicked. DateLabel: {dateLabel}, Date: {dateParam}, Tours: {toursForDay?.Count ?? 0}", url);
+
+        try
+        {
+            try
+            {
+                VCardLogService.LogAction("Mobile Primary Path Attempt", $"Attempting to open URL via window.open for date: {dateLabel}", url);
+                await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+                VCardLogService.LogAction("Mobile Primary Path Success", $"Successfully opened URL via window.open for date: {dateLabel}", url);
+                await ToastService.ShowSuccessAsync("vCards", $"Downloading vCards for {dateLabel}...");
+                return;
+            }
+            catch (Exception ex)
+            {
+                VCardLogService.LogAction("Mobile Primary Path Failed", $"window.open failed, falling back to JS blob download. DateLabel: {dateLabel}", url, ex);
+                Console.WriteLine($"[MobileVCard] window.open failed, falling back to JS blob download: {ex.Message}");
+            }
+
+            // Fallback: JS blob download using centralized vCard generation.
+            VCardLogService.LogAction("Mobile Fallback Started", $"Starting JS blob fallback download for date: {dateLabel}", url);
+            var vcards = new List<string>();
+            var walkerCount = 0;
+            foreach (var tour in toursForDay)
+            {
+                foreach (var w in tour.EnumerateAllWalkers())
+                {
+                    vcards.Add(VCardExportService.GenerateVCard(w));
+                    walkerCount++;
+                }
+            }
+
+            var content = VCardExportService.GenerateVcf(vcards);
+            var sanitizedDate = dateLabel.Replace(" ", "_").Replace(",", "").Replace("/", "-");
+            var fileName = $"walkers_{sanitizedDate}_{DateTime.Now:yyyyMMdd_HHmmss}.vcf";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", content, fileName, "text/vcard");
+            VCardLogService.LogAction("Mobile Fallback Success", $"JS blob download completed successfully. DateLabel: {dateLabel}, File: {fileName}, Walkers: {walkerCount}", url);
+            await ToastService.ShowSuccessAsync("vCards Downloaded", $"Downloaded {walkerCount} vCards for {dateLabel}");
+        }
+        catch (Exception ex)
+        {
+            VCardLogService.LogAction("Mobile Download Exception", $"Exception in DownloadDayVcards for date: {dateLabel}", url, ex);
+            try { await ToastService.ShowErrorAsync("Download Failed", "Unable to download day vCards"); } catch { }
+        }
+    }
+
+    // 2026-01-08 - Email day vCards using SmtpVCardEmailService
+    private async Task EmailDayVcards(string dateLabel, List<MobileTourCardModel> toursForDay)
+    {
+        if (isEmailingDayVcards) return;
+        isEmailingDayVcards = true;
+        StateHasChanged();
+
+        try
+        {
+            await ToastService.ShowInfoAsync("Sending...", "Email");
+
+            if (!SmtpVCardEmailService.ValidateSmtpConfig())
+            {
+                await ToastService.ShowErrorAsync("Email failed", "SMTP is not configured (missing Gmail:Email or Gmail:Password).");
+                return;
+            }
+
+            // Collect all vCards using the same logic as DownloadDayVcards
+            var vcardStrings = new List<string>();
+            foreach (var tour in toursForDay)
+            {
+                foreach (var w in tour.EnumerateAllWalkers())
+                {
+                    vcardStrings.Add(VCardExportService.GenerateVCard(w));
+                }
+            }
+
+            if (vcardStrings.Count == 0)
+            {
+                await ToastService.ShowWarningAsync("No vCards", "No walkers found for this day");
+                return;
+            }
+
+            // Use same filename convention as download
+            var sanitizedDate = dateLabel.Replace(" ", "_").Replace(",", "").Replace("/", "-");
+            var fileName = $"walkers_{sanitizedDate}_{DateTime.Now:yyyyMMdd_HHmmss}.vcf";
+            var subject = $"vCard Export - {dateLabel}";
+
+            var ok = await SmtpVCardEmailService.SendVCardAsync("jon@cityshuffles.com", vcardStrings, subject, fileName);
+            if (!ok)
+            {
+                var err = SmtpVCardEmailService.GetLastErrorMessage() ?? "Unable to send email";
+                await ToastService.ShowErrorAsync("Email failed", err);
+                return;
+            }
+
+            await ToastService.ShowSuccessAsync("Email sent", $"Sent {vcardStrings.Count} vCards for {dateLabel}");
+        }
+        catch (Exception ex)
+        {
+            try { await ToastService.ShowErrorAsync("Email failed", ex.Message); } catch { }
+        }
+        finally
+        {
+            isEmailingDayVcards = false;
+            StateHasChanged();
+        }
+    }
+
+    // Template management methods
+    private void OpenTemplateManagementSheet()
+    {
+        showTemplateManagementSheet = true;
+    }
+
+    private void CloseTemplateManagementSheet()
+    {
+        showTemplateManagementSheet = false;
+    }
+
+    private void OpenNewTourSheet()
+    {
+        mobileAddBookingPrefill = null;
+        showNewTourSheet = true;
+    }
+
+    private Task OpenNewTourSheetFromTourAsync(BookingPrefillRequest request)
+    {
+        if (request == null)
+        {
+            return Task.CompletedTask;
+        }
+
+        mobileAddBookingPrefill = new BookingPrefillRequest
+        {
+            TourName = request.TourName,
+            TourDate = request.TourDate,
+            TourTime = request.TourTime
+        };
+
+        showNewTourSheet = true;
+        return Task.CompletedTask;
+    }
+
+    private void CloseNewTourSheet()
+    {
+        showNewTourSheet = false;
+    }
+
+    private async Task HandleBookingAdded()
+    {
+        mobileAddBookingPrefill = null;
+        CloseNewTourSheet();
+        await LoadAsync(forceFresh: true);
+    }
+
+    private void OpenGuideManagement()
+    {
+        showGuideManagementDialog = true;
+        showTemplateManagementSheet = false;
+    }
+
+    private void CloseGuideManagementDialog()
+    {
+        showGuideManagementDialog = false;
+    }
+
+    private Task OpenMessageManagement()
+    {
+        showTemplateManagementSheet = false;
+        Navigation.NavigateTo("messages");
+        return Task.CompletedTask;
+    }
+
+    // 2025-12-18 00:00 UTC - Handler for message selection in MobileTourCard
+    private void OnCardMessageSelected(string? dateLabel, string? tourName, string messageId)
+    {
+        if (string.IsNullOrEmpty(tourName)) return;
+        var key = GetTourKey(dateLabel, tourName);
+        selectedMessageIdByTour[key] = messageId;
+        SaveDashboardSnapshotToCache();
+        StateHasChanged();
+    }
+
+    private void OnCardGuideSelected(string? dateLabel, string? tourLabel, int? guideId)
+    {
+        if (string.IsNullOrEmpty(tourLabel)) return;
+        var key = GetTourKey(dateLabel, tourLabel);
+        selectedGuideIdByTour[key] = guideId;
+        SaveDashboardSnapshotToCache();
+        StateHasChanged();
+    } 
+
+    // 2026-02-07 - Composite key helper
+    private static string GetTourKey(string? dateLabel, string? tourLabel)
+    {
+        return $"{dateLabel ?? ""} | {tourLabel ?? ""}";
+    }
+
+    private void PreselectGuidesFromDefaults() { /* No-op stub replaced by Async version below */ }
+
+    private async Task PreselectGuidesFromDefaultsAsync()
+    {
+        if (tourCatalog == null || mobileTours == null) return;
+        var jonNotoGuideId = ResolveJonNotoGuideId();
+
+        // Group by DateLabel since mobileTours is a flat list
+        var toursByDate = mobileTours.GroupBy(t => t.DateLabel);
+
+        foreach (var dateGroup in toursByDate)
+        {
+            var dateLabel = dateGroup.Key;
+            var dateForDow = ParseDateFromLabel(dateLabel);
+            var dowInt = dateForDow.HasValue ? (int)dateForDow.Value.DayOfWeek : (int?)null;
+
+            foreach (var card in dateGroup)
+            {
+                var tourLabel = card.TourName;
+                var key = GetTourKey(dateLabel, tourLabel);
+
+                // If already set (e.g. by manual selection persisting), verify it's valid, otherwise overwrite? 
+                // For now, if key exists, we skip to respect user selection if we persist state? 
+                // Actually, LoadAsync clears everything usually unless we preserve state. 
+                // The dictionary is re-initialized on page load but not on plain LoadAsync.
+                // Let's assume we want to re-apply defaults if nothing selected.
+                
+                if (selectedGuideIdByTour.ContainsKey(key) && selectedGuideIdByTour[key].HasValue)
+                {
+                   continue;
+                }
+
+                var (rawName, rawTime) = SplitNameAndTimeLabel(tourLabel);
+                var canonical = TourCatalogService.NormalizeName(rawName);
+                var normalizedTime = TourCatalogService.NormalizeTime(rawTime ?? string.Empty); // Using public static method if available or copy local
+
+                // 2026-02-07 - Priority 1: Check AssignedGuideId from TourTree (Manual or Schedule)
+                if (card.AssignedGuideId.HasValue)
+                {
+                    selectedGuideIdByTour[key] = card.AssignedGuideId;
+                    continue;
+                }
+                
+                // Priority 2: Check Override (Legacy one-off override system)
+                if (dateForDow.HasValue)
+                {
+                    try
+                    {
+                        var overrideGuideId = await ToursApiService.GetOverrideGuideForDateAsync(dateForDow.Value, rawName, rawTime);
+                        if (overrideGuideId.HasValue)
+                        {
+                            selectedGuideIdByTour[key] = overrideGuideId;
+                            continue;
+                        }
+                    }
+                    catch { }
+                }
+
+                // 2. Fallback to catalog defaults
+                var entry = FindCatalogEntry(canonical);
+                int? guideId = null;
+
+                if (entry?.TourId is int tourId &&
+                    tourCatalog.GuideDefaultsByTourId.TryGetValue(tourId, out var defaults) &&
+                    defaults.Count > 0)
+                {
+                    var match = defaults.FirstOrDefault(d =>
+                        string.Equals(TourCatalogService.NormalizeTime(d.StartTime ?? ""), normalizedTime, StringComparison.OrdinalIgnoreCase) &&
+                        (!dowInt.HasValue || d.DayOfWeek == dowInt.Value));
+
+                    if (match == null && dowInt.HasValue)
+                    {
+                        match = defaults.FirstOrDefault(d => d.DayOfWeek == dowInt.Value);
+                    }
+
+                    guideId = match?.GuideId;
+                }
+
+                if (!guideId.HasValue && entry?.DefaultGuideId.HasValue == true)
+                {
+                    guideId = entry.DefaultGuideId;
+                }
+
+                if (!guideId.HasValue && jonNotoGuideId.HasValue)
+                {
+                    guideId = jonNotoGuideId;
+                }
+
+                if (guideId.HasValue)
+                {
+                    selectedGuideIdByTour[key] = guideId;
+                }
+            }
+        }
+    }
+
+    private int? ResolveJonNotoGuideId()
+    {
+        if (availableDbGuides == null || availableDbGuides.Count == 0)
+        {
+            return null;
+        }
+
+        var match = availableDbGuides.FirstOrDefault(g =>
+            string.Equals((g.FirstName ?? string.Empty).Trim(), "Jon", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals((g.LastName ?? string.Empty).Trim(), "Noto", StringComparison.OrdinalIgnoreCase) &&
+            g.IsActive);
+
+        if (match != null)
+        {
+            return match.Id;
+        }
+
+        match = availableDbGuides.FirstOrDefault(g =>
+            string.Equals($"{(g.FirstName ?? string.Empty).Trim()} {(g.LastName ?? string.Empty).Trim()}".Trim(), "Jon Noto", StringComparison.OrdinalIgnoreCase));
+
+        return match?.Id;
+    }
+
+    // Helper to parse date from "Monday, October 10" or "2023-10-10"
+    private DateTime? ParseDateFromLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label)) return null;
+        if (DateTime.TryParse(label, out var dt)) return dt;
+        return null;
+    }
+
+    // Helper to split "Tour Name - 10:00 AM"
+    private (string Name, string Time) SplitNameAndTimeLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label)) return (string.Empty, string.Empty);
+        var parts = label.Split(new[] { " - ", " \u2013 ", " \u2014 ", " \u00E2\u20AC\u201C ", " \u00E2\u20AC\u201D " }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            var timePart = parts.Last().Trim();
+            // Simple heuristic to check if last part looks like time
+            if (timePart.Any(char.IsDigit) && (timePart.Contains("AM") || timePart.Contains("PM") || timePart.Contains(":")))
+            {
+                var namePart = string.Join(" - ", parts.Take(parts.Length - 1)).Trim();
+                return (namePart, timePart);
+            }
+        }
+        return (label.Trim(), string.Empty);
+    }
+
+    // Guide management methods
+    private async Task AddGuide()
+    {
+        if (!string.IsNullOrWhiteSpace(newGuideName))
+        {
+            var newGuide = new Guide
+            {
+                Name = newGuideName,
+                Phone = newGuidePhone,
+                Email = newGuideEmail,
+                MeetingLocation = newGuideMeetingLocation,
+                Description = newGuideDescription
+            };
+            inMemoryGuides.Add(newGuide);
+            await SaveGuidesToLocalStorage();
+            await ToastService.ShowSuccessAsync("Guide Added", $"Guide '{newGuide.Name}' added successfully!");
+            ClearGuideForm();
+        }
+    }
+
+    private void ClearGuideForm()
+    {
+        newGuideName = "";
+        newGuidePhone = "";
+        newGuideEmail = "";
+        newGuideMeetingLocation = "";
+        newGuideDescription = "";
+    }
+
+    private async Task RemoveGuide(Guide guide)
+    {
+        if (inMemoryGuides.Remove(guide))
+        {
+            await SaveGuidesToLocalStorage();
+            await ToastService.ShowSuccessAsync("Guide Removed", $"Guide '{guide.Name}' removed successfully!");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearAllGuides()
+    {
+        inMemoryGuides.Clear();
+        await SaveGuidesToLocalStorage();
+        await ToastService.ShowSuccessAsync("All Guides Cleared", "All in-memory guides have been cleared.");
+        StateHasChanged();
+    }
+
+    // 2025-12-18 00:00 UTC - DB-powered message loading methods
+    private async Task LoadMessagesFromDatabaseAsync()
+    {
+        try
+        {
+            dbMessages = await TourMessagesApi.GetTourMessagesAsync();
+            SyncInMemoryMessagesFromDb();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading messages from database: {ex.Message}");
+            dbMessages = new();
+            inMemoryMessages = new();
+        }
+    }
+
+    private async Task LoadVendorLinkContextAsync()
+    {
+        try
+        {
+            availableTours = await ToursApiService.GetToursAsync();
+        }
+        catch
+        {
+            availableTours = new();
+        }
+
+        try
+        {
+            availableTourLinks = await TourLinkService.GetAllAsync();
+        }
+        catch
+        {
+            availableTourLinks = new();
+        }
+
+        try
+        {
+            availableVendors = await VendorsApi.GetVendorsAsync();
+        }
+        catch
+        {
+            availableVendors = new();
+        }
+
+        try
+        {
+            var vendorTours = await VendorsApi.GetVendorToursAsync();
+            activeVendorAssignments = VendorLinkResolver.BuildActiveVendorAssignments(vendorTours, availableVendors);
+        }
+        catch
+        {
+            activeVendorAssignments = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void SyncInMemoryMessagesFromDb()
+    {
+        inMemoryMessages = dbMessages
+            .Select(m => new InMemoryMessageTemplate
+            {
+                Id = m.Id.ToString(),
+                Name = m.MessageName,
+                Type = m.MessageType ?? string.Empty,
+                Content = m.MessageContent,
+                Description = m.Description ?? string.Empty,
+                TourName = m.TourName,
+                TourStartTime = m.TourStartTime,
+                GuideId = m.GuideId,
+                MeetingPlace = m.MeetingPlace,
+                MeetingLocation = m.MeetingPlace, // Map aliases
+                MeetingTime = m.MeetingTime,
+                MeetingInstructions = m.MeetingInstructions,
+                Signature = m.Signature,
+                VendorLink = m.VendorLink,
+                IsActive = m.IsActive
+            })
+            .ToList();
+    }
+
+    // Local storage methods
+    private async Task LoadGuidesFromLocalStorage()
+    {
+        try
+        {
+            var guidesJson = await JSRuntime.InvokeAsync<string>("localStorage.getItem", LOCAL_STORAGE_GUIDES_KEY);
+            if (!string.IsNullOrEmpty(guidesJson))
+            {
+                var guides = System.Text.Json.JsonSerializer.Deserialize<List<Guide>>(guidesJson);
+                if (guides != null)
+                {
+                    inMemoryGuides = guides;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading guides from local storage: {ex.Message}");
+        }
+    }
+
+    private async Task SaveGuidesToLocalStorage()
+    {
+        try
+        {
+            var guidesJson = System.Text.Json.JsonSerializer.Serialize(inMemoryGuides);
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", LOCAL_STORAGE_GUIDES_KEY, guidesJson);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving guides to local storage: {ex.Message}");
+        }
+    }
+
+
+    // 2025-12-18 00:00 UTC - Removed LoadMessagesFromLocalStorage and SaveMessagesToLocalStorage, now using DB
+
+
+    // iPhone copy mode: persistence
+    private async Task LoadIPhoneCopyModeFromLocalStorage()
+    {
+        try
+        {
+            var modeJson = await JSRuntime.InvokeAsync<string>("localStorage.getItem", LOCAL_STORAGE_IPHONE_MODE_KEY);
+            if (!string.IsNullOrEmpty(modeJson))
+            {
+                try
+                {
+                    useIPhoneCopyMode = System.Text.Json.JsonSerializer.Deserialize<bool>(modeJson);
+                }
+                catch
+                {
+                    useIPhoneCopyMode = modeJson.Equals("true", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading iPhone copy mode from local storage: {ex.Message}");
+        }
+    }
+
+    private async Task SaveIPhoneCopyModeToLocalStorage()
+    {
+        try
+        {
+            var modeJson = System.Text.Json.JsonSerializer.Serialize(useIPhoneCopyMode);
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", LOCAL_STORAGE_IPHONE_MODE_KEY, modeJson);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving iPhone copy mode to local storage: {ex.Message}");
+        }
+    }
+
+    private async Task OnIPhoneToggleChanged(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        try
+        {
+            if (e?.Value is bool b)
+            {
+                useIPhoneCopyMode = b;
+            }
+            else
+            {
+                var s = e?.Value?.ToString() ?? string.Empty;
+                useIPhoneCopyMode = s.Equals("true", StringComparison.OrdinalIgnoreCase) || s.Equals("on", StringComparison.OrdinalIgnoreCase);
+            }
+            await SaveIPhoneCopyModeToLocalStorage();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error handling iPhone toggle change: {ex.Message}");
+        }
+    }
+
+    // Template field insertion method
+    private async Task InsertTemplateField(string textareaId, string field)
+    {
+        try
+        {
+            // Direct approach: inject the function and use it immediately
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                if (!window.insertTextAtCursor) {
+                    window.insertTextAtCursor = (textareaId, textToInsert) => {
+                        try {
+                            const textarea = document.getElementById(textareaId);
+                            if (textarea) {
+                                const start = textarea.selectionStart;
+                                const end = textarea.selectionEnd;
+                                const currentValue = textarea.value;
+
+                                // Insert the text at cursor position
+                                const newValue = currentValue.substring(0, start) + textToInsert + currentValue.substring(end);
+                                textarea.value = newValue;
+
+                                // Set cursor position after the inserted text
+                                textarea.selectionStart = start + textToInsert.length;
+                                textarea.selectionEnd = start + textToInsert.length;
+
+                                // Trigger the input event to update Blazor binding
+                                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                // Focus the textarea
+                                textarea.focus();
+                            }
+                        } catch (e) {
+                            console.error('insertTextAtCursor error:', e);
+                        }
+                    };
+                }
+            ");
+
+            // Now call the function
+            await JSRuntime.InvokeVoidAsync("insertTextAtCursor", textareaId, field);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error inserting template field: {ex.Message}");
+            await ToastService.ShowErrorAsync("Insert Failed", $"Failed to insert template field '{field}'.");
+        }
+    }
+
+    // iPhone copy mode: dialog actions
+    private void CloseCopyTextDialog()
+    {
+        showCopyTextDialog = false;
+        copyTextDialogContent = string.Empty;
+        copyTextDialogTitle = string.Empty;
+        pendingCopyTextDialogSelect = false;
+    }
+
+    private async Task TryAutoCopyFromDialog()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", copyTextDialogContent);
+            await ToastService.ShowSuccessAsync("Copied", "Text copied to clipboard!");
+            CloseCopyTextDialog();
+        }
+        catch
+        {
+            // Silent fail; user can manually copy from the textarea
+        }
+    }
+
+    // NOTE: Mobile send is now direct <a href="..."> links inside `Email\\Components\\Mobile\\MobileTourCard.razor`
+    // to match `Email\\Pages\\TestIosLinks.razor` Section 1 (iOS reliability).
+    
+
+
+    private async Task DownloadVcard(MobileWalkerInfoModel walker)
+    {
+        // Primary path (server headers): use messageId as stable identifier.
+        string? url = null;
+        if (!string.IsNullOrWhiteSpace(walker.MessageId))
+        {
+                url = $"/vcards/walker?messageId={Uri.EscapeDataString(walker.MessageId)}";
+        }
+
+        VCardLogService.LogAction("Mobile Button Clicked", $"DownloadVcard button clicked. Walker: {walker.DisplayName ?? "(no name)"}, MessageId: {walker.MessageId ?? "(none)"}", url ?? "(no URL - missing MessageId)");
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(walker.MessageId))
+            {
+                try
+                {
+                    VCardLogService.LogAction("Mobile Primary Path Attempt", $"Attempting to open URL via window.open for walker: {walker.DisplayName ?? "(no name)"}", url!);
+                    await JSRuntime.InvokeVoidAsync("open", url!, "_blank");
+                    VCardLogService.LogAction("Mobile Primary Path Success", $"Successfully opened URL via window.open for walker: {walker.DisplayName ?? "(no name)"}", url!);
+                    await ToastService.ShowSuccessAsync("vCard", $"Downloading vCard for {walker.DisplayName}...");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    VCardLogService.LogAction("Mobile Primary Path Failed", $"window.open failed, falling back to JS blob download. Walker: {walker.DisplayName ?? "(no name)"}", url!, ex);
+                    Console.WriteLine($"[MobileVCard] window.open failed, falling back to JS blob download: {ex.Message}");
+                }
+            }
+
+            // Fallback: JS blob download using centralized vCard generation.
+            VCardLogService.LogAction("Mobile Fallback Started", $"Starting JS blob fallback download for walker: {walker.DisplayName ?? "(no name)"}", url ?? "(no URL)");
+            var vcardContent = VCardExportService.GenerateVCard(walker);
+            var content = VCardExportService.GenerateVcf(new[] { vcardContent });
+            var fileName = $"{(walker.DisplayName ?? "walker").Replace(" ", "_")}.vcf";
+            await JSRuntime.InvokeVoidAsync("downloadTextFile", content, fileName, "text/vcard");
+            VCardLogService.LogAction("Mobile Fallback Success", $"JS blob download completed successfully. Walker: {walker.DisplayName ?? "(no name)"}, File: {fileName}", url ?? "(no URL)");
+            await ToastService.ShowSuccessAsync("vCard Downloaded", $"vCard for {walker.DisplayName} downloaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            VCardLogService.LogAction("Mobile Download Exception", $"Exception in DownloadVcard for walker: {walker.DisplayName ?? "(no name)"}", url ?? "(no URL)", ex);
+            await ToastService.ShowErrorAsync("Download Failed", $"Failed to download vCard for {walker.DisplayName}");
+        }
+    }
+    // 2025-12-18 - Guide Defaults Logic
+    private async Task EnsureCatalogAsync()
+    {
+        if (tourCatalog != null) return;
+        try
+        {
+            tourCatalog = await TourCatalogService.BuildCatalogAsync();
+            availableTourNames = tourCatalog.Entries
+                .Select(e => e.CanonicalName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n)
+                .ToList();
+        }
+        catch
+        {
+            tourCatalog = new Email.Services.TourCatalogSnapshot();
+            availableTourNames = new List<string>();
+        }
+    }
+
+    private void PreselectMessagesFromDefaults()
+    {
+        if (mobileTours == null || inMemoryMessages == null) return;
+
+        var today = GetCurrentEasternTime().Date;
+        var tomorrow = today.AddDays(1);
+
+        // Find message IDs for defaults (case-insensitive), matching desktop behavior.
+        var todayMsg = inMemoryMessages.FirstOrDefault(m => string.Equals(m.Name, "Today", StringComparison.OrdinalIgnoreCase));
+        var tomorrowMsg = inMemoryMessages.FirstOrDefault(m => string.Equals(m.Name, "Tomorrow", StringComparison.OrdinalIgnoreCase));
+        var dateMsg = inMemoryMessages.FirstOrDefault(m => string.Equals(m.Name, "Date", StringComparison.OrdinalIgnoreCase));
+        var thankYouMsg = inMemoryMessages.FirstOrDefault(m =>
+            string.Equals(m.Name, "ThankYou", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.Name, "Thank You", StringComparison.OrdinalIgnoreCase));
+
+        if (todayMsg == null && tomorrowMsg == null && dateMsg == null && thankYouMsg == null) return;
+
+        foreach (var card in mobileTours)
+        {
+            var date = ParseDateFromLabel(card.DateLabel);
+            if (!date.HasValue) continue;
+            var hasSubmittedReportForTour = card.EnumerateAllWalkers().Any(w => w.HasSubmittedGuideReport);
+            var isGuideReportPastDueForTour = IsGuideReportPastDueForCard(card);
+
+            string? targetMsgId = null;
+
+            if (thankYouMsg != null && (hasSubmittedReportForTour || isGuideReportPastDueForTour))
+            {
+                targetMsgId = thankYouMsg.Id;
+            }
+            else if (date.Value.Date == today && todayMsg != null)
+            {
+                targetMsgId = todayMsg.Id;
+            }
+            else if (date.Value.Date == tomorrow && tomorrowMsg != null)
+            {
+                targetMsgId = tomorrowMsg.Id;
+            }
+            else if (date.Value.Date > tomorrow && dateMsg != null)
+            {
+                targetMsgId = dateMsg.Id;
+            }
+            else if (date.Value.Date < today && thankYouMsg != null)
+            {
+                targetMsgId = thankYouMsg.Id;
+            }
+
+            if (targetMsgId != null)
+            {
+                var key = GetTourKey(card.DateLabel, card.TourName);
+                if (!selectedMessageIdByTour.TryGetValue(key, out var existingSelection) || string.IsNullOrWhiteSpace(existingSelection))
+                {
+                    selectedMessageIdByTour[key] = targetMsgId;
+                    continue;
+                }
+
+                if (thankYouMsg != null &&
+                    string.Equals(targetMsgId, thankYouMsg.Id, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(existingSelection, thankYouMsg.Id, StringComparison.OrdinalIgnoreCase) &&
+                    IsDefaultNonThankYouMessageSelection(existingSelection, todayMsg?.Id, tomorrowMsg?.Id, dateMsg?.Id))
+                {
+                    selectedMessageIdByTour[key] = thankYouMsg.Id;
+                }
+            }
+        }
+    }
+
+    private static bool IsDefaultNonThankYouMessageSelection(
+        string? existingSelection,
+        string? todayMsgId,
+        string? tomorrowMsgId,
+        string? dateMsgId)
+    {
+        if (string.IsNullOrWhiteSpace(existingSelection))
+        {
+            return true;
+        }
+
+        return string.Equals(existingSelection, todayMsgId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(existingSelection, tomorrowMsgId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(existingSelection, dateMsgId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsGuideReportPastDueForCard(MobileTourCardModel? card)
+    {
+        if (card == null)
+        {
+            return false;
+        }
+
+        var parsedDate = ParseDateFromLabel(card.DateLabel);
+        if (!parsedDate.HasValue)
+        {
+            return false;
+        }
+
+        var (_, tourTime) = SplitNameAndTimeLabel(card.TourName);
+        var nowEastern = GetCurrentEasternTime();
+
+        if (TryParseTourStartTime(tourTime, out var tourStartTime))
+        {
+            var scheduledTourStart = parsedDate.Value.Date.Add(tourStartTime);
+            return scheduledTourStart <= nowEastern;
+        }
+
+        return parsedDate.Value.Date < nowEastern.Date;
+    }
+
+    private static bool TryParseTourStartTime(string? tourTime, out TimeSpan startTime)
+    {
+        startTime = default;
+        if (string.IsNullOrWhiteSpace(tourTime))
+        {
+            return false;
+        }
+
+        var normalized = tourTime.Trim();
+        var styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.NoCurrentDateDefault;
+
+        DateTime parsed;
+        if (DateTime.TryParse(normalized, CultureInfo.InvariantCulture, styles, out parsed) ||
+            DateTime.TryParse(normalized, CultureInfo.CurrentCulture, styles, out parsed))
+        {
+            startTime = parsed.TimeOfDay;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static DateTime GetCurrentEasternTime()
+    {
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, EasternTimeZone);
+    }
+
+    private static TimeZoneInfo ResolveEasternTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+            }
+            catch
+            {
+                return TimeZoneInfo.Utc;
+            }
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+
+
+    private Email.Services.TourCatalogEntry? FindCatalogEntry(string? name)
+    {
+        if (tourCatalog == null || string.IsNullOrWhiteSpace(name)) return null;
+        var canonical = TourCatalogService.NormalizeName(name);
+        return tourCatalog.Entries.FirstOrDefault(e =>
+            string.Equals(e.CanonicalName, canonical, StringComparison.OrdinalIgnoreCase) ||
+            e.Aliases.Any(a => string.Equals(TourCatalogService.NormalizeName(a), canonical, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private List<string> GetReportIssueTimeOptionsFor(string? name)
+    {
+        var entry = FindCatalogEntry(name);
+        var times = entry?.Times ?? new List<string>();
+        return times.Count > 0 ? times : GetReportIssueFallbackTimeOptions();
+    }
+
+    private static List<string> GetReportIssueFallbackTimeOptions()
+    {
+        var times = new List<string>();
+        var startTime = new TimeSpan(9, 0, 0);
+        var endTime = new TimeSpan(20, 30, 0);
+        for (var time = startTime; time <= endTime; time = time.Add(TimeSpan.FromMinutes(15)))
+        {
+            times.Add(DateTime.Today.Add(time).ToString("h:mm tt"));
+        }
+
+        return times;
+    }
+
+
+
+
+    
+    private string NormalizeTimeSafe(string? raw)
+    {
+        return TourCatalogService.NormalizeTime(raw ?? string.Empty);
+    }
+
+    // Created: 2025-11-21 (local) - Minimal in-memory Guide model for mobile dialog
+    private class Guide
+    {
+        public string? Name { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string? MeetingLocation { get; set; }
+        public string? Description { get; set; }
+    }
+}
+
+<style>
+    .action-sheet-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1050;
+    }
+    .action-sheet {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 1060;
+        border-top-left-radius: 16px; border-top-right-radius: 16px;
+        box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+        animation: slideUp .2s ease-out;
+    }
+    .action-sheet-header { 
+        padding: .75rem 1rem; font-weight: 600; border-bottom: 1px solid var(--bs-border-color); 
+    }
+    .action-sheet .list-group-item { 
+        padding: .9rem 1rem; min-height: 44px; 
+    }
+    @@keyframes slideUp { 
+        from { transform: translateY(100%);} 
+        to { transform: translateY(0);} 
+    }
+    
+    /* Large action sheet for forms */
+    .action-sheet-large {
+        max-height: 90vh;
+    }
+    
+    .action-sheet-content {
+        overflow-y: auto;
+        max-height: calc(90vh - 60px);
+        padding: 0;
+    }
+    
+    .action-sheet-header {
+        display: flex;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+</style>
+
+@* Bottom action sheet provided by child components (MobileTourCard) *@
+
+
+
+

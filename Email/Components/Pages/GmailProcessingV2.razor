@@ -1,0 +1,128 @@
+@page "/gmail-processing-v2"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Services.GmailProcessing.Dtos
+@inject Email.Services.GmailProcessing.GmailProcessingV2Service ProcessingService
+@inject ILogger<GmailProcessingV2> Logger
+
+<PageTitle>Processing V2</PageTitle>
+
+<div class="container py-4">
+    <h4 class="mb-3">Processing V2</h4>
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <Email.Components.ProcessingV2.ProcessingToolbar
+                OnRefresh="RefreshAsync"
+                OnProcessAll="ProcessAllAsync"
+                OnProcessSelected="ProcessSelectedAsync"
+                OnCancel="CancelProcessing"
+                IsBusy="@isBusy"
+                IsSelectedBusy="@isSelectedBusy"
+                IsProcessSelectedDisabled="@(!selectedIds.Any())" />
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-2">
+            <Email.Components.ProcessingV2.ProcessingGrid
+                Items="@rows"
+                SelectedIds="@selectedIds"
+                SelectedIdsChanged="OnSelectedIdsChanged" />
+        </div>
+    </div>
+</div>
+
+@code {
+    // Created: 2025-11-22 00:00 UTC
+    private List<UnprocessedEmailRowDto> rows = new();
+    private List<int> selectedIds = new();
+    private bool isBusy = false;
+    private bool isSelectedBusy = false;
+    private CancellationTokenSource? cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUnprocessedAsync(200);
+    }
+
+    private async Task LoadUnprocessedAsync(int limit)
+    {
+        try
+        {
+            rows = (await ProcessingService.GetUnprocessedAsync(limit, CancellationToken.None)).ToList();
+            selectedIds.Clear();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[ProcessingV2] LoadUnprocessedAsync failed: {Message}", ex.Message);
+        }
+        StateHasChanged();
+    }
+
+    private Task RefreshAsync() => LoadUnprocessedAsync(200);
+
+    private async Task ProcessAllAsync()
+    {
+        CancelProcessing();
+        cts = new CancellationTokenSource();
+        try
+        {
+            isBusy = true;
+            await ProcessingService.ProcessCollectedAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[ProcessingV2] ProcessAllAsync failed: {Message}", ex.Message);
+        }
+        finally
+        {
+            isBusy = false;
+            await LoadUnprocessedAsync(200);
+        }
+    }
+
+    private async Task ProcessSelectedAsync()
+    {
+        if (selectedIds.Count == 0) return;
+        CancelProcessing();
+        cts = new CancellationTokenSource();
+        try
+        {
+            isSelectedBusy = true;
+            await ProcessingService.ProcessSpecificAsync(selectedIds, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[ProcessingV2] ProcessSelectedAsync failed: {Message}", ex.Message);
+        }
+        finally
+        {
+            isSelectedBusy = false;
+            await LoadUnprocessedAsync(200);
+        }
+    }
+
+    private Task OnSelectedIdsChanged(List<int> ids)
+    {
+        selectedIds = ids ?? new();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void CancelProcessing()
+    {
+        try { cts?.Cancel(); } catch { }
+        try { cts?.Dispose(); } catch { }
+        cts = null;
+    }
+}
+
+

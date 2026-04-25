@@ -1,0 +1,288 @@
+@page "/test-text"
+@using Email.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject ITextBeltDirectService TextBeltService
+
+<!-- Created: 2025-12-10 - Simple TextBelt SMS testing page -->
+
+<PageTitle>Test Text Message</PageTitle>
+
+<div class="container-fluid p-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8 col-sm-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-chat-dots me-2"></i>
+                        Send Test SMS
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Phone Number:</label>
+                        <input type="tel" 
+                               class="form-control" 
+                               value="@phoneNumber"
+                               @onchange="OnPhoneNumberChanged" 
+                               placeholder="+1234567890" 
+                               disabled="@isSending" />
+                        <small class="form-text text-muted">Include country code (e.g., +1 for US)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Message:</label>
+                        <textarea class="form-control" 
+                                  rows="4" 
+                                  value="@messageText"
+                                  @onchange="OnMessageTextChanged" 
+                                  placeholder="Enter your message here..."
+                                  disabled="@isSending"></textarea>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary btn-lg" 
+                                @onclick="SendTextAsync" 
+                                disabled="@(isSending || string.IsNullOrWhiteSpace(phoneNumber) || string.IsNullOrWhiteSpace(messageText))">
+                            @if (isSending)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                <span>Sending...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-send me-2"></i>
+                                <span>Send SMS</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="card mt-3">
+                    <div class="card-header @statusClass">
+                        <h5 class="mb-0">
+                            <i class="bi @statusIcon me-2"></i>
+                            Status
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <strong>Result:</strong> @statusMessage
+                        </div>
+                        @if (!string.IsNullOrEmpty(textId))
+                        {
+                            <div class="mb-2">
+                                <strong>Text ID:</strong> <code>@textId</code>
+                            </div>
+                        }
+                        @if (quotaRemaining.HasValue)
+                        {
+                            <div class="mb-2">
+                                <strong>Quota Remaining:</strong> 
+                                <span class="badge @(quotaRemaining.Value > 10 ? "bg-success" : quotaRemaining.Value > 0 ? "bg-warning" : "bg-danger")">
+                                    @quotaRemaining.Value
+                                </span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(errorMessage))
+                        {
+                            <div class="alert alert-danger mt-2 mb-0">
+                                <strong>Error:</strong> @errorMessage
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="card mt-3">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Current Quota
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (currentQuota.HasValue)
+                    {
+                        <div class="text-center">
+                            <h2 class="@(currentQuota.Value > 10 ? "text-success" : currentQuota.Value > 0 ? "text-warning" : "text-danger")">
+                                @currentQuota.Value
+                            </h2>
+                            <p class="text-muted mb-0">messages remaining</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <p class="mb-0">Click button to check quota</p>
+                        </div>
+                    }
+                    <button class="btn btn-outline-info w-100 mt-3" 
+                            @onclick="CheckQuotaAsync"
+                            disabled="@isCheckingQuota">
+                        @if (isCheckingQuota)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <span>Checking...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-arrow-clockwise me-2"></i>
+                            <span>Check Quota</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string phoneNumber = "";
+    private string messageText = "";
+    private bool isSending = false;
+    private bool isCheckingQuota = false;
+    
+    // Status display fields
+    private string statusMessage = "";
+    private string statusClass = "";
+    private string statusIcon = "";
+    private string textId = "";
+    private int? quotaRemaining = null;
+    private string errorMessage = "";
+    private int? currentQuota = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Auto-check quota on page load
+        await CheckQuotaAsync();
+    }
+
+    private void OnPhoneNumberChanged(ChangeEventArgs e)
+    {
+        phoneNumber = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnMessageTextChanged(ChangeEventArgs e)
+    {
+        messageText = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private async Task SendTextAsync()
+    {
+        try
+        {
+            isSending = true;
+            ClearStatus();
+            StateHasChanged();
+
+            var response = await TextBeltService.SendSmsAsync(phoneNumber, messageText);
+
+            if (response == null)
+            {
+                SetErrorStatus("Failed to send SMS - no response from service");
+                return;
+            }
+
+            if (response.Success)
+            {
+                SetSuccessStatus("SMS sent successfully!");
+                textId = response.TextId ?? "N/A";
+                quotaRemaining = response.QuotaRemaining;
+                currentQuota = response.QuotaRemaining;
+                
+                // Clear form on success
+                phoneNumber = "";
+                messageText = "";
+            }
+            else
+            {
+                SetErrorStatus($"Failed to send SMS");
+                errorMessage = response.Error ?? "Unknown error";
+            }
+        }
+        catch (Exception ex)
+        {
+            SetErrorStatus("Exception occurred while sending SMS");
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSending = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckQuotaAsync()
+    {
+        try
+        {
+            isCheckingQuota = true;
+            StateHasChanged();
+
+            var response = await TextBeltService.GetQuotaAsync();
+
+            if (response != null && response.Success && response.QuotaRemaining.HasValue)
+            {
+                currentQuota = response.QuotaRemaining;
+            }
+            else
+            {
+                currentQuota = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking quota: {ex.Message}");
+            currentQuota = null;
+        }
+        finally
+        {
+            isCheckingQuota = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetSuccessStatus(string message)
+    {
+        statusMessage = message;
+        statusClass = "bg-success text-white";
+        statusIcon = "bi-check-circle";
+    }
+
+    private void SetErrorStatus(string message)
+    {
+        statusMessage = message;
+        statusClass = "bg-danger text-white";
+        statusIcon = "bi-x-circle";
+    }
+
+    private void ClearStatus()
+    {
+        statusMessage = "";
+        statusClass = "";
+        statusIcon = "";
+        textId = "";
+        quotaRemaining = null;
+        errorMessage = "";
+    }
+}
+
+<style>
+    .card {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .card-header {
+        background-color: #f8f9fa;
+    }
+    
+    .card-header.bg-success,
+    .card-header.bg-danger,
+    .card-header.bg-info {
+        background-color: inherit !important;
+    }
+</style>
+

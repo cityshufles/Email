@@ -1,0 +1,637 @@
+@using Email.Models.Reports
+@using System.Linq
+@using System.Runtime.CompilerServices
+@inject ITourLinkService LinkService
+@inject IJSRuntime JSRuntime
+
+<div class="border rounded p-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div>
+            <h6 class="mb-0">Tour Links</h6>
+            <div class="text-muted small">Edit vendor links and product metadata for this tour.</div>
+        </div>
+        @if (!IsReadOnly)
+        {
+            <button class="btn btn-sm btn-outline-primary" type="button" @onclick="AddLink" disabled="@(isBusy || HasEmptyLink)">
+                <i class="bi bi-plus-lg me-1"></i>Add Link
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (!IsReadOnly && Tour.Id <= 0)
+    {
+        <div class="alert alert-warning">
+            Save the master tour to link TourId. You can still add links using Tour Name only.
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="text-muted">Loading tour links...</div>
+    }
+    else if (links.Count == 0)
+    {
+        <div class="text-muted">No tour links found.</div>
+    }
+    else if (IsReadOnly)
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Vendor</th>
+                        <th>Tour Name</th>
+                        <th>Day</th>
+                        <th>Time</th>
+                        <th>Product ID</th>
+                        <th>Notes</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var link in links)
+                    {
+                        <tr>
+                            <td>@link.Vendor</td>
+                            <td>
+                                <div class="fw-semibold">@link.TourName</div>
+                                @if (!string.IsNullOrWhiteSpace(link.TourLinkUrl))
+                                {
+                                    <div class="small text-muted">@link.TourLinkUrl</div>
+                                }
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(link.DaysTimesAvailable) ? FormatTourDay(link.TourDay) : link.DaysTimesAvailable)</td>
+                            <td>@(string.IsNullOrWhiteSpace(link.TourTime) ? "-" : link.TourTime)</td>
+                            <td>@(string.IsNullOrWhiteSpace(link.ProductId) ? "-" : link.ProductId)</td>
+                            <td><small class="text-muted">@link.Notes</small></td>
+                            <td class="text-end">
+                                <div class="d-flex flex-column gap-1 align-items-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyLinkAsync(link.TourLinkUrl)" disabled="@string.IsNullOrWhiteSpace(link.TourLinkUrl)">
+                                            <i class="bi bi-clipboard me-1"></i>Copy Tour
+                                        </button>
+                                        @if (!string.IsNullOrWhiteSpace(link.TourLinkUrl))
+                                        {
+                                            <a class="btn btn-outline-primary" href="@link.TourLinkUrl" target="_blank" rel="noopener">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>Visit Tour
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-primary" type="button" disabled>
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>Visit Tour
+                                            </button>
+                                        }
+                                    </div>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyLinkAsync(link.ReviewLink)" disabled="@string.IsNullOrWhiteSpace(link.ReviewLink)">
+                                            <i class="bi bi-clipboard me-1"></i>Copy Review
+                                        </button>
+                                        @if (!string.IsNullOrWhiteSpace(link.ReviewLink))
+                                        {
+                                            <a class="btn btn-outline-primary" href="@link.ReviewLink" target="_blank" rel="noopener">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>Visit Review
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-primary" type="button" disabled>
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>Visit Review
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        @foreach (var link in links)
+        {
+            <div class="border rounded p-3 mb-3">
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="form-label">Id</label>
+                        <InputNumber class="form-control" @bind-Value="link.Id" />
+                        <div class="form-text">DB identity (0 = new)</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Vendor</label>
+                        <InputText class="form-control" @bind-Value="link.Vendor" list="@vendorListId" />
+                        <datalist id="@vendorListId">
+                            @foreach (var vendor in vendorOptions)
+                            {
+                                <option value="@vendor"></option>
+                            }
+                        </datalist>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Tour Name</label>
+                        <InputText class="form-control" @bind-Value="link.TourName" />
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Tour Id</label>
+                        <InputNumber class="form-control" @bind-Value="link.TourId" disabled="true" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Product Id</label>
+                        <InputText class="form-control" @bind-Value="link.ProductId" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Tour Days (Multi)</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var day in DayOptions)
+                            {
+                                var isChecked = GetSelectedDays(link).Contains(day.Value);
+                                var checkboxId = $"tour-day-{RuntimeHelpers.GetHashCode(link)}-{day.Value}";
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           id="@checkboxId"
+                                           checked="@isChecked"
+                                           @onchange="() => ToggleDay(link, day.Value)" />
+                                    <label class="form-check-label" for="@checkboxId">@day.Label</label>
+                                </div>
+                            }
+                        </div>
+                        <div class="form-text">Selecting days updates the Days/Times Available field and sets Tour Day to the first selection.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label">Tour Time</label>
+                        <InputText class="form-control" @bind-Value="link.TourTime" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Days/Times Available</label>
+                        <InputText class="form-control" @bind-Value="link.DaysTimesAvailable" @bind-Value:after="() => SyncDaysFromText(link)" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Tour Link URL</label>
+                        <InputText class="form-control" @bind-Value="link.TourLinkUrl" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Review Link URL</label>
+                        <InputText class="form-control" @bind-Value="link.ReviewLink" />
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">Notes</label>
+                        <InputTextArea class="form-control" rows="2" @bind-Value="link.Notes" />
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mt-3 align-items-start">
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => SaveLinkAsync(link)" disabled="@isBusy">
+                            @if (IsSavingLink(link))
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-save me-1"></i>
+                            }
+                            Save
+                        </button>
+                        @if (IsRecentlySaved(link))
+                        {
+                            <div class="form-text text-success">Saved</div>
+                        }
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => DeleteLinkAsync(link)" disabled="@isBusy">
+                        <i class="bi bi-trash me-1"></i>Delete
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public DbTour Tour { get; set; } = new();
+    [Parameter] public bool IsReadOnly { get; set; }
+
+    private List<TourLink> links = new();
+    private List<string> vendorOptions = new();
+    private readonly string vendorListId = $"tour-link-vendors-{Guid.NewGuid():N}";
+    private readonly Dictionary<TourLink, HashSet<int>> selectedDaysByLink = new();
+    private readonly Dictionary<TourLink, LinkDefaults> newLinkDefaults = new();
+    private bool isLoading;
+    private bool isBusy;
+    private string? errorMessage;
+    private TourLink? savingLink;
+    private int? lastSavedLinkId;
+    private DateTime? lastSavedAtUtc;
+    private CancellationTokenSource? savedCts;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load tour links when the tour changes.
+        await LoadLinksAsync();
+    }
+
+    private async Task LoadLinksAsync()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            newLinkDefaults.Clear();
+
+            var tourName = ResolveTourName();
+            if (string.IsNullOrWhiteSpace(tourName))
+            {
+                tourName = null;
+            }
+            links = await LinkService.GetLinksForTourAsync(Tour.Id > 0 ? Tour.Id : null, tourName);
+            BuildVendorOptions();
+            InitializeDaySelections();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourLinksEditor] LoadLinksAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load tour links.";
+            links = new List<TourLink>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void AddLink()
+    {
+        // Created: 2026-02-12 00:00 UTC - Add a new tour link row for editing.
+        try
+        {
+            if (HasEmptyLink)
+            {
+                return;
+            }
+            var tourName = ResolveTourName();
+            var newLink = new TourLink
+            {
+                Id = 0,
+                TourId = Tour.Id > 0 ? Tour.Id : null,
+                TourName = tourName,
+                Vendor = vendorOptions.FirstOrDefault() ?? string.Empty
+            };
+            links.Insert(0, newLink);
+            selectedDaysByLink[newLink] = new HashSet<int>();
+            newLinkDefaults[newLink] = new LinkDefaults
+            {
+                TourName = newLink.TourName,
+                Vendor = newLink.Vendor,
+                TourId = newLink.TourId
+            };
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourLinksEditor] AddLink failed: {ex}");
+#endif
+            errorMessage = "Failed to add a new tour link.";
+        }
+    }
+
+    private bool HasEmptyLink => links.Any(IsEmptyLink);
+
+    private bool IsEmptyLink(TourLink link)
+    {
+        if (link == null) return true;
+
+        return link.Id <= 0
+            && string.IsNullOrWhiteSpace(link.ProductId)
+            && string.IsNullOrWhiteSpace(link.DaysTimesAvailable)
+            && !link.TourDay.HasValue
+            && string.IsNullOrWhiteSpace(link.TourTime)
+            && string.IsNullOrWhiteSpace(link.TourLinkUrl)
+            && string.IsNullOrWhiteSpace(link.ReviewLink)
+            && string.IsNullOrWhiteSpace(link.Notes)
+            && IsDefaultTourAndVendor(link);
+    }
+
+    private bool IsDefaultTourAndVendor(TourLink link)
+    {
+        if (link == null) return true;
+        if (!newLinkDefaults.TryGetValue(link, out var defaults)) return false;
+
+        var tourNameMatches = string.Equals((link.TourName ?? string.Empty).Trim(), (defaults.TourName ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+        var vendorMatches = string.Equals((link.Vendor ?? string.Empty).Trim(), (defaults.Vendor ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+        var tourIdMatches = link.TourId == defaults.TourId;
+
+        return tourNameMatches && vendorMatches && tourIdMatches;
+    }
+
+    private sealed class LinkDefaults
+    {
+        public string? TourName { get; set; }
+        public string? Vendor { get; set; }
+        public int? TourId { get; set; }
+    }
+
+    private async Task SaveLinkAsync(TourLink link)
+    {
+        // Created: 2026-02-12 00:00 UTC - Save a tour link row.
+        try
+        {
+            isBusy = true;
+            savingLink = link;
+            errorMessage = null;
+
+            if (string.IsNullOrWhiteSpace(link.TourName))
+            {
+                link.TourName = ResolveTourName();
+            }
+
+            if (Tour.Id > 0 && (!link.TourId.HasValue || link.TourId.Value <= 0))
+            {
+                link.TourId = Tour.Id;
+            }
+
+            var savedId = await LinkService.SaveAsync(link);
+            if (savedId > 0)
+            {
+                link.Id = savedId;
+            }
+            await LoadLinksAsync();
+            SetSavedFlag(savedId > 0 ? savedId : link.Id);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourLinksEditor] SaveLinkAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to save tour link.";
+        }
+        finally
+        {
+            isBusy = false;
+            savingLink = null;
+        }
+    }
+
+    private async Task DeleteLinkAsync(TourLink link)
+    {
+        // Created: 2026-02-12 00:00 UTC - Delete a tour link row.
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete link for '{link.TourName}'?");
+            if (!confirmed) return;
+
+            isBusy = true;
+            errorMessage = null;
+
+            if (link.Id > 0)
+            {
+                await LinkService.DeleteAsync(link.Id);
+            }
+
+            links.Remove(link);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourLinksEditor] DeleteLinkAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to delete tour link.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private string ResolveTourName()
+    {
+        if (!string.IsNullOrWhiteSpace(Tour.MasterTourNameDesktop)) return Tour.MasterTourNameDesktop;
+        if (!string.IsNullOrWhiteSpace(Tour.MasterTourName)) return Tour.MasterTourName;
+        if (!string.IsNullOrWhiteSpace(Tour.TourName)) return Tour.TourName;
+        return string.Empty;
+    }
+
+    private static readonly (int Value, string Label)[] DayOptions = new[]
+    {
+        (0, "Sunday"),
+        (1, "Monday"),
+        (2, "Tuesday"),
+        (3, "Wednesday"),
+        (4, "Thursday"),
+        (5, "Friday"),
+        (6, "Saturday")
+    };
+
+    private static string FormatTourDay(int? day)
+    {
+        if (!day.HasValue) return "-";
+        var match = DayOptions.FirstOrDefault(d => d.Value == day.Value);
+        return string.IsNullOrWhiteSpace(match.Label) ? "-" : match.Label;
+    }
+
+    private async Task CopyLinkAsync(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", url);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourLinksEditor] CopyLinkAsync failed: {ex}");
+#endif
+        }
+    }
+
+    private bool IsSavingLink(TourLink link)
+    {
+        return ReferenceEquals(savingLink, link);
+    }
+
+    private bool IsRecentlySaved(TourLink link)
+    {
+        if (!lastSavedLinkId.HasValue || lastSavedLinkId.Value <= 0) return false;
+        if (link.Id != lastSavedLinkId.Value) return false;
+        if (!lastSavedAtUtc.HasValue) return false;
+        return DateTime.UtcNow - lastSavedAtUtc.Value < TimeSpan.FromSeconds(4);
+    }
+
+    private void SetSavedFlag(int id)
+    {
+        if (id <= 0) return;
+
+        lastSavedLinkId = id;
+        lastSavedAtUtc = DateTime.UtcNow;
+        savedCts?.Cancel();
+        savedCts = new CancellationTokenSource();
+        _ = ClearSavedFlagAsync(savedCts.Token);
+        StateHasChanged();
+    }
+
+    private async Task ClearSavedFlagAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        lastSavedLinkId = null;
+        lastSavedAtUtc = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void BuildVendorOptions()
+    {
+        vendorOptions = links
+            .Select(l => l.Vendor?.Trim())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void InitializeDaySelections()
+    {
+        selectedDaysByLink.Clear();
+        foreach (var link in links)
+        {
+            var set = ParseDays(link);
+            selectedDaysByLink[link] = set;
+            ApplySelectedDays(link, set, updateDaysTimes: false);
+        }
+    }
+
+    private HashSet<int> GetSelectedDays(TourLink link)
+    {
+        if (selectedDaysByLink.TryGetValue(link, out var set))
+        {
+            return set;
+        }
+
+        var parsed = ParseDays(link);
+        selectedDaysByLink[link] = parsed;
+        return parsed;
+    }
+
+    private void ToggleDay(TourLink link, int dayValue)
+    {
+        var set = GetSelectedDays(link);
+        if (set.Contains(dayValue))
+        {
+            set.Remove(dayValue);
+        }
+        else
+        {
+            set.Add(dayValue);
+        }
+        ApplySelectedDays(link, set, updateDaysTimes: true);
+    }
+
+    private void SyncDaysFromText(TourLink link)
+    {
+        var set = ParseDays(link);
+        selectedDaysByLink[link] = set;
+        ApplySelectedDays(link, set, updateDaysTimes: false);
+    }
+
+    private HashSet<int> ParseDays(TourLink link)
+    {
+        var set = new HashSet<int>();
+
+        if (!string.IsNullOrWhiteSpace(link.DaysTimesAvailable))
+        {
+            var parsed = ParseDaysFromText(link.DaysTimesAvailable);
+            foreach (var day in parsed)
+            {
+                set.Add(day);
+            }
+        }
+
+        if (set.Count == 0 && link.TourDay.HasValue)
+        {
+            set.Add(link.TourDay.Value);
+        }
+
+        return set;
+    }
+
+    private void ApplySelectedDays(TourLink link, HashSet<int> set, bool updateDaysTimes)
+    {
+        if (set.Count > 0)
+        {
+            link.TourDay = set.OrderBy(x => x).First();
+        }
+        else
+        {
+            link.TourDay = null;
+        }
+
+        if (updateDaysTimes)
+        {
+            var shouldUpdate = string.IsNullOrWhiteSpace(link.DaysTimesAvailable) || IsDayList(link.DaysTimesAvailable);
+            if (shouldUpdate)
+            {
+                var labels = DayOptions
+                    .Where(d => set.Contains(d.Value))
+                    .Select(d => d.Label)
+                    .ToList();
+                link.DaysTimesAvailable = labels.Count == 0 ? string.Empty : string.Join(", ", labels);
+            }
+        }
+    }
+
+    private static List<int> ParseDaysFromText(string raw)
+    {
+        var results = new List<int>();
+        if (string.IsNullOrWhiteSpace(raw)) return results;
+
+        var tokens = raw
+            .Split(new[] { ',', ';', '/', '|', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.Trim().ToLowerInvariant());
+
+        foreach (var token in tokens)
+        {
+            if (token.StartsWith("sun") && !results.Contains(0)) results.Add(0);
+            else if (token.StartsWith("mon") && !results.Contains(1)) results.Add(1);
+            else if (token.StartsWith("tue") && !results.Contains(2)) results.Add(2);
+            else if (token.StartsWith("wed") && !results.Contains(3)) results.Add(3);
+            else if (token.StartsWith("thu") && !results.Contains(4)) results.Add(4);
+            else if (token.StartsWith("fri") && !results.Contains(5)) results.Add(5);
+            else if (token.StartsWith("sat") && !results.Contains(6)) results.Add(6);
+        }
+
+        return results;
+    }
+
+    private static bool IsDayList(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return true;
+
+        var tokens = raw
+            .Split(new[] { ',', ';', '/', '|', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.Trim().ToLowerInvariant())
+            .ToList();
+
+        if (tokens.Count == 0) return true;
+
+        var matched = ParseDaysFromText(raw).Count;
+        return matched == tokens.Count;
+    }
+}

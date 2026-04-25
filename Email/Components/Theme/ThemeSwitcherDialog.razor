@@ -1,0 +1,112 @@
+@* 2025-11-22 00:00 UTC - Bootswatch Theme Switcher Dialog *@
+
+<div class="modal fade" id="themeSwitcherDialog" tabindex="-1" aria-labelledby="themeSwitcherDialogLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="themeSwitcherDialogLabel">
+          <span class="bi bi-palette" aria-hidden="true"></span>
+          Change Theme
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" onchange="if (window.themeDialogOnChange) window.themeDialogOnChange(event);">
+        <div class="row g-4">
+          <div class="col-12 col-lg-5">
+            <div class="mb-4">
+              <h6 class="mb-2">Theme Selection</h6>
+              <div class="small text-muted mb-3">Choose a Bootswatch theme. Changes preview live while this dialog is open.</div>
+
+              <div class="mb-3">
+                <div class="fw-semibold mb-2">Bootstrap Default</div>
+                <div class="row row-cols-2 g-2 mb-3">
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="default"><span class="form-check-label ms-2">Default Bootstrap</span></label></div>
+                </div>
+                <div class="fw-semibold mb-2">Light Themes</div>
+                <div class="row row-cols-2 g-2">
+                  <!-- Light themes -->
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="cerulean"><span class="form-check-label ms-2">cerulean</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="cosmo"><span class="form-check-label ms-2">cosmo</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="flatly"><span class="form-check-label ms-2">flatly</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="journal"><span class="form-check-label ms-2">journal</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="litera"><span class="form-check-label ms-2">litera</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="lumen"><span class="form-check-label ms-2">lumen</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="lux"><span class="form-check-label ms-2">lux</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="materia"><span class="form-check-label ms-2">materia</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="minty"><span class="form-check-label ms-2">minty</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="morph"><span class="form-check-label ms-2">morph</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="pulse"><span class="form-check-label ms-2">pulse</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="quartz"><span class="form-check-label ms-2">quartz</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="sandstone"><span class="form-check-label ms-2">sandstone</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="simplex"><span class="form-check-label ms-2">simplex</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="sketchy"><span class="form-check-label ms-2">sketchy</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="spacelab"><span class="form-check-label ms-2">spacelab</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="united"><span class="form-check-label ms-2">united</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="yeti"><span class="form-check-label ms-2">yeti</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="zephyr"><span class="form-check-label ms-2">zephyr</span></label></div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <div class="fw-semibold mb-2">Dark Themes</div>
+                <div class="row row-cols-2 g-2">
+                  <!-- Dark themes -->
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="cyborg"><span class="form-check-label ms-2">cyborg</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="darkly"><span class="form-check-label ms-2">darkly</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="slate"><span class="form-check-label ms-2">slate</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="solar"><span class="form-check-label ms-2">solar</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="superhero"><span class="form-check-label ms-2">superhero</span></label></div>
+                  <div class="col"><label class="form-check form-check-inline w-100"><input class="form-check-input" type="radio" name="themeOption" value="vapor"><span class="form-check-label ms-2">vapor</span></label></div>
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <h6 class="mb-2">Color Mode</h6>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch" id="colorModeSwitch">
+                  <label class="form-check-label" for="colorModeSwitch">
+                    <span class="me-2">Light</span>/<span class="ms-2">Dark</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="alert alert-secondary small" role="alert">
+                <div class="fw-semibold mb-1">Notes</div>
+                <ul class="mb-0 ps-3">
+                  <li>Bootstrap components use the selected Bootswatch theme.</li>
+                  <li>Syncfusion components use their own theme system.</li>
+                  <li>Both can be used together; Syncfusion CSS loads first.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-lg-7">
+            <h6 class="mb-3">Live Preview</h6>
+            <div class="border rounded p-3">
+              <DemoMobileTourCard />
+              <hr />
+              <ThemeDemoControls />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="window.applyThemeFromDialog('themeSwitcherDialog')">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 2025-11-22 00:00 UTC - Initialize dialog handlers
+  (function () {
+    try {
+      if (window.initThemeDialog) {
+        window.initThemeDialog('themeSwitcherDialog');
+      }
+    } catch (e) { }
+  })();
+</script>
+
+

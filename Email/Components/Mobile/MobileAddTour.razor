@@ -1,0 +1,599 @@
+@using Microsoft.AspNetCore.Components.Web
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using Email.Models
+@using Email.Services
+@using Email.Services.GmailProcessing
+@using Email.Services.GmailProcessing.Dtos
+@inject GmailProcessingV2Service ProcessingService
+@inject ITourCatalogService CatalogService
+@inject IVendorsApiService VendorsApi
+@inject Microsoft.Extensions.Logging.ILogger<MobileAddTour> Logger
+@inject IToastService ToastService
+
+<!-- Mobile-optimized Add New Tour Component -->
+
+<div class="p-3">
+    @if (!string.IsNullOrEmpty(StatusMessage))
+    {
+        <div class="alert @(IsSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show" role="alert">
+            @StatusMessage
+            <button type="button" class="btn-close" @onclick="() => StatusMessage = null"></button>
+        </div>
+    }
+
+    <EditForm Model="@Model" OnValidSubmit="HandleSubmit">
+        
+        <!-- Customer Section -->
+        <div class="mb-4 pb-3 border-bottom">
+            <h6 class="text-muted fw-semibold mb-3">Customer Details</h6>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                <InputText @bind-Value="Model.CustomerName" class="form-control" required placeholder="Customer name" />
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Email</label>
+                <InputText @bind-Value="Model.CustomerEmail" class="form-control" type="email" placeholder="customer@example.com" />
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Phone</label>
+                <InputText @bind-Value="CustomerPhone" class="form-control" type="tel" placeholder="+1 234 567 8900" />
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Country</label>
+                <InputText @bind-Value="Model.CountryName" class="form-control" placeholder="Auto-detect from phone" />
+            </div>
+        </div>
+
+        <!-- Tour Section -->
+        <div class="mb-4 pb-3 border-bottom">
+            <h6 class="text-muted fw-semibold mb-3">Tour Details</h6>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Tour <span class="text-danger">*</span></label>
+                <InputSelect TValue="string"
+                             @bind-Value="SelectedTourCanonicalName" 
+                             class="form-select">
+                    <option value="">-- Select Tour --</option>
+                    @foreach (var option in catalogTourOptions)
+                    {
+                        <option value="@option.Value">@option.Label</option>
+                    }
+                    <option value="Custom">Other (Custom)</option>
+                </InputSelect>
+                @if (tourNameIsCustom)
+                {
+                    <div class="mt-2">
+                        <InputText @bind-Value="Model.TourName" class="form-control" placeholder="Enter custom tour name" />
+                    </div>
+                }
+            </div>
+            
+            <div class="row g-2 mb-3">
+                <div class="col-7">
+                    <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+                    <InputDate @bind-Value="Model.TourDate" class="form-control" />
+                </div>
+                <div class="col-5">
+                    <label class="form-label fw-semibold">Time</label>
+                    @if (!tourNameIsCustom && catalogTimeOptions.Any())
+                    {
+                        <select class="form-select" value="@GetTimeSelectValue()" @onchange="OnTimeSelectChanged">
+                            <option value="">-- Select --</option>
+                            @foreach (var time in catalogTimeOptions)
+                            {
+                                <option value="@time">@time</option>
+                            }
+                            <option value="__custom">Other...</option>
+                        </select>
+                        @if (tourTimeIsCustom)
+                        {
+                            <InputText @bind-Value="Model.TourTime" class="form-control mt-2" placeholder="14:00" />
+                        }
+                    }
+                    else
+                    {
+                        <InputText @bind-Value="Model.TourTime" class="form-control" placeholder="14:00" />
+                    }
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Language</label>
+                <InputSelect @bind-Value="Model.Language" class="form-select">
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="German">German</option>
+                    <option value="French">French</option>
+                    <option value="Italian">Italian</option>
+                    <option value="Other">Other</option>
+                </InputSelect>
+            </div>
+        </div>
+
+        <!-- Booking Section -->
+        <div class="mb-4">
+            <h6 class="text-muted fw-semibold mb-3">Booking Data</h6>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+                <InputSelect @bind-Value="Model.VendorName" class="form-select">
+                    @if (vendorOptions.Count == 0)
+                    {
+                        <option value="">-- No Active Vendors --</option>
+                    }
+                    else
+                    {
+                        @foreach (var vendor in vendorOptions)
+                        {
+                            <option value="@vendor">@vendor</option>
+                        }
+                    }
+                </InputSelect>
+            </div>
+            
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label fw-semibold">Adults</label>
+                    <InputSelect @bind-Value="Model.NumberOfAdults" class="form-select">
+                        @for (int i = 1; i <= 50; i++)
+                        {
+                            <option value="@i">@i</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-semibold">Children</label>
+                    <InputSelect @bind-Value="Model.NumberOfChildren" class="form-select">
+                        @for (int i = 0; i <= 50; i++)
+                        {
+                            <option value="@i">@i</option>
+                        }
+                    </InputSelect>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Booking Code</label>
+                <InputText @bind-Value="Model.BookingCode" class="form-control" placeholder="(Auto-generated)" />
+                <small class="form-text text-muted">Leave empty to auto-generate.</small>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary btn-lg" disabled="@IsSubmitting">
+                @if (IsSubmitting)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span> Saving...</span>
+                }
+                else
+                {
+                    <span><i class="bi bi-save me-1"></i> Add Booking</span>
+                }
+            </button>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] public BookingPrefillRequest? Prefill { get; set; }
+    [Parameter] public EventCallback OnBookingAdded { get; set; }
+    
+    private ManualBookingDto Model { get; set; } = new();
+    private TourCatalogSnapshot? Catalog;
+    private Guid? lastAppliedPrefillRequestId;
+    private BookingPrefillRequest? pendingPrefill;
+    private bool isInitialized;
+    
+    // State management
+    private List<string> catalogTourNames = new();
+    private List<TourSelectOption> catalogTourOptions = new();
+    private List<string> catalogTimeOptions = new();
+    private bool tourNameIsCustom;
+    private bool tourTimeIsCustom;
+    private List<string> vendorOptions = new();
+
+    private bool IsSubmitting;
+    private bool IsSuccess;
+    private string? StatusMessage;
+    
+    // UI binding properties
+    private string SelectedTourCanonicalName 
+    {
+        get => tourNameIsCustom ? "Custom" : (Model.TourName ?? "");
+        set
+        {
+            if (value == "Custom")
+            {
+                tourNameIsCustom = true;
+                Model.TourName = ""; // Clear for user input
+                catalogTimeOptions.Clear();
+                tourTimeIsCustom = true; // Custom tour implies custom time
+                Model.TourTime = "";
+            }
+            else
+            {
+                tourNameIsCustom = false;
+                Model.TourName = value;
+                UpdateCatalogTimeOptionsForCurrentTour();
+                
+                // Auto-select first time if available
+                if (catalogTimeOptions.Any())
+                {
+                    Model.TourTime = catalogTimeOptions.First();
+                    tourTimeIsCustom = false;
+                }
+                else
+                {
+                    Model.TourTime = "";
+                    tourTimeIsCustom = true;
+                }
+            }
+        }
+    }
+
+    private string GetTimeSelectValue()
+    {
+        return tourTimeIsCustom ? "__custom" : (Model.TourTime ?? "");
+    }
+
+    private void OnTimeSelectChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        if (val == "__custom")
+        {
+            tourTimeIsCustom = true;
+            Model.TourTime = ""; 
+        }
+        else
+        {
+            tourTimeIsCustom = false;
+            Model.TourTime = val;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Prefill == null)
+        {
+            return;
+        }
+
+        if (lastAppliedPrefillRequestId.HasValue && lastAppliedPrefillRequestId.Value == Prefill.RequestId)
+        {
+            return;
+        }
+
+        pendingPrefill = new BookingPrefillRequest
+        {
+            RequestId = Prefill.RequestId,
+            TourName = Prefill.TourName,
+            TourDate = Prefill.TourDate,
+            TourTime = Prefill.TourTime
+        };
+
+        if (isInitialized)
+        {
+            TryApplyPendingPrefill();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            Catalog = await CatalogService.BuildCatalogAsync();
+            BuildCatalogTourOptions();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load tour catalog");
+            StatusMessage = "Failed to load tour catalog. You can still enter details manually.";
+            // Fallback to allow full manual entry
+            tourNameIsCustom = true;
+            tourTimeIsCustom = true;
+        }
+
+        await LoadVendorsAsync();
+        ResetForm();
+
+        isInitialized = true;
+        TryApplyPendingPrefill();
+    }
+
+    private void BuildCatalogTourOptions()
+    {
+        catalogTourOptions.Clear();
+        catalogTourNames.Clear();
+
+        if (Catalog == null)
+        {
+            return;
+        }
+
+        // Prefer active mapped tours (TourId present) so picker shows curated master-tour names.
+        var preferred = Catalog.Entries
+            .Where(e => e.TourId.HasValue)
+            .Select(e => new TourSelectOption(
+                e.CanonicalName,
+                string.IsNullOrWhiteSpace(e.DisplayName) ? e.CanonicalName : e.DisplayName.Trim()))
+            .DistinctBy(o => o.Value, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Safety fallback when catalog lacks TourId mappings.
+        if (preferred.Count == 0)
+        {
+            preferred = Catalog.Entries
+                .Select(e => new TourSelectOption(
+                    e.CanonicalName,
+                    string.IsNullOrWhiteSpace(e.DisplayName) ? e.CanonicalName : e.DisplayName.Trim()))
+                .DistinctBy(o => o.Value, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        catalogTourOptions = preferred;
+        catalogTourNames = catalogTourOptions.Select(o => o.Value).ToList();
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        try
+        {
+            var vendors = await VendorsApi.GetVendorsAsync();
+            vendorOptions = vendors
+                .Where(v => v.IsActive && !string.IsNullOrWhiteSpace(v.VendorName))
+                .Select(v => v.VendorName.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(v => v)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load vendors for mobile manual booking");
+            vendorOptions = new List<string>();
+        }
+
+        if (vendorOptions.Count == 0)
+        {
+            vendorOptions = new List<string> { "GuruWalk", "FreeTour" };
+        }
+    }
+
+    private void ResetForm()
+    {
+        Model = new ManualBookingDto 
+        { 
+            TourDate = DateTime.Today.AddDays(1),
+            NumberOfAdults = 1,
+            VendorName = ResolveDefaultVendorName(),
+            Language = "English"
+        };
+        
+        SelectedTourCanonicalName = ""; // Triggers reset of custom flags logic via setter
+        IsSubmitting = false;
+        StatusMessage = null;
+    }
+
+    private string ResolveDefaultVendorName()
+    {
+        var guruWalk = vendorOptions.FirstOrDefault(v => string.Equals(v, "GuruWalk", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(guruWalk))
+        {
+            return guruWalk;
+        }
+
+        var freeTour = vendorOptions.FirstOrDefault(v => string.Equals(v, "FreeTour", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(freeTour))
+        {
+            return freeTour;
+        }
+
+        return vendorOptions.FirstOrDefault() ?? "GuruWalk";
+    }
+
+    private void UpdateCatalogTimeOptionsForCurrentTour()
+    {
+        catalogTimeOptions.Clear();
+        if (Catalog == null || string.IsNullOrWhiteSpace(Model.TourName)) return;
+
+        var entry = Catalog.Entries.FirstOrDefault(e => string.Equals(e.CanonicalName, Model.TourName, StringComparison.OrdinalIgnoreCase));
+        if (entry != null && entry.Times != null)
+        {
+            catalogTimeOptions.AddRange(entry.Times);
+        }
+    }
+
+    private void TryApplyPendingPrefill()
+    {
+        if (pendingPrefill == null)
+        {
+            return;
+        }
+
+        ApplyPrefill(pendingPrefill);
+        lastAppliedPrefillRequestId = pendingPrefill.RequestId;
+        pendingPrefill = null;
+    }
+
+    private void ApplyPrefill(BookingPrefillRequest request)
+    {
+        ApplyPrefillTourName(request.TourName);
+
+        if (request.TourDate.HasValue)
+        {
+            Model.TourDate = request.TourDate.Value.Date;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TourTime))
+        {
+            ApplyPrefillTourTime(request.TourTime);
+        }
+    }
+
+    private void ApplyPrefillTourName(string? requestedTourName)
+    {
+        var normalizedTourName = NormalizeName(requestedTourName).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedTourName))
+        {
+            return;
+        }
+
+        var matchedCatalogTourName = catalogTourNames.FirstOrDefault(name =>
+            string.Equals(name, normalizedTourName, StringComparison.OrdinalIgnoreCase));
+
+        if (string.IsNullOrWhiteSpace(matchedCatalogTourName) && Catalog != null)
+        {
+            var aliasMatch = Catalog.Entries.FirstOrDefault(entry =>
+                string.Equals(entry.CanonicalName, normalizedTourName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(NormalizeName(entry.DisplayName), normalizedTourName, StringComparison.OrdinalIgnoreCase) ||
+                entry.Aliases.Any(alias => string.Equals(NormalizeName(alias), normalizedTourName, StringComparison.OrdinalIgnoreCase)));
+
+            matchedCatalogTourName = aliasMatch?.CanonicalName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(matchedCatalogTourName))
+        {
+            SelectedTourCanonicalName = matchedCatalogTourName;
+        }
+        else
+        {
+            SelectedTourCanonicalName = "Custom";
+            Model.TourName = normalizedTourName;
+        }
+    }
+
+    private void ApplyPrefillTourTime(string requestedTourTime)
+    {
+        var normalizedRequestedTime = requestedTourTime.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedRequestedTime))
+        {
+            return;
+        }
+
+        if (!tourNameIsCustom && catalogTimeOptions.Any())
+        {
+            var matchedCatalogTime = catalogTimeOptions.FirstOrDefault(time =>
+                string.Equals(time, normalizedRequestedTime, StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(matchedCatalogTime) &&
+                TryParseComparableTime(normalizedRequestedTime, out var requestedComparableTime))
+            {
+                matchedCatalogTime = catalogTimeOptions.FirstOrDefault(time =>
+                    TryParseComparableTime(time, out var candidateComparableTime) &&
+                    candidateComparableTime == requestedComparableTime);
+            }
+
+            if (!string.IsNullOrWhiteSpace(matchedCatalogTime))
+            {
+                Model.TourTime = matchedCatalogTime;
+                tourTimeIsCustom = false;
+                return;
+            }
+
+            tourTimeIsCustom = true;
+        }
+
+        Model.TourTime = normalizedRequestedTime;
+    }
+
+    private static bool TryParseComparableTime(string? rawTime, out TimeSpan comparableTime)
+    {
+        if (TimeSpan.TryParse(rawTime, out var parsedSpan))
+        {
+            comparableTime = parsedSpan;
+            return true;
+        }
+
+        if (DateTime.TryParse(rawTime, out var parsedDateTime))
+        {
+            comparableTime = parsedDateTime.TimeOfDay;
+            return true;
+        }
+
+        comparableTime = default;
+        return false;
+    }
+    
+    // Helpers
+    private string NormalizeName(string? name) => CatalogService.NormalizeName(name ?? string.Empty);
+
+    // Proxy property to handle phone change logic
+    private string CustomerPhone
+    {
+        get => Model.CustomerPhone ?? "";
+        set
+        {
+            if (Model.CustomerPhone != value)
+            {
+                Model.CustomerPhone = value;
+                DetectCountryFromPhone();
+            }
+        }
+    }
+
+    private void DetectCountryFromPhone()
+    {
+        if (!string.IsNullOrWhiteSpace(Model.CustomerPhone) && string.IsNullOrWhiteSpace(Model.CountryName))
+        {
+            // Normalize first to handle local numbers (defaults to US)
+            var normalized = Email.Services.GmailProcessing.Normalization.PhoneNormalizationService.NormalizePhone(Model.CustomerPhone);
+            
+            if (Email.Services.GmailProcessing.Extraction.CountryExtractor.TryGetCountryNameFromPhone(normalized, out var country))
+            {
+                Model.CountryName = country;
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        IsSubmitting = true;
+        StatusMessage = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Model.CustomerName)) throw new InvalidOperationException("Customer Name is required.");
+            if (string.IsNullOrWhiteSpace(Model.TourName)) throw new InvalidOperationException("Tour Name is required.");
+            if (!Model.TourDate.HasValue) throw new InvalidOperationException("Tour Date is required.");
+
+            // Normalize
+            Model.TourName = NormalizeName(Model.TourName);
+
+            var id = await ProcessingService.ProcessManualBookingAsync(Model, CancellationToken.None);
+            
+            IsSuccess = true;
+            StatusMessage = $"Booking added successfully! ID: {id}";
+            await ToastService.ShowSuccessAsync("Success", "Booking added successfully!");
+            
+            var lastDate = Model.TourDate;
+            ResetForm();
+            Model.TourDate = lastDate;
+            
+            // Notify parent to refresh
+            await OnBookingAdded.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            IsSuccess = false;
+            StatusMessage = $"Error: {ex.Message}";
+            await ToastService.ShowErrorAsync("Error", ex.Message);
+            Logger.LogError(ex, "Error adding manual booking");
+        }
+        finally
+        {
+            IsSubmitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private sealed record TourSelectOption(string Value, string Label);
+}
+
+

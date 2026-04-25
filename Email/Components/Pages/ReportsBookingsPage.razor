@@ -1,0 +1,771 @@
+@page "/reports-bookings"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.Mobile
+@using Email.Models.Reports
+@inject IBookingsInboxService BookingsInboxService
+@inject IVendorsApiService VendorsService
+@inject ITourMessagesApiService TourMessagesService
+@inject ITourEmailsService TourEmailsService
+@inject MessageTemplateService TemplateService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+
+<PageTitle>Bookings</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h4 class="mb-0"><i class="bi bi-people me-2"></i>Bookings</h4>
+        <div class="d-flex align-items-center gap-2">
+            <label class="small text-muted">Rows</label>
+            <select class="form-select form-select-sm" style="width: 120px;" @bind="SelectedLimit" @bind:after="LoadBookingsAsync">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="5000">All</option>
+            </select>
+            <label class="small text-muted">Order</label>
+            <select class="form-select form-select-sm" style="width: 180px;" @bind="SelectedOrderBy" @bind:after="LoadBookingsAsync">
+                <option value="booking_date">Booking date (newest)</option>
+                <option value="tour_date">Tour date (newest)</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" @onclick="LoadBookingsAsync" disabled="@isLoading">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <div class="form-check">
+                    <input id="vendors-all" class="form-check-input" type="checkbox" @bind="AllVendors" @bind:after="OnAllVendorsChanged" />
+                    <label class="form-check-label fw-semibold" for="vendors-all">All</label>
+                </div>
+                @foreach (var vendor in VendorFilters)
+                {
+                    var id = $"vendor-{vendor.Replace(" ", "-").ToLowerInvariant()}";
+                    <div class="form-check">
+                        <input id="@id"
+                               class="form-check-input"
+                               type="checkbox"
+                               disabled="@AllVendors"
+                               checked="@SelectedVendors.Contains(vendor)"
+                               @onchange="(e) => OnVendorChanged(vendor, e)" />
+                        <label class="form-check-label" for="@id">@vendor</label>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <span class="fw-semibold">Booking Activity</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="input-group input-group-sm report-bookings-walker-search">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input class="form-control"
+                                   type="text"
+                                   placeholder="Search walker"
+                                   @bind="WalkerSearchText" />
+                            @if (!string.IsNullOrWhiteSpace(WalkerSearchText))
+                            {
+                                <button class="btn btn-outline-secondary" type="button" @onclick="ClearWalkerSearch" aria-label="Clear search">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            }
+                        </div>
+                        <small class="text-muted">@GetBookingRowsLabel()</small>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    @{
+                        var visibleBookings = GetVisibleBookings();
+                    }
+                    @if (isLoading)
+                    {
+                        <div class="p-4 text-center text-muted">
+                            <div class="spinner-border spinner-border-sm me-2"></div>Loading...
+                        </div>
+                    }
+                    else if (visibleBookings.Count == 0)
+                    {
+                        <div class="p-4 text-center text-muted">
+                            @(string.IsNullOrWhiteSpace(WalkerSearchText) ? "No bookings found." : "No walkers match this search.")
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive" style="max-height: 72vh;">
+                            <table class="table table-sm table-hover mb-0 align-middle report-bookings-table">
+                                <thead class="report-bookings-head sticky-top">
+                                    <tr>
+                                        <th>Walker</th>
+                                        <th>Tour</th>
+                                        <th>Activity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in visibleBookings)
+                                    {
+                                        var active = SelectedBookingId == row.BookingId;
+                                        <tr class='@($"report-bookings-row {(active ? "report-bookings-row-active" : "")}")' style="cursor:pointer;" @onclick="() => SelectBookingAsync(row.BookingId)">
+                                            <td>
+                                                <div class="fw-semibold">@row.CustomerName</div>
+                                                <div class="small text-muted">@row.VendorName</div>
+                                                @if (row.NeedsNumber)
+                                                {
+                                                    <span class="badge text-bg-warning mt-1">needs number</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div>@row.TourName</div>
+                                                <div class="small text-muted">@FormatTourDateTime(row.TourDate, row.TourTime)</div>
+                                            </td>
+                                            <td>
+                                                <div>@FormatEventType(row)</div>
+                                                <div class="small text-muted">@FormatUtc(row.ActivityAtUtc)</div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header">
+                    <strong>@(Profile?.SelectedBooking?.CustomerName ?? "Select a walker")</strong>
+                    @if (Profile?.SelectedBooking != null)
+                    {
+                        <span class="text-muted ms-2">@Profile.SelectedBooking.TourName</span>
+                    }
+                </div>
+                <div class="card-body">
+                    @if (isLoadingProfile)
+                    {
+                        <div class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading profile...</div>
+                    }
+                    else if (Profile?.SelectedBooking == null)
+                    {
+                        <div class="text-muted">Select a row to view walker history, report context, and messaging.</div>
+                    }
+                    else
+                    {
+                        <ul class="nav nav-tabs mb-3">
+                            <li class="nav-item"><button class='@($"nav-link {(ActiveTab == "history" ? "active" : "")}")' @onclick='() => ActiveTab = "history"'>Walker History</button></li>
+                            <li class="nav-item"><button class='@($"nav-link {(ActiveTab == "report" ? "active" : "")}")' @onclick='() => ActiveTab = "report"'>Guide Report Data</button></li>
+                            <li class="nav-item"><button class='@($"nav-link {(ActiveTab == "messaging" ? "active" : "")}")' @onclick='() => ActiveTab = "messaging"'>Messaging + Labels</button></li>
+                        </ul>
+
+                        @if (ActiveTab == "history")
+                        {
+                            <div class="mb-2 fw-semibold">Cross-tour bookings</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Type</th><th>Tour</th><th>When</th><th>Vendor</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var evt in Profile.BookingTimeline.OrderByDescending(x => x.OccurredAtUtc))
+                                        {
+                                            <tr>
+                                                <td><span class='@($"badge {GetTimelineBadgeClass(evt.EventType)}")'>@evt.EventType</span></td>
+                                                <td>@evt.TourName <div class="small text-muted">@FormatTourDateTime(evt.TourDate, evt.TourTime)</div></td>
+                                                <td class="small">@FormatUtc(evt.OccurredAtUtc)</td>
+                                                <td>@evt.VendorName</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="mt-3 mb-2 fw-semibold">Message events</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Stage</th><th>Channel</th><th>Template</th><th>Trigger</th><th>Time</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var evt in Profile.CommunicationEvents.OrderByDescending(x => x.SentAtUtc))
+                                        {
+                                            <tr>
+                                                <td>@evt.Stage</td>
+                                                <td>@evt.Channel</td>
+                                                <td>@(evt.TemplateName ?? evt.TemplateType ?? "-")</td>
+                                                <td>@evt.TriggerType</td>
+                                                <td class="small">@FormatUtc(evt.SentAtUtc)</td>
+                                            </tr>
+                                        }
+                                        @if (Profile.CommunicationEvents.Count == 0)
+                                        {
+                                            <tr><td colspan="5" class="text-muted">No message events logged yet.</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (ActiveTab == "report")
+                        {
+                            <div class="mb-2">
+                                <span class='@($"badge {(Profile.GuideReport.ReportFound ? "bg-success" : "bg-secondary")}")'>@(Profile.GuideReport.ReportFound ? "Report found" : "No report")</span>
+                                @if (Profile.GuideReport.ReportFound)
+                                {
+                                    <span class='@($"badge ms-2 {(Profile.GuideReport.IsSubmitted ? "bg-primary" : "bg-secondary")}")'>@(Profile.GuideReport.IsSubmitted ? "Submitted" : "Draft")</span>
+                                }
+                            </div>
+                            <div class="small mb-2">Checked-in: <strong>@(Profile.GuideReport.IsCheckedIn?.ToString() ?? "-")</strong></div>
+                            <div class="small mb-2">Review: <strong>@(Profile.GuideReport.ReviewStatus ?? "-")</strong></div>
+                            <div class="small mb-2">Do not contact: <strong>@(Profile.GuideReport.DoNotContact?.ToString() ?? "-")</strong></div>
+                            <div class="small mb-2">Report notes: <strong>@(string.IsNullOrWhiteSpace(Profile.GuideReport.ReviewNotes) ? "-" : Profile.GuideReport.ReviewNotes)</strong></div>
+                            <hr />
+                            <div class="small fw-semibold">Gallery</div>
+                            @if (!string.IsNullOrWhiteSpace(Profile.Gallery.Url))
+                            {
+                                <a href="@Profile.Gallery.Url" target="_blank">@Profile.Gallery.Url</a>
+                                <div class="small text-muted">Source: @Profile.Gallery.Source</div>
+                            }
+                            else
+                            {
+                                <div class="text-muted small">No gallery resolved.</div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Suggested template</label>
+                                    <div class="small text-muted mb-2">@SuggestedTemplateType</div>
+                                    <select class="form-select form-select-sm" @bind="SelectedTemplateId" @bind:after="OnTemplateChanged">
+                                        <option value="">Select template...</option>
+                                        @foreach (var template in Templates.OrderBy(t => t.Name))
+                                        {
+                                            <option value="@template.Id">@template.Name (@template.Type)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Message</label>
+                                    <textarea class="form-control" rows="8" @bind="MessageBody"></textarea>
+                                </div>
+                                <div class="col-12 d-flex flex-wrap gap-2">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="SendSmsOpenAsync" disabled="@(!CanMessage)">Open SMS</button>
+                                    <button class="btn btn-sm btn-outline-success" @onclick="SendWhatsAppOpenAsync" disabled="@(!CanMessage)">Open WhatsApp</button>
+                                </div>
+                                <div class="col-12">
+                                    @if (TryGetCurrentStageSentAtUtc(out var stageSentAtUtc))
+                                    {
+                                        <span class="badge text-bg-success">
+                                            @GetFriendlyStageLabel(ResolvedStageForTemplate) sent @FormatUtc(stageSentAtUtc)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">
+                                            @GetFriendlyStageLabel(ResolvedStageForTemplate) not sent yet
+                                        </span>
+                                        <span class="small text-muted ms-2">Auto-marked when you open SMS or WhatsApp.</span>
+                                    }
+                                </div>
+                                <div class="col-12">
+                                    <div class="fw-semibold small mb-1">Labels</div>
+                                    <div class="d-flex flex-wrap gap-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="label-needs-number" checked="@Profile.Labels.NeedsNumber" @onchange='(e) => OnLabelChanged("needs_number", e)' />
+                                            <label class="form-check-label" for="label-needs-number">needs number</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="label-contacted-on-platform" checked="@Profile.Labels.ContactedOnPlatform" @onchange='(e) => OnLabelChanged("contacted_on_platform", e)' />
+                                            <label class="form-check-label" for="label-contacted-on-platform">contacted on platform</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="label-whatsapp-works" checked="@Profile.Labels.WhatsAppWorks" @onchange='(e) => OnLabelChanged("whatsapp_works", e)' />
+                                            <label class="form-check-label" for="label-whatsapp-works">whatsapp works</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="label-sms-works" checked="@Profile.Labels.SmsWorks" @onchange='(e) => OnLabelChanged("sms_works", e)' />
+                                            <label class="form-check-label" for="label-sms-works">sms works</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<BookingsLiveListItem> Bookings { get; set; } = new();
+    private List<InMemoryMessageTemplate> Templates { get; set; } = new();
+    private List<string> VendorFilters { get; set; } = new();
+    private HashSet<string> SelectedVendors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private CustomerCommunicationProfile? Profile { get; set; }
+    private int? SelectedBookingId { get; set; }
+    private bool isLoading;
+    private bool isLoadingProfile;
+    private int SelectedLimit { get; set; } = 100;
+    private string SelectedOrderBy { get; set; } = "booking_date";
+    private string WalkerSearchText { get; set; } = string.Empty;
+    private bool AllVendors { get; set; } = true;
+    private string ActiveTab { get; set; } = "history";
+    private string? SelectedTemplateId { get; set; }
+    private string MessageBody { get; set; } = string.Empty;
+    private string SuggestedTemplateType { get; set; } = "welcome";
+    private bool CanMessage => Profile?.SelectedBooking != null && !string.IsNullOrWhiteSpace(Profile.SelectedBooking.CustomerPhone);
+    private string ResolvedStageForTemplate => ResolveStageForSelectedTemplate();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTemplatesAsync();
+        await LoadVendorsAsync();
+        await LoadBookingsAsync();
+    }
+
+    private async Task LoadTemplatesAsync()
+    {
+        var dbTemplates = await TourMessagesService.GetTourMessagesAsync();
+        Templates = dbTemplates.Select(t => new InMemoryMessageTemplate
+        {
+            Id = t.Id.ToString(),
+            Name = t.MessageName,
+            Type = t.MessageType ?? string.Empty,
+            Content = t.MessageContent ?? string.Empty,
+            Signature = t.Signature,
+            TourName = t.TourName,
+            TourStartTime = t.TourStartTime,
+            MeetingPlace = t.MeetingPlace,
+            MeetingTime = t.MeetingTime,
+            MeetingInstructions = t.MeetingInstructions
+        }).ToList();
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        var vendors = await VendorsService.GetVendorsAsync();
+        VendorFilters = vendors
+            .Where(v => v.IsActive && !string.IsNullOrWhiteSpace(v.VendorName))
+            .Select(v => v.VendorName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v)
+            .ToList();
+    }
+
+    private async Task LoadBookingsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            IEnumerable<string>? vendorFilter = AllVendors ? null : SelectedVendors.ToList();
+            var rows = await BookingsInboxService.GetRecentBookingsAsync(SelectedLimit, vendorFilter, SelectedOrderBy);
+            Bookings = rows.ToList();
+
+            foreach (var vendor in Bookings
+                .Where(b => !string.IsNullOrWhiteSpace(b.VendorName))
+                .Select(b => b.VendorName.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!VendorFilters.Contains(vendor, StringComparer.OrdinalIgnoreCase))
+                {
+                    VendorFilters.Add(vendor);
+                }
+            }
+
+            VendorFilters = VendorFilters.OrderBy(v => v).ToList();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectBookingAsync(int bookingId)
+    {
+        SelectedBookingId = bookingId;
+        isLoadingProfile = true;
+        ActiveTab = "history";
+        StateHasChanged();
+
+        try
+        {
+            Profile = await BookingsInboxService.GetWalkerProfileAsync(bookingId);
+            SuggestedTemplateType = DetermineSuggestedTemplateType(Profile);
+            SelectDefaultTemplate(Profile);
+            MessageBody = BuildMessageBody(Profile);
+        }
+        finally
+        {
+            isLoadingProfile = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnTemplateChanged()
+    {
+        MessageBody = BuildMessageBody(Profile);
+        await Task.CompletedTask;
+    }
+
+    private async Task SendSmsOpenAsync()
+    {
+        if (Profile?.SelectedBooking == null || string.IsNullOrWhiteSpace(Profile.SelectedBooking.CustomerPhone))
+        {
+            return;
+        }
+
+        var url = BuildSmsUrl(Profile.SelectedBooking.CustomerPhone, MessageBody);
+        await LogAndSnapshotAsync("sms", "open_channel", true);
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+        await RefreshSelectedProfileAsync();
+    }
+
+    private async Task SendWhatsAppOpenAsync()
+    {
+        if (Profile?.SelectedBooking == null || string.IsNullOrWhiteSpace(Profile.SelectedBooking.CustomerPhone))
+        {
+            return;
+        }
+
+        var url = BuildWhatsAppUrl(Profile.SelectedBooking.CustomerPhone, MessageBody);
+        await LogAndSnapshotAsync("wa", "open_channel", true);
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+        await RefreshSelectedProfileAsync();
+    }
+
+    private async Task LogAndSnapshotAsync(string channel, string triggerType, bool sentValue)
+    {
+        if (Profile?.SelectedBooking == null)
+        {
+            return;
+        }
+
+        var booking = Profile.SelectedBooking;
+        var template = Templates.FirstOrDefault(t => t.Id == SelectedTemplateId);
+        var stage = ResolveStageForSelectedTemplate();
+        int? templateId = int.TryParse(SelectedTemplateId, out var parsedTemplateId) ? parsedTemplateId : null;
+
+        await TourEmailsService.SetBookingMessageSentAsync(booking.MessageId, booking.BookingCode, sentValue);
+        await TourEmailsService.SetBookingMessageStageAsync(booking.MessageId, booking.BookingCode, stage, sentValue, channel, templateId, booking.VendorName);
+
+        await BookingsInboxService.LogMessageEventAsync(new BookingMessageEventWriteModel
+        {
+            BookingId = booking.BookingId,
+            CustomerId = booking.CustomerId > 0 ? booking.CustomerId : null,
+            CustomerIdentifier = booking.CustomerIdentifier,
+            BookingCode = booking.BookingCode,
+            MessageId = booking.MessageId,
+            TourName = booking.TourName,
+            TourDate = booking.TourDate,
+            TourTime = booking.TourTime,
+            VendorName = booking.VendorName,
+            Stage = stage,
+            Channel = channel,
+            TemplateId = templateId,
+            TemplateType = template?.Type,
+            TemplateName = template?.Name,
+            TriggerType = triggerType,
+            TriggeredBy = "reports-bookings",
+            SentAtUtc = DateTime.UtcNow
+        });
+    }
+
+    private async Task OnLabelChanged(string labelKey, ChangeEventArgs args)
+    {
+        if (Profile?.SelectedBooking == null)
+        {
+            return;
+        }
+
+        var isChecked = args?.Value?.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        await BookingsInboxService.SetCustomerLabelAsync(Profile.SelectedBooking.CustomerId, labelKey, isChecked, "reports-bookings");
+        Profile.Labels.SetByKey(labelKey, isChecked);
+
+        if (GuestContactLabels.NormalizeKey(labelKey) == "needs_number")
+        {
+            Profile.SelectedBooking.NeedsNumber = isChecked;
+            var row = Bookings.FirstOrDefault(b => b.BookingId == Profile.SelectedBooking.BookingId);
+            if (row != null)
+            {
+                row.NeedsNumber = isChecked;
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task RefreshSelectedProfileAsync()
+    {
+        if (SelectedBookingId.HasValue)
+        {
+            Profile = await BookingsInboxService.GetWalkerProfileAsync(SelectedBookingId.Value);
+            MessageBody = BuildMessageBody(Profile);
+            StateHasChanged();
+        }
+    }
+
+    private Task OnAllVendorsChanged()
+    {
+        if (AllVendors)
+        {
+            SelectedVendors.Clear();
+        }
+        return LoadBookingsAsync();
+    }
+
+    private Task OnVendorChanged(string vendor, ChangeEventArgs e)
+    {
+        var selected = e?.Value?.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        if (selected)
+        {
+            SelectedVendors.Add(vendor);
+        }
+        else
+        {
+            SelectedVendors.Remove(vendor);
+        }
+
+        AllVendors = SelectedVendors.Count == 0;
+        return LoadBookingsAsync();
+    }
+
+    private List<BookingsLiveListItem> GetVisibleBookings()
+    {
+        if (string.IsNullOrWhiteSpace(WalkerSearchText))
+        {
+            return Bookings;
+        }
+
+        var term = WalkerSearchText.Trim();
+        return Bookings
+            .Where(row =>
+                (!string.IsNullOrWhiteSpace(row.CustomerName) && row.CustomerName.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.CustomerPhone) && row.CustomerPhone.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.CustomerEmail) && row.CustomerEmail.Contains(term, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private string GetBookingRowsLabel()
+    {
+        var visibleCount = GetVisibleBookings().Count;
+        if (string.IsNullOrWhiteSpace(WalkerSearchText))
+        {
+            return $"{visibleCount} row(s)";
+        }
+
+        return $"{visibleCount} match(es)";
+    }
+
+    private void ClearWalkerSearch()
+    {
+        WalkerSearchText = string.Empty;
+    }
+
+    private bool TryGetCurrentStageSentAtUtc(out DateTime sentAtUtc)
+    {
+        var stage = ResolveStageForSelectedTemplate();
+        var snapshot = Profile?.SentStageSnapshots
+            .FirstOrDefault(s => string.Equals(s.Stage, stage, StringComparison.OrdinalIgnoreCase));
+        if (snapshot?.SentAtUtc.HasValue == true)
+        {
+            sentAtUtc = snapshot.SentAtUtc.Value;
+            return true;
+        }
+
+        sentAtUtc = default;
+        return false;
+    }
+
+    private static string GetFriendlyStageLabel(string? stage)
+    {
+        return (stage ?? string.Empty).Trim() switch
+        {
+            "dayOf" => "day-of",
+            "thankyou" => "thank you",
+            _ => (stage ?? string.Empty).Replace("_", " ")
+        };
+    }
+
+    private void SelectDefaultTemplate(CustomerCommunicationProfile? profile)
+    {
+        var key = DetermineSuggestedTemplateType(profile);
+        var template = Templates.FirstOrDefault(t => NormalizeTemplateKey(t.Type) == key)
+                       ?? Templates.FirstOrDefault(t => NormalizeTemplateKey(t.Name) == key)
+                       ?? Templates.FirstOrDefault();
+        SelectedTemplateId = template?.Id;
+    }
+
+    private string BuildMessageBody(CustomerCommunicationProfile? profile)
+    {
+        if (profile?.SelectedBooking == null || string.IsNullOrWhiteSpace(SelectedTemplateId))
+        {
+            return string.Empty;
+        }
+
+        var template = Templates.FirstOrDefault(t => t.Id == SelectedTemplateId);
+        if (template == null)
+        {
+            return string.Empty;
+        }
+
+        var booking = profile.SelectedBooking;
+        var walker = new MobileWalkerInfoModel
+        {
+            DisplayName = booking.CustomerName,
+            Phone = booking.CustomerPhone ?? string.Empty,
+            VendorName = booking.VendorName,
+            TourName = booking.TourName,
+            DateLabel = booking.TourDate?.ToString("yyyy-MM-dd") ?? string.Empty,
+            DisplayDate = booking.TourDate?.ToString("MMMM d, yyyy"),
+            DisplayTime = booking.TourTime,
+            TourDayOfWeek = booking.TourDate?.ToString("dddd"),
+            MonthOfTour = booking.TourDate?.ToString("MMMM"),
+            TourMonthAndDayOrdinal = booking.TourDate.HasValue ? $"{booking.TourDate.Value:MMMM} {GetDayOrdinal(booking.TourDate.Value.Day)}" : null,
+            DisplayDayOrdinal = booking.TourDate.HasValue ? GetDayOrdinal(booking.TourDate.Value.Day) : null
+        };
+
+        return TemplateService.PopulateMessageTemplate(template, walker, null, null, null, profile.Gallery.Url);
+    }
+
+    private string DetermineSuggestedTemplateType(CustomerCommunicationProfile? profile)
+    {
+        if (profile?.SelectedBooking == null)
+        {
+            return "welcome";
+        }
+
+        var b = profile.SelectedBooking;
+        if (b.IsCancellation) return "cancellation_followup";
+        if (b.IsModification) return "reschedule_confirmation";
+        if (b.TourDate.HasValue && b.TourDate.Value.Date < DateTime.Today) return "thankyou";
+        if (!profile.SentStages.Any(s => string.Equals(s, "welcome", StringComparison.OrdinalIgnoreCase))) return "welcome";
+        if (b.TourDate.HasValue && b.TourDate.Value.Date == DateTime.Today) return "dayof";
+        if (b.TourDate.HasValue && b.TourDate.Value.Date == DateTime.Today.AddDays(1)) return "tomorrow";
+        return "welcome";
+    }
+
+    private string ResolveStageForSelectedTemplate()
+    {
+        var template = Templates.FirstOrDefault(t => t.Id == SelectedTemplateId);
+        var type = NormalizeTemplateKey(template?.Type);
+        return type switch
+        {
+            "welcome" => "welcome",
+            "tomorrow" => "tomorrow",
+            "dayof" => "dayOf",
+            "thankyou" => "thankyou",
+            "promo" => "promo",
+            "reschedule_confirmation" => "misc",
+            "cancellation_followup" => "misc",
+            _ => "misc"
+        };
+    }
+
+    private static string NormalizeTemplateKey(string? value)
+    {
+        return (value ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant()
+            .Replace(" ", "_")
+            .Replace("-", "_");
+    }
+
+    private static string BuildSmsUrl(string phone, string body)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        var formatted = digits.Length == 10 ? $"+1{digits}" : $"+{digits}";
+        return $"sms:{formatted}?body={Uri.EscapeDataString(body ?? string.Empty)}";
+    }
+
+    private static string BuildWhatsAppUrl(string phone, string body)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(body)
+            ? $"https://wa.me/{digits}"
+            : $"https://wa.me/{digits}?text={Uri.EscapeDataString(body)}";
+    }
+
+    private static string FormatTourDateTime(DateTime? date, string? time)
+    {
+        if (date.HasValue)
+        {
+            return $"{date.Value:MMM d, yyyy} {time}".Trim();
+        }
+        return time ?? string.Empty;
+    }
+
+    private static string FormatUtc(DateTime dt)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            var utc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, tz).ToString("yyyy-MM-dd h:mm tt 'ET'");
+        }
+        catch
+        {
+            return dt.ToString("yyyy-MM-dd HH:mm 'UTC'");
+        }
+    }
+
+    private static string FormatEventType(BookingsLiveListItem row)
+    {
+        if (row.IsCancellation) return "cancelled";
+        if (row.IsModification) return "rescheduled";
+        return "booked";
+    }
+
+    private static string GetTimelineBadgeClass(string eventType)
+    {
+        return eventType.ToLowerInvariant() switch
+        {
+            "cancelled" => "text-bg-danger",
+            "rescheduled" => "text-bg-warning",
+            _ => "text-bg-success"
+        };
+    }
+
+    private static string GetDayOrdinal(int day)
+    {
+        return (day % 100) switch
+        {
+            11 or 12 or 13 => $"{day}th",
+            _ => (day % 10) switch
+            {
+                1 => $"{day}st",
+                2 => $"{day}nd",
+                3 => $"{day}rd",
+                _ => $"{day}th"
+            }
+        };
+    }
+}
+
+<style>
+    .report-bookings-table thead.report-bookings-head th {
+        background-color: var(--bs-body-bg) !important;
+        color: var(--bs-body-color);
+        border-bottom-color: var(--bs-border-color);
+    }
+
+    .report-bookings-row-active > td {
+        background-color: var(--bs-primary-bg-subtle) !important;
+        color: var(--bs-body-color);
+    }
+
+    .report-bookings-walker-search {
+        width: min(36vw, 320px);
+    }
+
+    @@media (max-width: 991px) {
+        .report-bookings-walker-search {
+            width: 100%;
+        }
+    }
+</style>

@@ -1,0 +1,2255 @@
+@* 2025-11-18: CSS/Markup migration from CityShufflesWorkStation\Components\TourTreeDisplay.razor *@
+@using Email.Models
+@using Email.Components.Tours
+@using Email.TourTreeViewShapedData.Enums
+@using Email.TourTreeViewShapedData.Models
+@using Microsoft.AspNetCore.Components.Web
+
+@* Services that exist in Email project *@
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+@inject Email.Services.ITourEmailsService EmailsService
+@inject Email.Services.IBookingsInboxService BookingsInboxService
+
+@* 2025-11-20 00:00 UTC - Verbatim Message Management port requires these services *@
+@inject Email.Services.IGuidesApiService GuidesApi
+@inject Email.Services.IToursApiService ToursApiService
+@inject Email.Services.ITourMessagesApiService TourMessagesApi
+@inject Email.Services.ITourTreeService TourTreeService
+@inject Email.Services.TourDataErrorReportsSqlService ErrorReportsService
+@inject Email.Services.ITourCatalogService TourCatalogService
+@inject Email.Services.VCardExportService VCardExportService
+@inject Email.Services.VCardLogService VCardLogService
+@inject Email.Services.IGuideReportService GuideReportService
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+@* TODO: Services to be implemented in future migrations (kept commented)
+ @inject IAuthenticationService AuthService
+ @inject IToastService ToastService
+ @inject NavigationManager Navigation
+ @inject ITourTreeService TourTreeService
+ @inject ITextbeltApiService TextbeltApiService
+ @inject ITourTreeEmailContentService TourTreeEmailContentService
+ @inject ILogger<TourTreeDisplay> Logger
+ @inject ITourGuideDefaultsApiService TourGuideDefaultsApi
+*@
+
+ <div id="tourTreeMainContainer" class="container-fluid">
+    <!-- Main Tour Tree Display -->
+    <div id="tourTreeMainRow" class="row">
+        <div id="tourTreeMainColumn" class="col-12">
+            <div id="tourTreeCard" class="card">
+                <div id="tourTreeCardHeader" class="card-header py-2">
+                    <div id="tourTreeHeaderContent" class="d-flex justify-content-between align-items-center">
+                        <div id="tourTreeHeaderLeft" class="d-flex align-items-center">
+                          @*   <i class="bi bi-diagram-3 me-2"></i> *@
+                            <ShapedTreeFilterPanel Args="@Args" OnApply="OnApply" Toolbar="true" VendorOptions="VendorFilterOptions" />
+                        </div>
+                        <div id="tourTreeHeaderRight" class="d-flex align-items-center gap-2">
+                            <button class="btn btn-outline-warning btn-sm" style="padding:.15rem .4rem; font-size:.8rem;"
+                                    title="Message confirmed walkers for a tour"
+                                    @onclick="OpenMessageWalkersDialog"
+                                    disabled="@(!(TourData?.TreeNodes?.Any() == true))">
+                                <i class="bi bi-people-fill me-1"></i>Msg Walkers
+                            </button>
+                            @if (OnOpenGuideManagement.HasDelegate)
+                            {
+                                <button class="btn btn-outline-primary btn-sm" style="padding:.15rem .4rem; font-size:.8rem;" @onclick="(() => OnOpenGuideManagement.InvokeAsync())" title="Manage Guides">
+                                    <i class="bi bi-people me-1"></i>Guides
+                                </button>
+                            }
+                            @if (OnOpenMessageManagement.HasDelegate)
+                            {
+                                <button class="btn btn-outline-info btn-sm" style="padding:.15rem .4rem; font-size:.8rem;" @onclick="(() => OnOpenMessageManagement.InvokeAsync())" title="Manage Messages">
+                                    <i class="bi bi-chat-text me-1"></i>Messages
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-outline-info btn-sm" style="padding:.15rem .4rem; font-size:.8rem;" @onclick="OpenMessageManagementDialog" title="Manage Messages">
+                                    <i class="bi bi-chat-text me-1"></i>Messages
+                                </button>
+                            }
+                            @if (OnDataRefresh.HasDelegate)
+                            {
+                                <button class="btn btn-outline-primary btn-sm" style="padding:.15rem .4rem; font-size:.8rem;" @onclick="(() => OnDataRefresh.InvokeAsync())" title="Refresh Tour Data">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                                </button>
+                            }
+                            
+                            @if (IsLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm ms-2" role="status"></span>
+                            }
+                            <div id="tourTreeWhatsAppToggleContainer" class="form-check form-switch m-0 d-flex align-items-center" title="Quick WhatsApp uses App when enabled">
+                                <input class="form-check-input" type="checkbox" id="waAppQuickToggle" @bind="useWhatsAppAppQuickSend" />
+                                <label class="form-check-label small ms-1" for="waAppQuickToggle">WA App</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="tourTreeCardBody" class="card-body">
+                    @if (IsLoading)
+                    {
+                        <div id="tourTreeLoadingContainer" class="text-center py-5">
+                            <div id="tourTreeLoadingSpinner" class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <h5 class="mt-3">Loading Tour Data</h5>
+                            <p class="text-muted">Please wait while we retrieve and process the tour information...</p>
+                        </div>
+                    }
+                    else if (TourData?.TreeNodes?.Any() == true)
+                    {
+                        <div id="tourTreeContainer" class="tour-tree-container">
+                            @foreach (var dateNode in TourData.TreeNodes)
+                            {
+                                <div class="tour-date-group mb-4">
+                                    <div class="tour-date-header d-flex align-items-center justify-content-between" @onclick="() => ToggleNode(dateNode)">
+                                        <div class="d-flex align-items-center">
+                                            <div class="tree-icon-wrapper">
+                                                <i class="bi @(dateNode.IsExpanded ? "bi-chevron-down" : "bi-chevron-right") me-2"></i>
+                                                <i class="bi @(dateNode.Icon) text-primary me-2"></i>
+                                            </div>
+                                            <span class="fw-bold">@dateNode.Label</span>
+                                            @if (dateNode.DailyGuestCount.HasValue && dateNode.DailyGuestCount > 0)
+                                            {
+                                                <span class="badge bg-secondary rounded-pill ms-3">@dateNode.DailyGuestCount guests</span>
+                                            }
+                                        </div>
+                                        <div class="d-flex gap-1">
+                                            <button class="btn btn-sm btn-outline-info"
+                                                    @onclick="() => OpenDayMessageLogDialog(dateNode)"
+                                                    @onclick:stopPropagation="true"
+                                                    title="View day message log">
+                                                <i class="bi bi-chat-square-quote-fill"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info"
+                                                    @onclick="() => DownloadVcardsForDay(dateNode)"
+                                                    @onclick:stopPropagation="true"
+                                                    title="Download vCards for all walkers on this day">
+                                                <i class="bi bi-person-vcard"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-secondary"
+                                                    @onclick="() => CopyWalkerInfoForDay(dateNode)"
+                                                    @onclick:stopPropagation="true"
+                                                    title="Copy all walker info for this day">
+                                                <i class="bi bi-clipboard"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    @if (dateNode.IsExpanded)
+                                    {
+                                        <div class="tour-date-content ms-4">
+                                            @foreach (var tourNode in dateNode.Children)
+                                            {
+                                                var hasSubmittedReportForTour = HasSubmittedGuideReportForTour(tourNode);
+                                                var isGuideReportPastDueForTour = IsGuideReportPastDueForTour(dateNode.Label, tourNode.Label);
+                                                var hasGuideGalleryInDbForTour = HasGuideGalleryInDbForTour(tourNode);
+                                                var guideReportPublicIdForTour = GetGuideReportPublicIdForTour(tourNode);
+                                                var guideReportGalleryUrlForTour = BuildGuideReportGalleryUrl(guideReportPublicIdForTour);
+                                                <div class="tour-group mb-3">
+                                                    <div class="tour-header d-flex align-items-center justify-content-between" @onclick="() => ToggleNode(tourNode)">
+                                                        <div class="d-flex align-items-center">
+                                                            <i class="bi @(tourNode.IsExpanded ? "bi-chevron-down" : "bi-chevron-right") me-2"></i>
+                                                            <i class="bi @tourNode.Icon me-2"></i>
+                                                            <strong>@tourNode.Label</strong>
+                                                            @if (OnAddBookingFromTour.HasDelegate)
+                                                            {
+                                                                <button class="btn btn-sm p-0 border-0 bg-transparent text-success ms-2"
+                                                                        title="Add booking for this tour/date"
+                                                                        aria-label="Add booking for this tour/date"
+                                                                        @onclick="() => OpenAddBookingForTourAsync(dateNode.Label, tourNode)"
+                                                                        @onclick:stopPropagation="true">
+                                                                    <i class="bi bi-plus-lg"></i>
+                                                                </button>
+                                                            }
+                                                            @if (hasSubmittedReportForTour)
+                                                            {
+                                                                <i class="bi bi-pencil-fill text-info ms-2" style="font-size: 1.1rem;" title="Guide report submitted"></i>
+                                                            }
+                                                            else if (isGuideReportPastDueForTour)
+                                                            {
+                                                                <button class="btn btn-link btn-sm p-0 ms-2 text-warning align-baseline"
+                                                                        title="Guide report not submitted. Open guide report for this tour."
+                                                                        aria-label="Open guide report for this tour"
+                                                                        @onclick="() => OpenGuideReportForTour(dateNode.Label, tourNode.Label)"
+                                                                        @onclick:stopPropagation="true">
+                                                                    <i class="bi bi-pencil" style="font-size: 1.1rem;"></i>
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                        <div class="d-flex gap-1">
+                                                            <button class="btn btn-sm @(IsBlankQuickSendEnabled(dateNode.Label, tourNode.Label) ? "btn-success" : "btn-outline-secondary")"
+                                                                    title="@(IsBlankQuickSendEnabled(dateNode.Label, tourNode.Label) ? "Blank quick-send ON: quick SMS/WhatsApp opens with no preset message." : "Blank quick-send OFF: quick SMS/WhatsApp uses selected template.")"
+                                                                    @onclick="() => ToggleBlankQuickSendForTour(dateNode.Label, tourNode.Label)"
+                                                                    @onclick:stopPropagation="true">
+                                                                <i class="bi bi-justify-left"></i>
+                                                            </button>
+                                                            <select class="form-select form-select-sm" style="width: 200px;" title="Guide Selection"
+                                                                    value="@(selectedGuideIdByTour.TryGetValue(GetTourKey(dateNode.Label, tourNode.Label), out var gid) && gid.HasValue ? gid.Value.ToString() : string.Empty)"
+                                                                    @onchange="@((Microsoft.AspNetCore.Components.ChangeEventArgs e) => OnGuideSelected(dateNode.Label, tourNode.Label, e.Value?.ToString()))"
+                                                                    @onclick="() => {}" @onclick:stopPropagation="true">
+                                                                <option value="" hidden></option>
+                                                                @if (DbGuides != null && DbGuides.Count > 0)
+                                                                {
+                                                                    foreach (var g in DbGuides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                                                                    {
+                                                                        var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : ($"{g.FirstName} {g.LastName}");
+                                                                        <option value="@g.Id">@label</option>
+                                                                    }
+                                                                }
+                                                            </select>
+
+                                                            <select class="form-select form-select-sm" style="width: 200px;" title="Message Template"
+                                                                    value="@(selectedMessageIdByTour.TryGetValue(GetTourKey(dateNode.Label, tourNode.Label), out var mid) && !string.IsNullOrWhiteSpace(mid) ? mid : string.Empty)"
+                                                                    @onchange="@((Microsoft.AspNetCore.Components.ChangeEventArgs e) => OnMessageSelected(dateNode.Label, tourNode.Label, e.Value?.ToString()))"
+                                                                    @onclick="() => {}" @onclick:stopPropagation="true">
+                                                                <option value="" hidden></option>
+                                                                @if (InMemoryMessages != null && InMemoryMessages.Count > 0)
+                                                                {
+                                                                    foreach (var m in InMemoryMessages.OrderBy(x => x.Name))
+                                                                    {
+                                                                        <option value="@m.Id">@m.Name</option>
+                                                                    }
+                                                                }
+                                                            </select>
+                                                            @if (hasSubmittedReportForTour)
+                                                            {
+                                                                @if (hasGuideGalleryInDbForTour && !string.IsNullOrWhiteSpace(guideReportGalleryUrlForTour))
+                                                                {
+                                                                    <a class="btn btn-sm btn-success"
+                                                                       href="@guideReportGalleryUrlForTour"
+                                                                       target="_blank"
+                                                                       rel="noopener"
+                                                                       title="Open submitted report gallery"
+                                                                       @onclick:stopPropagation="true">
+                                                                        <i class="bi bi-images"></i>
+                                                                    </a>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <button class="btn btn-sm btn-danger"
+                                                                            title="Report submitted but gallery link is missing in database. Open guide report."
+                                                                            @onclick="() => OpenGuideReportForTour(dateNode.Label, tourNode.Label)"
+                                                                            @onclick:stopPropagation="true">
+                                                                        <i class="bi bi-images"></i>
+                                                                    </button>
+                                                                }
+                                                            }
+                                                            <button class="btn btn-sm btn-outline-info" @onclick="() => DownloadVcardsForTour(tourNode)" @onclick:stopPropagation="true" title="Download vCards for all walkers">
+                                                                <i class="bi bi-person-vcard"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => CopyWalkerInfo(tourNode)" @onclick:stopPropagation="true" title="Copy">
+                                                                <i class="bi bi-clipboard"></i>
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-warning" @onclick="() => OpenBulkSmsDialog(tourNode)" @onclick:stopPropagation="true" title="Send bulk SMS to guide">
+                                                                <i class="bi bi-chat-dots-fill"></i>
+                                                            </button>
+                                                            @* <button class="btn btn-sm btn-outline-info" @onclick="() => OpenPhotoDialog(tourNode, dateNode)" @onclick:stopPropagation="true" title="Upload/view group photo">
+                                                                <i class="bi bi-camera-fill"></i>
+                                                            </button> *@
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    @if (tourNode.IsExpanded)
+                                                    {
+                                                        <div class="tour-content ms-4">
+                                                            @foreach (var vendorNode in tourNode.Children)
+                                                            {
+                                                                <div class="vendor-group mb-2">
+                                                                    <div class="vendor-header" @onclick="() => ToggleNode(vendorNode)">
+                                                                        <i class="bi @(vendorNode.IsExpanded ? "bi-chevron-down" : "bi-chevron-right") me-2"></i>
+                                                                        <i class="bi @vendorNode.Icon me-2"></i>
+                                                                        <strong>@vendorNode.Label</strong>
+                                                                    </div>
+                                                                    
+                                                                    @if (vendorNode.IsExpanded)
+                                                                    {
+                                                                        <div class="vendor-content ms-4">
+                                                                            @foreach (var walkerNode in vendorNode.Children)
+                                                                            {
+                                                                                @* 2025-11-18: Get status directly from WalkerData (Email project uses ShapedWalkerData) *@
+                                                                                var statusClass = walkerNode.WalkerData?.StatusClass ?? "";
+                                                                                var statusIcon = walkerNode.WalkerData?.StatusIcon ?? "";
+                                                                                var statusTitle = walkerNode.WalkerData?.StatusTitle ?? "";
+                                                                                
+                                                                                @* Fallback: Determine status if not pre-calculated *@
+                                                                                if (string.IsNullOrEmpty(statusClass) && walkerNode.WalkerData != null)
+                                                                                {
+                                                                                    if (walkerNode.WalkerData.IsCancellation)
+                                                                                    {
+                                                                                        statusClass = "cancelled";
+                                                                                        statusIcon = "bi-x-circle-fill";
+                                                                                        statusTitle = "Cancelled";
+                                                                                    }
+                                                                                    else if (walkerNode.WalkerData.IsConfirmation || walkerNode.WalkerData.Status?.Equals("Confirmed", StringComparison.OrdinalIgnoreCase) == true)
+                                                                                    {
+                                                                                        statusClass = "confirmed";
+                                                                                        statusIcon = "bi-check-circle-fill";
+                                                                                        statusTitle = "Confirmed";
+                                                                                    }
+                                                                                }
+                                                                                
+                                                                                var hasPhone = !string.IsNullOrEmpty(walkerNode.WalkerData?.DisplayPhone);
+                                                                                
+                                                                                <div class="walker-item p-2 rounded mb-1 d-flex align-items-center justify-content-between @statusClass" @onclick="() => SelectWalker(walkerNode)">
+                                                                                    <div class="d-flex align-items-center">
+                                                                                        <i class="bi @walkerNode.Icon me-2"></i>
+                                                                                        <span>@walkerNode.Label</span>
+                                                                                        @if (IsManualWalkerEntry(walkerNode))
+                                                                                        {
+                                                                                            <span class="badge text-bg-info ms-2" title="Manual booking (MessageId starts with MANUAL-)">MANUAL-</span>
+                                                                                        }
+                                                                                        @if (walkerNode.WalkerData?.IsCheckedIn == true)
+                                                                                        {
+                                                                                            <i class="bi bi-person-check-fill text-success ms-2" style="font-size: 1.1rem;" title="Checked in"></i>
+                                                                                        }
+                                                                                        @* 2025-12-10 00:00 UTC - Message status buttons temporarily disabled per request
+                                                                                        @{
+                                                                                            var sent = walkerNode.WalkerData?.MessageSent == true;
+                                                                                            var iconColorClass = sent ? "text-success" : "text-warning";
+                                                                                            var toggleTitle = sent ? "Mark as not sent" : "Mark as sent";
+                                                                                        }
+                                                                                        <button type="button"
+                                                                                                class="btn btn-link btn-sm p-0 ms-2"
+                                                                                                title="@toggleTitle"
+                                                                                                @onclick="(e) => ToggleMessageSentAsync(walkerNode)"
+                                                                                                @onclick:stopPropagation="true">
+                                                                                            <i class="bi bi-chat-text-fill @iconColorClass"></i>
+                                                                                        </button>
+                                                                                        <div class="d-flex align-items-center ms-2 flex-wrap" style="gap:4px;">
+                                                                                            @foreach (var stage in stageOrder)
+                                                                                            {
+                                                                                                Email.TourTreeViewShapedData.Models.MessageStageStatus? st = null;
+                                                                                                var hasStage = walkerNode.WalkerData?.MessageStages != null && walkerNode.WalkerData.MessageStages.TryGetValue(stage, out st);
+                                                                                                var sentStage = hasStage && (st?.SentFlag == true);
+                                                                                                var badgeClass = sentStage ? "badge bg-success" : "badge bg-warning text-dark";
+                                                                                                var title = $"{stage} - {(sentStage ? "sent" : "not sent")}";
+                                                                                                <button type="button"
+                                                                                                        class="btn btn-link btn-sm p-0"
+                                                                                                        title="@title"
+                                                                                                        @onclick="(e) => ToggleMessageStageAsync(walkerNode, stage)"
+                                                                                                        @onclick:stopPropagation="true">
+                                                                                                    <span class="@badgeClass" style="min-width:20px; display:inline-block;">@GetStageAbbreviation(stage)</span>
+                                                                                                </button>
+                                                                                            }
+                                                                                        </div>
+                                                                                        *@
+                                                                                        
+                                                                                    </div>
+                                                                                    <div class="d-flex gap-1 align-items-start">
+                                                                                        @* TODO: Walker-level action buttons to be implemented
+                                                                                        *@
+                                                                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => CopyConnectMessageToClipboard(walkerNode, dateNode)" @onclick:stopPropagation="true" title="Copy connect message">
+                                                                                            <i class="bi bi-clipboard"></i>
+                                                                                        </button>
+                                                                                        <button class="btn btn-sm btn-outline-warning" @onclick="() => OpenEditDialog(walkerNode, vendorNode, tourNode)" @onclick:stopPropagation="true" title="Edit booking details">
+                                                                                            <i class="bi bi-pencil-square"></i>
+                                                                                        </button>
+                                                                                        <button class="btn btn-sm btn-outline-info" @onclick="(e) => DownloadIndividualVcard(e, walkerNode)" @onclick:stopPropagation="true" title="Download vCard for this walker">
+                                                                                            <i class="bi bi-person-vcard"></i>
+                                                                                        </button>
+                                                                                        @* <button class="btn btn-sm @(hasPhone ? "btn-outline-primary" : "btn-outline-secondary")" @onclick="() => OpenSmsDialog(walkerNode, vendorNode, tourNode)" @onclick:stopPropagation="true" disabled="@(!hasPhone)" title="@(hasPhone ? "Send SMS message" : "No phone number available")">
+                                                                                            <i class="bi bi-chat-dots"></i>
+                                                                                        </button> *@
+                                                                                         @{
+                                                                                             var smsToggleBusy = IsContactStateBusy(walkerNode.WalkerData, ContactChannelSms);
+                                                                                         }
+                                                                                         <div class="d-flex flex-column align-items-center">
+                                                                                             <a class="btn btn-sm @(hasPhone ? "btn-outline-info" : "btn-outline-secondary") @(!hasPhone ? "disabled" : "")"
+                                                                                                href="@GetQuickSmsUrl(walkerNode, vendorNode, tourNode)" target="_blank"
+                                                                                                @onclick='() => TrackQuickSend(walkerNode, vendorNode, tourNode, "sms")'
+                                                                                                @onclick:stopPropagation="true"
+                                                                                                title="@(hasPhone ? "Quick send SMS" : "No phone number available")">
+                                                                                                 <i class="bi bi-chat-dots"></i>
+                                                                                             </a>
+                                                                                             <button class="btn btn-link btn-sm p-0 mt-1 @(smsToggleBusy ? "disabled" : "")"
+                                                                                                     title="@GetContactStateToggleTitle(ContactChannelSmsLabel, walkerNode.WalkerData?.SmsContactState ?? (byte)0)"
+                                                                                                     disabled="@smsToggleBusy"
+                                                                                                     @onclick="() => ToggleBookingContactChannelStateAsync(walkerNode, ContactChannelSms)"
+                                                                                                     @onclick:stopPropagation="true">
+                                                                                                 <i class="bi bi-circle-fill @GetContactStateColorClass(walkerNode.WalkerData?.SmsContactState ?? (byte)0)"></i>
+                                                                                             </button>
+                                                                                         </div>
+                                                                                        @* <button class="btn btn-sm @(hasPhone ? "btn-outline-success" : "btn-outline-secondary")" @onclick="() => OpenWhatsAppDialog(walkerNode, vendorNode, tourNode)" @onclick:stopPropagation="true" disabled="@(!hasPhone)" title="@(hasPhone ? "Send WhatsApp message" : "No phone number available")">
+                                                                                            <i class="bi bi-whatsapp"></i>
+                                                                                        </button> *@
+                                                                                         @{
+                                                                                             var waToggleBusy = IsContactStateBusy(walkerNode.WalkerData, ContactChannelWa);
+                                                                                         }
+                                                                                         <div class="d-flex flex-column align-items-center">
+                                                                                             <a class="btn btn-sm @(hasPhone ? "btn-outline-success" : "btn-outline-secondary") @(!hasPhone ? "disabled" : "")"
+                                                                                                href="@GetQuickWhatsAppUrl(walkerNode, vendorNode, tourNode)" target="_blank"
+                                                                                                @onclick='() => TrackQuickSend(walkerNode, vendorNode, tourNode, "wa")'
+                                                                                                @onclick:stopPropagation="true"
+                                                                                                title="@(hasPhone ? "Quick send WhatsApp message" : "No phone number available")">
+                                                                                                 <i class="bi bi-whatsapp"></i>
+                                                                                             </a>
+                                                                                             <button class="btn btn-link btn-sm p-0 mt-1 @(waToggleBusy ? "disabled" : "")"
+                                                                                                     title="@GetContactStateToggleTitle(ContactChannelWaLabel, walkerNode.WalkerData?.WaContactState ?? (byte)0)"
+                                                                                                     disabled="@waToggleBusy"
+                                                                                                     @onclick="() => ToggleBookingContactChannelStateAsync(walkerNode, ContactChannelWa)"
+                                                                                                     @onclick:stopPropagation="true">
+                                                                                                 <i class="bi bi-circle-fill @GetContactStateColorClass(walkerNode.WalkerData?.WaContactState ?? (byte)0)"></i>
+                                                                                             </button>
+                                                                                         </div>
+                                                                                         @{
+                                                                                             var platformToggleBusy = IsContactStateBusy(walkerNode.WalkerData, ContactChannelPlatform);
+                                                                                         }
+                                                                                          <button class="btn btn-sm btn-outline-secondary @(platformToggleBusy ? "disabled" : "")"
+                                                                                                  title="@GetPlatformContactToggleTitle(walkerNode.WalkerData?.PlatformContactState ?? (byte)0)"
+                                                                                                  disabled="@platformToggleBusy"
+                                                                                                  @onclick="() => ToggleBookingContactChannelStateAsync(walkerNode, ContactChannelPlatform)"
+                                                                                                  @onclick:stopPropagation="true">
+                                                                                              <i class="@GetPlatformContactIconClass(walkerNode.WalkerData?.PlatformContactState ?? (byte)0)"></i>
+                                                                                          </button>
+                                                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenEmailDialog(walkerNode)" @onclick:stopPropagation="true" title="View email">
+                                                                                            <i class="bi bi-envelope"></i>
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (!IsLoading)
+                    {
+                        <div id="tourTreeEmptyState" class="text-center py-5">
+                            <i class="bi bi-inbox" style="font-size: 3rem; color: #6c757d;"></i>
+                            <h5 class="mt-3">No Tour Data Available</h5>
+                            <p class="text-muted">No tour data is currently available to display.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* TODO: Dialog components to be migrated in future planning docs
+<!-- Template Dialog Component -->
+<TemplateDialog 
+    IsVisible="showTemplateDialog"
+    IsVisibleChanged="@((bool value) => showTemplateDialog = value)"
+    OnTemplateSelected="OnTemplateSelected"
+    WalkerInfo="selectedWalkerInfo"
+    TourName="@(selectedWalkerInfo?.TourName ?? "")"
+    TourDate="@(selectedWalkerInfo?.TourDate ?? "")"
+    VendorName="@(selectedWalkerInfo?.VendorName ?? "")" />
+*@
+
+<!-- Email Dialog -->
+<TourTreeEmailDialog 
+    showDialog="@showEmailDialog" 
+    emailContent="@emailContent" 
+    isLoading="@isEmailLoading" 
+    OnClose="CloseEmailDialog" />
+
+<!-- Edit Dialog -->
+@if (showEditDialog)
+{
+    <div id="editDialogModal" class="modal fade show" style="display: block;" tabindex="-1">
+        <div id="editDialogModalDialog" class="modal-dialog" style="max-width: fit-content;">
+            <div id="editDialogModalContent" class="modal-content">
+                <div id="editDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil-square me-2 text-warning"></i>
+                        Edit Booking Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseEditDialog"></button>
+                </div>
+                <div id="editDialogBody" class="modal-body">
+                    @if (isEditLoading)
+                    {
+                        <div id="editDialogLoadingContainer" class="text-center py-4">
+                            <div id="editDialogLoadingSpinner" class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading booking details...</p>
+                        </div>
+                    }
+                    else if (selectedProcessedEmail != null)
+                    {
+                        <div id="editDialogFormRow1" class="row">
+                            <div id="editDialogFormLeftColumn" class="col-md-6">
+                                <div id="editDialogCustomerNameField" class="mb-2">
+                                    <label class="form-label">Customer Name</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="selectedProcessedEmail.CustomerName" />
+                                </div>
+                                <div id="editDialogCustomerEmailField" class="mb-2">
+                                    <label class="form-label">Customer Email</label>
+                                    <input type="email" class="form-control form-control-sm" @bind="selectedProcessedEmail.CustomerEmail" />
+                                </div>
+                                <div id="editDialogCustomerPhoneField" class="mb-2">
+                                    <label class="form-label">Customer Phone</label>
+                                    <input type="tel" class="form-control form-control-sm" @bind="selectedProcessedEmail.CustomerPhone" />
+                                </div>
+                                <div id="editDialogNumberOfAttendeesField" class="mb-2">
+                                    <label class="form-label">Number of Attendees</label>
+                                    <input type="number" class="form-control form-control-sm" @bind="selectedProcessedEmail.NumberOfAttendees" />
+                                </div>
+                                <div id="editDialogNumberOfAdultsField" class="mb-2">
+                                    <label class="form-label">Number of Adults</label>
+                                    <input type="number" class="form-control form-control-sm" @bind="selectedProcessedEmail.NumberOfAdults" />
+                                </div>
+                                <div id="editDialogNumberOfChildrenField" class="mb-2">
+                                    <label class="form-label">Number of Children</label>
+                                    <input type="number" class="form-control form-control-sm" @bind="selectedProcessedEmail.NumberOfChildren" />
+                                </div>
+                                <div id="editDialogSpecialRequestsField" class="mb-2">
+                                    <label class="form-label">Special Requests</label>
+                                    <textarea class="form-control form-control-sm" rows="4" @bind="selectedProcessedEmail.BookingAlterationNotes"></textarea>
+                                </div>
+                                <div id="editDialogIssueReportField" class="mb-2">
+                                    <label class="form-label text-danger">Booking Error / Issue</label>
+                                    <div class="position-relative">
+                                        <textarea class="form-control form-control-sm border border-danger pe-5"
+                                                  rows="3"
+                                                  style="min-height: 95px;"
+                                                  @bind="editReportIssueNotes"
+                                                  placeholder="Describe booking error or issue for developer review"></textarea>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger position-absolute bottom-0 end-0 m-1"
+                                                title="Report booking issue"
+                                                @onclick="SubmitEditIssueFromEditDialog"
+                                                @onclick:stopPropagation="true"
+                                                disabled="@isSubmittingEditIssue">
+                                            <i class="bi bi-exclamation-octagon"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="editDialogFormRightColumn" class="col-md-6">
+                                <div id="editDialogTourNameField" class="mb-2">
+                                    <label class="form-label">Tour Name</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@selectedProcessedEmail?.TourName"
+                                            @onchange="OnEditTourNameChanged">
+                                        @if (availableTourNames.Count == 0)
+                                        {
+                                            <option value="">No tours available</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var tourName in availableTourNames)
+                                            {
+                                                <option value="@tourName">@tourName</option>
+                                            }
+                                        }
+                                    </select>
+                                    @if (!string.IsNullOrEmpty(selectedProcessedEmail?.TourName))
+                                    {
+                                        <small class="form-text text-muted">Current: @selectedProcessedEmail.TourName</small>
+                                    }
+                                </div>
+                                <div id="editDialogTourDateField" class="mb-2">
+                                    <label class="form-label">Tour Date</label>
+                                    <input type="date" class="form-control form-control-sm"
+                                           value="@(GetDateValue(selectedProcessedEmail?.TourDate))"
+                                           @onchange="OnEditTourDateChanged" />
+                                </div>
+                                <div id="editDialogTourTimeField" class="mb-2">
+                                    <label class="form-label">Tour Time</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@selectedProcessedEmail?.TourTime"
+                                            @onchange="OnEditTourTimeChanged">
+                                        @if (editTimeOptions.Count == 0)
+                                        {
+                                            <option value="" disabled>No time options found</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var time in editTimeOptions)
+                                            {
+                                                <option value="@time">@time</option>
+                                            }
+                                        }
+                                    </select>
+                                    @if (!string.IsNullOrEmpty(selectedProcessedEmail?.TourTime))
+                                    {
+                                        <small class="form-text text-muted">Current: @selectedProcessedEmail.TourTime</small>
+                                    }
+                                </div>
+                                <div id="editDialogTourLocationField" class="mb-2">
+                                    <label class="form-label">Tour Location</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="selectedProcessedEmail.TourLocation" />
+                                </div>
+                                <div id="editDialogVendorNameField" class="mb-2">
+                                    <label class="form-label">Vendor Name</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@selectedProcessedEmail?.VendorName"
+                                            @onchange="OnEditVendorChanged"
+                                            disabled="@IsEditWalkUpVendor()">
+                                        @if (editVendorOptions.Count == 0)
+                                        {
+                                            <option value="@selectedProcessedEmail?.VendorName">@selectedProcessedEmail?.VendorName</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var vendorName in editVendorOptions)
+                                            {
+                                                <option value="@vendorName">@vendorName</option>
+                                            }
+                                        }
+                                    </select>
+                                    @if (IsEditWalkUpVendor())
+                                    {
+                                        <small class="form-text text-muted">Walk-Up vendor is locked.</small>
+                                    }
+                                </div>
+                                <div id="editDialogEmailTypeField" class="mb-2">
+                                    <label class="form-label">Email Type</label>
+                                    <select class="form-select form-select-sm" @bind="selectedProcessedEmail.EmailType" @bind:event="onchange">
+                                        <option value="booking">Booking</option>
+                                        <option value="modification">Modification</option>
+                                        <option value="cancellation">Cancellation</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div id="editDialogLanguageField" class="mb-2">
+                                    <label class="form-label">Language</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="selectedProcessedEmail.Language" />
+                                </div>
+                                <div id="editDialogBookingCodeField" class="mb-2">
+                                    <label class="form-label">Booking Code</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="selectedProcessedEmail.BookingCode" readonly />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="editDialogFormActions" class="row mt-2">
+                            <div class="col-12 d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseEditDialog">Cancel</button>
+                                <button type="button" class="btn btn-warning btn-sm" @onclick="SaveEditChanges">
+                                    <i class="bi bi-check-lg me-1"></i>Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div id="editDialogFooter" class="modal-footer" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="editDialogBackdrop" class="modal-backdrop fade show"></div>
+}
+@* iPhone manual copy dialog (align with Workstation) *@
+@if (showCopyDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard me-2"></i>@copyDialogTitle
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseCopyDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea class="form-control" rows="15" readonly style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">@copyDialogContent</textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCopyDialog">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="TryAutoCopyFromDialog">
+                        <i class="bi bi-clipboard me-1"></i>Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+<!-- Report Dialog (Tour Data Error) -->
+@if (showReportDialog)
+{
+    <div id="reportDialogModal" class="modal fade show" style="display: block;" tabindex="-1">
+        <div id="reportDialogModalDialog" class="modal-dialog" style="max-width: fit-content;">
+            <div id="reportDialogModalContent" class="modal-content">
+                <div id="reportDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-exclamation-octagon me-2 text-danger"></i>
+                        Report Tour Data Error
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseReportDialog"></button>
+                </div>
+                <div id="reportDialogBody" class="modal-body">
+                    @if (isReportLoading)
+                    {
+                        <div id="reportDialogLoadingContainer" class="text-center py-4">
+                            <div id="reportDialogLoadingSpinner" class="spinner-border text-danger" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading original booking data...</p>
+                        </div>
+                    }
+                    else if (reportOriginalEmail != null && reportEditedEmail != null)
+                    {
+                        <div id="reportDialogFormRow1" class="row">
+                            <div id="reportDialogFormLeftColumn" class="col-md-6">
+                                <div id="reportDialogCustomerNameField" class="mb-2">
+                                    <label class="form-label">Customer Name</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.CustomerName ?? "—")</div>
+                                    <input type="text" class="form-control form-control-sm" @bind="reportEditedEmail.CustomerName" />
+                                </div>
+                                <div id="reportDialogCustomerEmailField" class="mb-2">
+                                    <label class="form-label">Customer Email</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.CustomerEmail ?? "—")</div>
+                                    <input type="email" class="form-control form-control-sm" @bind="reportEditedEmail.CustomerEmail" />
+                                </div>
+                                <div id="reportDialogCustomerPhoneField" class="mb-2">
+                                    <label class="form-label">Customer Phone</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.CustomerPhone ?? "—")</div>
+                                    <input type="tel" class="form-control form-control-sm" @bind="reportEditedEmail.CustomerPhone" />
+                                </div>
+                                <div id="reportDialogNumberOfAttendeesField" class="mb-2">
+                                    <label class="form-label">Number of Attendees</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.NumberOfAttendees?.ToString() ?? "—")</div>
+                                    <input type="number" class="form-control form-control-sm" @bind="reportEditedEmail.NumberOfAttendees" />
+                                </div>
+                                <div id="reportDialogNumberOfAdultsField" class="mb-2">
+                                    <label class="form-label">Number of Adults</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.NumberOfAdults?.ToString() ?? "—")</div>
+                                    <input type="number" class="form-control form-control-sm" @bind="reportEditedEmail.NumberOfAdults" />
+                                </div>
+                                <div id="reportDialogNumberOfChildrenField" class="mb-2">
+                                    <label class="form-label">Number of Children</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.NumberOfChildren?.ToString() ?? "—")</div>
+                                    <input type="number" class="form-control form-control-sm" @bind="reportEditedEmail.NumberOfChildren" />
+                                </div>
+                                <div id="reportDialogErrorNotesField" class="mb-2">
+                                    <label class="form-label">Error Notes</label>
+                                    <textarea class="form-control form-control-sm" rows="4" @bind="reportErrorNotes" placeholder="Describe what was wrong so the developer can fix it"></textarea>
+                                </div>
+                            </div>
+                            <div id="reportDialogFormRightColumn" class="col-md-6">
+                                <div id="reportDialogTourNameField" class="mb-2">
+                                    <label class="form-label">Tour Name</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.TourName ?? "—")</div>
+                                    <select class="form-select form-select-sm"
+                                            value="@reportEditedEmail?.TourName"
+                                            @onchange="OnReportTourNameChanged">
+                                        @if (availableTourNames.Count == 0)
+                                        {
+                                            <option value="">No tours available</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var tourName in availableTourNames)
+                                            {
+                                                <option value="@tourName">@tourName</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div id="reportDialogTourDateField" class="mb-2">
+                                    <label class="form-label">Tour Date</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.TourDate?.ToString("yyyy-MM-dd") ?? "—")</div>
+                                    <input type="date" class="form-control form-control-sm"
+                                           value="@(GetDateValue(reportEditedEmail?.TourDate))"
+                                           @onchange="@((Microsoft.AspNetCore.Components.ChangeEventArgs e) => {
+                                               reportEditedEmail!.TourDate = DateTime.TryParse(e.Value?.ToString(), out var dt) ? dt : null;
+                                           })"
+                                           min="@DateTime.Today.ToString("yyyy-MM-dd")"
+                                           max="@DateTime.Today.AddYears(1).ToString("yyyy-MM-dd")" />
+                                </div>
+                                <div id="reportDialogTourTimeField" class="mb-2">
+                                    <label class="form-label">Tour Time</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.TourTime ?? "—")</div>
+                                    <select class="form-select form-select-sm"
+                                            value="@reportEditedEmail?.TourTime"
+                                            @onchange="OnReportTourTimeChanged">
+                                        @if (reportTimeOptions.Count == 0)
+                                        {
+                                            <option value="" disabled>No time options found</option>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var time in reportTimeOptions)
+                                            {
+                                                <option value="@time">@time</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div id="reportDialogTourLocationField" class="mb-2">
+                                    <label class="form-label">Tour Location</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.TourLocation ?? "—")</div>
+                                    <input type="text" class="form-control form-control-sm" @bind="reportEditedEmail.TourLocation" />
+                                </div>
+                                <div id="reportDialogVendorNameField" class="mb-2">
+                                    <label class="form-label">Vendor Name</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.VendorName ?? "—")</div>
+                                    <input type="text" class="form-control form-control-sm" @bind="reportEditedEmail.VendorName" readonly />
+                                </div>
+                                <div id="reportDialogEmailTypeField" class="mb-2">
+                                    <label class="form-label">Email Type</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.EmailType ?? "—")</div>
+                                    <select class="form-select form-select-sm" @bind="reportEditedEmail.EmailType" @bind:event="onchange">
+                                        <option value="booking">Booking</option>
+                                        <option value="modification">Modification</option>
+                                        <option value="cancellation">Cancellation</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div id="reportDialogLanguageField" class="mb-2">
+                                    <label class="form-label">Language</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.Language ?? "—")</div>
+                                    <input type="text" class="form-control form-control-sm" @bind="reportEditedEmail.Language" />
+                                </div>
+                                <div id="reportDialogBookingCodeField" class="mb-2">
+                                    <label class="form-label">Booking Code</label>
+                                    <div class="form-text text-warning small">Original: @(reportOriginalEmail.BookingCode ?? "—")</div>
+                                    <input type="text" class="form-control form-control-sm" @bind="reportEditedEmail.BookingCode" readonly />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="reportDialogFormActions" class="row mt-2">
+                            <div class="col-12 d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseReportDialog">Cancel</button>
+                                <button type="button" class="btn btn-danger btn-sm" @onclick="SubmitReport">
+                                    <i class="bi bi-flag-fill me-1"></i>Submit Report
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div id="reportDialogFooter" class="modal-footer" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="reportDialogBackdrop" class="modal-backdrop fade show"></div>
+}
+@* Not Implemented Dialog *@
+@if (showServiceNotImplementedDialog)
+{
+    <div id="serviceNotImplementedModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Not Implemented</h5>
+                    <button type="button" class="btn-close" @onclick="CloseServiceNotImplementedDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">@serviceNotImplementedMessage</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CloseServiceNotImplementedDialog">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Messaging Help Dialog -->
+<MessageHelpDialog Show="showMessageHelp" OnClose="CloseMessageHelpDialog" />
+
+<!-- Tour Photo Dialog -->
+<TourPhotoDialog 
+    ShowDialog="@showPhotoDialog"
+    TourDate="@photoDialogTourDate"
+    TourName="@photoDialogTourName"
+    TourTime="@photoDialogTourTime"
+    OnClose="ClosePhotoDialog" />
+
+
+<!-- WhatsApp Dialog -->
+@if (showWhatsAppDialog)
+{
+    <div id="whatsAppDialogModal" class="modal fade show" style="display: block;" tabindex="-1">
+        <div id="whatsAppDialogModalDialog" class="modal-dialog modal-lg">
+            <div id="whatsAppDialogModalContent" class="modal-content">
+                <div id="whatsAppDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-whatsapp me-2 text-success"></i>
+                        Send WhatsApp Message
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseWhatsAppDialog"></button>
+                </div>
+                <div id="whatsAppDialogBody" class="modal-body">
+                    <div id="whatsAppDialogInfoRow" class="row">
+                        <div id="whatsAppDialogWalkerInfoColumn" class="col-md-6">
+                            <h6>Walker Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Name:</strong></td>
+                                    <td>@selectedWalkerInfo.Name</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Phone:</strong></td>
+                                    <td>
+                                        <a href="tel:@selectedWalkerInfo.Phone" class="text-decoration-none">@selectedWalkerInfo.Phone</a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Attendees:</strong></td>
+                                    <td>@(selectedWalkerInfo.Attendees?.ToString() ?? "N/A")</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div id="whatsAppDialogTourInfoColumn" class="col-md-6">
+                            <h6>Tour Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Tour:</strong></td>
+                                    <td>@selectedWalkerInfo.TourName</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Date:</strong></td>
+                                    <td>@selectedWalkerInfo.TourDate</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Vendor:</strong></td>
+                                    <td>@selectedWalkerInfo.VendorName</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab Navigation -->
+                    <ul class="nav nav-tabs mt-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="whatsapp-app-tab" data-bs-toggle="tab" data-bs-target="#whatsapp-app" type="button" role="tab" aria-controls="whatsapp-app" aria-selected="true" @onclick="() => SetActiveWhatsAppTab(0)">
+                                <i class="bi bi-phone me-1"></i>WhatsApp App
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="whatsapp-web-tab" data-bs-toggle="tab" data-bs-target="#whatsapp-web" type="button" role="tab" aria-controls="whatsapp-web" aria-selected="false" @onclick="() => SetActiveWhatsAppTab(1)">
+                                <i class="bi bi-globe me-1"></i>WhatsApp Web
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <!-- Tab Content -->
+                    <div class="tab-content mt-3" id="whatsAppTabContent">
+                        <!-- WhatsApp App Tab -->
+                        <div class="tab-pane fade show active" id="whatsapp-app" role="tabpanel" aria-labelledby="whatsapp-app-tab">
+                            <div id="whatsAppAppMessageContainer" class="mb-3">
+                                <div class="accordion mb-2" id="whatsAppAppDialogAccordion">
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="whatsAppAppTemplateEditsHeader">
+                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#whatsAppAppTemplateEditsCollapse" aria-expanded="false" aria-controls="whatsAppAppTemplateEditsCollapse">
+                                                Template Edits
+                                            </button>
+                                        </h2>
+                                        <div id="whatsAppAppTemplateEditsCollapse" class="accordion-collapse collapse" aria-labelledby="whatsAppAppTemplateEditsHeader" data-bs-parent="#whatsAppAppDialogAccordion">
+                                            <div class="accordion-body p-2">
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{monthOfTour}"))" title="Month of tour"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{displayDayOrdinal}"))" title="Display day ordinal"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{vendorTourLink}"))" title="Vendor tour link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorTourLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{vendorReviewLink}"))" title="Vendor review link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{allToursLink}"))" title="All tours link placeholder"><i class="bi bi-link-45deg me-1"></i>{allToursLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppAppMessage", "{galleryLink}"))" title="Gallery link placeholder"><i class="bi bi-images me-1"></i>{galleryLink}</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Item 2: Select Message -->
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="whatsAppAppSelectMessageHeader">
+                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#whatsAppAppSelectMessageCollapse" aria-expanded="false" aria-controls="whatsAppAppSelectMessageCollapse">
+                                                Select Message...
+                                            </button>
+                                        </h2>
+                                        <div id="whatsAppAppSelectMessageCollapse" class="accordion-collapse collapse" aria-labelledby="whatsAppAppSelectMessageHeader" data-bs-parent="#whatsAppAppDialogAccordion">
+                                            <div class="accordion-body p-2">
+                                                 <select class="form-select" value="@GetSelectedMessageId(selectedWalkerInfo?.TourDate, selectedWalkerInfo?.TourName)" @onchange="OnWhatsAppDialogMessageChanged">
+                                                    <option value="" hidden></option>
+                                                    @if (InMemoryMessages != null)
+                                                    {
+                                                        foreach (var m in InMemoryMessages.OrderBy(x => x.Name))
+                                                        {
+                                                            <option value="@m.Id">@m.Name</option>
+                                                        }
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                @* 2026-02-07: Gallery Link Toggle for THANKYOU messages *@
+                                @if (isLoadingGalleryUrl)
+                                {
+                                    <div class="mt-2 text-muted small">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Checking for photo gallery...
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(currentGalleryUrl))
+                                {
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="includeGalleryLinkWA" @bind="includeGalleryLink">
+                                        <label class="form-check-label" for="includeGalleryLinkWA">
+                                            <i class="bi bi-camera me-1"></i>Include photo gallery link
+                                        </label>
+                                    </div>
+                                }
+                                <textarea id="whatsAppAppMessage" class="form-control" rows="6" @bind="whatsAppAppMessage" @oninput="OnWhatsAppAppMessageInput"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                                <div id="whatsAppAppMessageInfo" class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        This message will open in WhatsApp app for @selectedWalkerInfo.Phone
+                                    </small>
+                                    <small class="@(whatsAppAppMessage.Length > 3500 ? "text-warning" : "text-muted")">
+                                        @whatsAppAppMessage.Length characters
+                                    </small>
+                                </div>
+                                @if (HasMissingAllToursLinkWarning(whatsAppAppMessage))
+                                {
+                                    <div class="alert alert-warning mt-2 mb-0">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        Message includes <code>[missing allToursLink]</code>. Update vendor all-tours link if needed before sending.
+                                    </div>
+                                }
+                            </div>
+                            
+                            <div class="accordion" id="whatsappAppPreviewAccordion">
+                                <div id="whatsappAppPreviewAccordionItem" class="accordion-item">
+                                    <h2 class="accordion-header" id="whatsappAppPreviewHeading">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#whatsappAppPreviewCollapse" aria-expanded="false" aria-controls="whatsappAppPreviewCollapse">
+                                            <i class="bi bi-lightbulb me-2"></i>WhatsApp App Message Preview
+                                        </button>
+                                    </h2>
+                                    <div id="whatsappAppPreviewCollapse" class="accordion-collapse collapse" aria-labelledby="whatsappAppPreviewHeading" data-bs-parent="#whatsappAppPreviewAccordion">
+                                        <div id="whatsappAppPreviewBody" class="accordion-body">
+                                            <p id="whatsappAppPreviewTo" class="mb-1"><strong>To:</strong> @selectedWalkerInfo.Name (@selectedWalkerInfo.Phone)</p>
+                                            <p id="whatsappAppPreviewTour" class="mb-1"><strong>Tour:</strong> @selectedWalkerInfo.TourName on @selectedWalkerInfo.TourDate</p>
+                                            <div id="whatsappAppPreviewMessage" class="mb-0">
+                                                <strong>Message:</strong>
+                                                @if (string.IsNullOrEmpty(whatsAppAppMessage))
+                                                {
+                                                    <span class="text-muted">No message entered</span>
+                                                }
+                                                else
+                                                {
+                                                    <div id="whatsappAppPreviewMessageContent" class="mt-2 p-2 border rounded" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9em;">
+                                                        @whatsAppAppMessage
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- WhatsApp Web Tab -->
+                        <div class="tab-pane fade" id="whatsapp-web" role="tabpanel" aria-labelledby="whatsapp-web-tab">
+                            <div id="whatsAppWebMessageContainer" class="mb-3">
+                                <div class="accordion mb-2" id="whatsAppWebDialogAccordion">
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="whatsAppWebTemplateEditsHeader">
+                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#whatsAppWebTemplateEditsCollapse" aria-expanded="false" aria-controls="whatsAppWebTemplateEditsCollapse">
+                                                Template Edits
+                                            </button>
+                                        </h2>
+                                        <div id="whatsAppWebTemplateEditsCollapse" class="accordion-collapse collapse" aria-labelledby="whatsAppWebTemplateEditsHeader" data-bs-parent="#whatsAppWebDialogAccordion">
+                                            <div class="accordion-body p-2">
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{monthOfTour}"))" title="Month of tour"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{displayDayOrdinal}"))" title="Display day ordinal"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{vendorTourLink}"))" title="Vendor tour link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorTourLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{vendorReviewLink}"))" title="Vendor review link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{allToursLink}"))" title="All tours link placeholder"><i class="bi bi-link-45deg me-1"></i>{allToursLink}</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("whatsAppMessage", "{galleryLink}"))" title="Gallery link placeholder"><i class="bi bi-images me-1"></i>{galleryLink}</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Item 2: Select Message -->
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="whatsAppWebSelectMessageHeader">
+                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#whatsAppWebSelectMessageCollapse" aria-expanded="false" aria-controls="whatsAppWebSelectMessageCollapse">
+                                                Select Message...
+                                            </button>
+                                        </h2>
+                                        <div id="whatsAppWebSelectMessageCollapse" class="accordion-collapse collapse" aria-labelledby="whatsAppWebSelectMessageHeader" data-bs-parent="#whatsAppWebDialogAccordion">
+                                            <div class="accordion-body p-2">
+                                                 <select class="form-select" value="@GetSelectedMessageId(selectedWalkerInfo?.TourDate, selectedWalkerInfo?.TourName)" @onchange="OnWhatsAppDialogMessageChanged">
+                                                    <option value="" hidden></option>
+                                                    @if (InMemoryMessages != null)
+                                                    {
+                                                        foreach (var m in InMemoryMessages.OrderBy(x => x.Name))
+                                                        {
+                                                            <option value="@m.Id">@m.Name</option>
+                                                        }
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                @* 2026-02-07: Gallery Link Toggle for THANKYOU messages *@
+                                @if (isLoadingGalleryUrl)
+                                {
+                                    <div class="mt-2 text-muted small">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Checking for photo gallery...
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(currentGalleryUrl))
+                                {
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="includeGalleryLinkWeb" @bind="includeGalleryLink">
+                                        <label class="form-check-label" for="includeGalleryLinkWeb">
+                                            <i class="bi bi-camera me-1"></i>Include photo gallery link
+                                        </label>
+                                    </div>
+                                }
+                                <textarea id="whatsAppMessage" class="form-control" rows="6" @bind="whatsAppMessage" @oninput="OnWhatsAppMessageInput"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                                <div id="whatsAppWebMessageInfo" class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        This message will be sent via WhatsApp Web to @selectedWalkerInfo.Phone
+                                    </small>
+                                    <small class="@(whatsAppMessage.Length > 3500 ? "text-warning" : "text-muted")">
+                                        @whatsAppMessage.Length characters
+                                    </small>
+                                </div>
+                                @if (HasMissingAllToursLinkWarning(whatsAppMessage))
+                                {
+                                    <div class="alert alert-warning mt-2 mb-0">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        Message includes <code>[missing allToursLink]</code>. Update vendor all-tours link if needed before sending.
+                                    </div>
+                                }
+                            </div>
+                            
+                            <div class="accordion" id="whatsappWebPreviewAccordion">
+                                <div id="whatsappWebPreviewAccordionItem" class="accordion-item">
+                                    <h2 class="accordion-header" id="whatsappWebPreviewHeading">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#whatsappWebPreviewCollapse" aria-expanded="false" aria-controls="whatsappWebPreviewCollapse">
+                                            <i class="bi bi-lightbulb me-2"></i>WhatsApp Web Message Preview
+                                        </button>
+                                    </h2>
+                                    <div id="whatsappWebPreviewCollapse" class="accordion-collapse collapse" aria-labelledby="whatsappWebPreviewHeading" data-bs-parent="#whatsappWebPreviewAccordion">
+                                        <div id="whatsappWebPreviewBody" class="accordion-body">
+                                            <p class="mb-1"><strong>To:</strong> @selectedWalkerInfo.Name (@selectedWalkerInfo.Phone)</p>
+                                            <p class="mb-1"><strong>Tour:</strong> @selectedWalkerInfo.TourName on @selectedWalkerInfo.TourDate</p>
+                                            <p class="mb-0"><strong>Message:</strong> @(string.IsNullOrEmpty(whatsAppMessage) ? "No message entered" : whatsAppMessage)</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="whatsAppDialogFooter" class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseWhatsAppDialog">Cancel</button>
+                    
+                    @if (activeWhatsAppTabIndex == 0) // WhatsApp App tab
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyWhatsAppMessage" disabled="@string.IsNullOrEmpty(whatsAppAppMessage)" title="Copy WhatsApp message to clipboard">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                        <a class="btn btn-success @(string.IsNullOrEmpty(selectedWalkerInfo?.Phone) ? "disabled" : "")" 
+                           href="@whatsAppAppUrl" target="_blank" @onclick="OpenWhatsAppApp" title="Open WhatsApp app">
+                            <i class="bi bi-phone me-1"></i>
+                            Open WhatsApp App
+                        </a>
+                    }
+                    else if (activeWhatsAppTabIndex == 1) // WhatsApp Web tab
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyWhatsAppMessage" disabled="@string.IsNullOrEmpty(whatsAppMessage)" title="Copy WhatsApp message to clipboard">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                        <a class="btn btn-primary @(string.IsNullOrEmpty(selectedWalkerInfo?.Phone) ? "disabled" : "")" 
+                           href="@whatsAppWebUrl" target="_blank" @onclick="SendWhatsAppMessage" title="Send via WhatsApp Web">
+                            <i class="bi bi-globe me-1"></i>
+                            Send via Web
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="whatsAppDialogBackdrop" class="modal-backdrop fade show"></div>
+}
+
+@*
+<!-- Text/SMS/Edit dialogs to be migrated -->
+*@
+
+<!-- SMS Test Dialog (temporary to validate rendering) -->
+@if (showSmsTestDialog)
+{
+    <div id="smsTestDialogModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div id="smsTestDialogModalDialog" class="modal-dialog modal-sm">
+            <div id="smsTestDialogModalContent" class="modal-content">
+                <div id="smsTestDialogHeader" class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-chat-dots me-2"></i> SMS Test</h5>
+                    <button type="button" class="btn-close" @onclick="CloseSmsTestDialog"></button>
+                </div>
+                <div id="smsTestDialogBody" class="modal-body">
+                    <p class="mb-0">SMS dialog rendering OK.</p>
+                </div>
+                <div id="smsTestDialogFooter" class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" @onclick="CloseSmsTestDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Message Management Dialog -->
+@if (showMessageManagementDialog)
+{
+    <div id="messageManagementDialogModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div id="messageManagementDialogModalDialog" class="modal-dialog modal-xl">
+            <div id="messageManagementDialogModalContent" class="modal-content">
+                <div id="messageManagementDialogHeader" class="modal-header d-flex justify-content-between align-items-center">
+                    <h5 class="modal-title mb-0">
+                        <i class="bi bi-chat-text me-2"></i>
+                        Message Management
+                    </h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm"
+                                title="Messaging help"
+                                @onclick="OpenMessageHelp">
+                            <i class="bi bi-info-circle me-1"></i>Help
+                        </button>
+                        <button type="button" class="btn-close" @onclick="CloseMessageManagementDialog"></button>
+                    </div>
+                </div>
+                <div id="messageManagementDialogBody" class="modal-body">
+                    <div id="messageManagementDialogContentRow" class="row g-4">
+                        <div id="messageManagementDialogLeftColumn" class="col-lg-6 col-md-12">
+                            <div id="messageManagementDialogAddCard" class="card h-100">
+                                <div id="messageManagementDialogAddCardHeader" class="card-header">
+                                    <h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add New Message Template</h6>
+                                </div>
+                                <div id="messageManagementDialogAddCardBody" class="card-body">
+                                    @if (!string.IsNullOrWhiteSpace(lastMessageError))
+                                    {
+                                        <div id="messageManagementDialogErrorAlert" class="alert alert-warning" role="alert">
+                                            <strong>Message save failed:</strong> @lastMessageError
+                                        </div>
+                                    }
+                                    <div id="messageManagementDialogNameField" class="mb-3">
+                                        <label class="form-label">Message Name:</label>
+                                        <input type="text" class="form-control" @bind="newMessageName" placeholder="Enter message name (e.g., Welcome, Reminder)" />
+                                    </div>
+                                    <div id="messageManagementDialogTypeField" class="mb-3">
+                                        <label class="form-label d-flex align-items-center gap-2 mb-2">
+                                            <span>Message Type:</span>
+                                            <button type="button"
+                                                    class="btn btn-outline-secondary btn-sm"
+                                                    title="Messaging help"
+                                                    @onclick="OpenMessageHelp">
+                                                <i class="bi bi-info-circle me-1"></i>Help
+                                            </button>
+                                        </label>
+                                        <select class="form-select" @bind="newMessageType">
+                                            <option value="">Select type...</option>
+                                            <option value="welcome">Welcome Message</option>
+                                            <option value="tomorrow">Tomorrow</option>
+                                            <option value="dayOf">Day of</option>
+                                            <option value="basedOnDate">Based on date</option>
+                                            <option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                    <div id="messageManagementDialogTourField" class="mb-3">
+                                        <label class="form-label">Tour (for template context):</label>
+                                        <div id="messageManagementDialogTourRow" class="row g-2">
+                                            <div id="messageManagementDialogTourSelectColumn" class="col-md-12">
+                                                <select class="form-select"
+                                                        value="@(newMessageTourId?.ToString() ?? (string.Equals(newMessageTourName, "All", StringComparison.OrdinalIgnoreCase) ? "ALL" : string.Empty))"
+                                                        @onchange="@(e => { var val = e.Value?.ToString(); if (string.Equals(val, "ALL", StringComparison.OrdinalIgnoreCase)) { newMessageTourId = null; newMessageTourName = "All"; newMessageTourStartTime = null; messageTimeOptions = new List<string>(); } else { newMessageTourId = int.TryParse(val, out var id) ? id : null; OnMessageTourChanged(); } })">
+                                                    <option value="">-- select tour --</option>
+                                                    <option value="ALL">All tours</option>
+                                                    @foreach (var tour in distinctToursForContext)
+                                                    {
+                                                        <option value="@tour.Id">@FormatTourLabel(tour)</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="messageManagementDialogGuideTimeRow" class="row g-2">
+                                        <div id="messageManagementDialogGuideColumn" class="col-md-6">
+                                            <label class="form-label">Guide (optional):</label>
+                                            <select class="form-select" @bind="newMessageGuideId">
+                                                <option value="">-- none --</option>
+                                                @foreach (var g in availableDbGuides)
+                                                {
+                                                    <option value="@g.Id">@g.FirstName @g.LastName</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div id="messageManagementDialogTimeColumn" class="col-md-6">
+                                            <label class="form-label">Tour Start Time:</label>
+                                            <select class="form-select"
+                                                    value="@newMessageTourStartTime"
+                                                    @onchange="OnMessageTourTimeChanged">
+                                                @if (string.Equals(newMessageTourName, "All", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    <option value="">(not required for All)</option>
+                                                }
+                                                else if (messageTimeOptions.Count == 0)
+                                                {
+                                                    <option value="" disabled>No times available</option>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var time in messageTimeOptions)
+                                                    {
+                                                        <option value="@time">@time</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div id="messageManagementDialogSignatureRow" class="row g-2 mt-2">
+                                        <div id="messageManagementDialogSignatureColumn" class="col-md-8">
+                                            <label class="form-label">Signature:</label>
+                                            <input type="text" class="form-control" @bind="newMessageSignature" placeholder="e.g., - CityShuffles Team" />
+                                        </div>
+                                        <div id="messageManagementDialogActiveColumn" class="col-md-4 d-flex align-items-end">
+                                            <div id="messageManagementDialogActiveSwitch" class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="msgIsActive" @bind="newMessageIsActive" />
+                                                <label class="form-check-label" for="msgIsActive">Active</label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="messageManagementDialogContentField" class="mb-3 mt-2">
+                                        <div id="messageManagementDialogContentHeader" class="d-flex justify-content-between align-items-center">
+                                            <label class="form-label mb-0">Message Content</label>
+                                            <div id="messageManagementDialogContentTabs" class="btn-group btn-group-sm" role="group">
+                                                <button type="button" class="btn btn-outline-secondary @(messageEditorTab=="edit"?"active":null)" @onclick="SetMessageEditorTabToEdit">Edit</button>
+                                                <button type="button" class="btn btn-outline-secondary @(messageEditorTab=="preview"?"active":null)" @onclick="SetMessageEditorTabToPreview">Preview</button>
+                                            </div>
+                                        </div>
+                                        <div id="messageManagementDialogTemplateButtonsContainer" class="mb-2">
+                                            <div id="messageManagementDialogTemplateButtons" class="d-flex flex-wrap gap-1 mb-2">
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal (e.g., December 9th)"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{monthOfTour}"))" title="Month of tour (e.g., December)"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDayOrdinal}"))" title="Display day ordinal (e.g., 9th)"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorTourLink}"))" title="Vendor tour link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorTourLink}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorReviewLink}"))" title="Vendor review link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{allToursLink}"))" title="All tours link placeholder"><i class="bi bi-link-45deg me-1"></i>{allToursLink}</button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{galleryLink}"))" title="Gallery link placeholder"><i class="bi bi-images me-1"></i>{galleryLink}</button>
+                                            </div>
+                                        </div>
+
+                                        @if (messageEditorTab == "edit")
+                                        {
+                                            <textarea class="form-control" rows="8" @bind="newMessageContent" id="newMessageContent" placeholder="Enter message content..."></textarea>
+                                        }
+                                        else
+                                        {
+                                            <div id="messageManagementDialogPreviewContent" class="form-control" style="height: auto; min-height: 12rem; white-space: pre-wrap;">
+                                                @RenderMessagePreview()
+                                            </div>
+                                        }
+                                    </div>
+
+                                    <div id="messageManagementDialogDescriptionRow" class="row g-2">
+                                        <div id="messageManagementDialogDescriptionColumn" class="col-md-12">
+                                            <label class="form-label">Description (optional):</label>
+                                            <input type="text" class="form-control" @bind="newMessageDescription" placeholder="Internal description" />
+                                        </div>
+                                    </div>
+
+                                    <div id="messageManagementDialogActions" class="d-flex gap-2 mt-3">
+                                        <button class="btn btn-success btn-sm" @onclick="AddMessageTemplate" disabled="@string.IsNullOrEmpty(newMessageName)">
+                                            <i class="bi bi-check2-circle me-1"></i>
+                                            @(editingMessageId.HasValue ? "Save Message" : "Add Message")
+                                        </button>
+                                        @if (editingMessageId.HasValue)
+                                        {
+                                            <button class="btn btn-secondary btn-sm" @onclick="CancelMessageEdit">
+                                                <i class="bi bi-x-circle me-1"></i>
+                                                Cancel Edit
+                                            </button>
+                                        }
+                                        <button class="btn btn-warning btn-sm" @onclick="ClearMessageForm">
+                                            <i class="bi bi-eraser me-1"></i>
+                                            Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="messageManagementDialogRightColumn" class="col-lg-6 col-md-12">
+                            <div id="messageManagementDialogListCard" class="card h-100">
+                                <div id="messageManagementDialogListCardHeader" class="card-header">
+                                    <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Message Templates (@InMemoryMessages.Count)</h6>
+                                </div>
+                                <div id="messageManagementDialogListCardBody" class="card-body">
+                                    @if (InMemoryMessages != null && InMemoryMessages.Any())
+                                    {
+                                        <div id="messageManagementDialogMessageList" class="list-group list-group-flush">
+                                            @foreach (var message in InMemoryMessages)
+                                            {
+                                                <div class="list-group-item d-flex justify-content-between align-items-start border-0 px-0" style="cursor:pointer;" @onclick="@(() => LoadMessageByInMemoryId(message.Id))">
+                                                    <div class="flex-grow-1">
+                                                        <strong>@message.Name</strong>
+                                                        <span class="badge bg-secondary ms-2">@message.Type</span><br/>
+                                                        <small class="text-muted">
+                                                            @if (!string.IsNullOrEmpty(message.Description))
+                                                            {
+                                                                @message.Description<br/>
+                                                            }
+                                                            <div class="mt-2" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--bs-border-color); border-radius: 4px; padding: 8px; background-color: var(--bs-secondary-bg);">
+                                                                <pre style="margin: 0; white-space: pre-wrap; font-size: 0.875rem; color: var(--bs-secondary-color);">@message.Content</pre>
+                                                            </div>
+                                                        </small>
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-primary btn-sm" @onclick="@(() => EditDbMessageTemplate(dbMessages.First(m => m.MessageName == message.Name)))" title="Edit message">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </button>
+                                                        <button class="btn btn-outline-danger btn-sm" @onclick="@(() => RemoveDbMessageTemplate(dbMessages.First(m => m.MessageName == message.Name)))" title="Remove message">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div id="messageManagementDialogClearAllContainer" class="mt-3">
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="ClearAllMessages">
+                                                <i class="bi bi-trash me-1"></i>
+                                                Clear All Messages
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div id="messageManagementDialogEmptyState" class="alert alert-info mb-0">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            No messages added yet. Add your first message using the form on the left.
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="messageManagementDialogFooter" class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseMessageManagementDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="messageManagementDialogBackdrop" class="modal-backdrop fade show"></div>
+}
+
+<!-- Message Walkers Dialog -->
+@if (showMessageWalkersDialog)
+{
+    <div id="messageWalkersDialogModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div id="messageWalkersDialogModalDialog" class="modal-dialog modal-xl">
+            <div id="messageWalkersDialogModalContent" class="modal-content">
+                <div id="messageWalkersDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people-fill me-2 text-warning"></i>
+                        Message Walkers
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseMessageWalkersDialog"></button>
+                </div>
+                <div id="messageWalkersDialogBody" class="modal-body">
+                    <div id="messageWalkersDialogRow" class="row g-4">
+                        <div id="messageWalkersDialogLeftColumn" class="col-lg-8 col-md-12">
+                            <div class="card h-100">
+                                <div class="card-header py-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <label class="form-label mb-0">Date:</label>
+                                        <input type="date" class="form-control form-control-sm" style="max-width: 180px;"
+                                               value="@messageWalkersDate.ToString("yyyy-MM-dd")"
+                                               @onchange="OnMessageWalkersDateChanged" />
+                                        <label class="form-label mb-0 ms-2">Tour:</label>
+                                        <select class="form-select form-select-sm"
+                                                value="@(messageWalkersAllToursSelected ? "ALL" : (messageWalkersSelectedTour?.Label ?? string.Empty))"
+                                                @onchange="OnMessageWalkersTourChanged">
+                                            @if (messageWalkersAvailableTours.Count == 0)
+                                            {
+                                                <option value="">-- no tours for date --</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="ALL">All tours</option>
+                                                @foreach (var t in messageWalkersAvailableTours)
+                                                {
+                                                    <option value="@t.Label">@t.Label</option>
+                                                }
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body" style="max-height: 50vh; overflow-y: auto;">
+                                    @if (!messageWalkersAllToursSelected && messageWalkersSelectedTour == null)
+                                    {
+                                        <div class="alert alert-info mb-0">
+                                            <i class="bi bi-info-circle me-2"></i>Select a date and tour to load walkers.
+                                        </div>
+                                    }
+                                    else if (messageWalkersWalkers.Count == 0)
+                                    {
+                                        <div class="alert alert-warning mb-0">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>No confirmed walkers with phone numbers for this tour.
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="list-group list-group-flush">
+                                            @foreach (var w in messageWalkersWalkers)
+                                            {
+                                                <div class="list-group-item d-flex align-items-center gap-2 @(ReferenceEquals(messageWalkersActiveWalker, w) ? "active" : "")"
+                                                     @onclick="@(() => SetActiveWalkerForPreview(w))"
+                                                     style="cursor: pointer;">
+                                                    <input type="checkbox" class="form-check-input" @bind="w.Selected" @onclick:stopPropagation="true" />
+                                                    <span class="flex-grow-1">@GetWalkerDisplayName(w)</span>
+                                                    <small class="text-muted">@w.Phone</small>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="card-footer d-flex justify-content-between">
+                                    <small class="text-muted">Selected: @messageWalkersWalkers.Count(x => x.Selected) / @messageWalkersWalkers.Count</small>
+                                    <small class="text-muted">Tour: @(messageWalkersAllToursSelected ? "All" : (messageWalkersSelectedTour?.Label ?? "—"))</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="messageWalkersDialogRightColumn" class="col-lg-4 col-md-12">
+                            <div class="card h-100">
+                                <div class="card-header py-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <label class="form-label mb-0">Message Template:</label>
+                                        <select class="form-select form-select-sm"
+                                                value="@(messageWalkersSelectedMessageId ?? string.Empty)"
+                                                @onchange="OnMessageWalkersTemplateChanged">
+                                            <option value="">-- select message --</option>
+                                            @foreach (var m in InMemoryMessages.OrderBy(x => x.Name))
+                                            {
+                                                <option value="@m.Id">@m.Name</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <label class="form-label">Message Body</label>
+                                    <div class="mb-2">
+                                        <div class="d-flex flex-wrap gap-1 mb-2">
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{walker}"))" title="Walker name">
+                                                <i class="bi bi-person me-1"></i>{walker}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{walkerFirst}"))" title="Walker first name">
+                                                <i class="bi bi-person me-1"></i>{walkerFirst}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{walkerLast}"))" title="Walker last name">
+                                                <i class="bi bi-person me-1"></i>{walkerLast}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{phone}"))" title="Contact phone">
+                                                <i class="bi bi-telephone me-1"></i>{phone}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tour}"))" title="Tour name">
+                                                <i class="bi bi-map me-1"></i>{tour}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{date}"))" title="Tour date">
+                                                <i class="bi bi-calendar me-1"></i>{date}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tourDayOfWeek}"))" title="Tour day of week">
+                                                <i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal (e.g., December 9th)">
+                                                <i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{monthOfTour}"))" title="Month of tour (e.g., December)">
+                                                <i class="bi bi-calendar3 me-1"></i>{monthOfTour}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{displayDate}"))" title="Display date (raw)">
+                                                <i class="bi bi-calendar-date me-1"></i>{displayDate}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{displayDayOrdinal}"))" title="Display day ordinal (e.g., 9th)">
+                                                <i class="bi bi-123 me-1"></i>{displayDayOrdinal}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{displayTime}"))" title="Display time (raw)">
+                                                <i class="bi bi-clock-history me-1"></i>{displayTime}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{guide}"))" title="Guide full name">
+                                                <i class="bi bi-person-badge me-1"></i>{guide}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{guideFirstName}"))" title="Guide first name">
+                                                <i class="bi bi-person me-1"></i>{guideFirstName}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{guideLastName}"))" title="Guide last name">
+                                                <i class="bi bi-person me-1"></i>{guideLastName}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{guidePhone}"))" title="Guide phone">
+                                                <i class="bi bi-telephone-plus me-1"></i>{guidePhone}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{guideEmail}"))" title="Guide email">
+                                                <i class="bi bi-envelope me-1"></i>{guideEmail}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tourStartTime}"))" title="Tour start time">
+                                                <i class="bi bi-clock me-1"></i>{tourStartTime}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{meetingLocation}"))" title="Meeting location">
+                                                <i class="bi bi-geo-alt me-1"></i>{meetingLocation}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{meetingTime}"))" title="Meeting time">
+                                                <i class="bi bi-clock-history me-1"></i>{meetingTime}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)">
+                                                <i class="bi bi-clock-history me-1"></i>start -10
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{startMinus10}"))" title="Alias of {tempMeetingTime}">
+                                                <i class="bi bi-clock-history me-1"></i>{startMinus10}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{tempSignature}"))" title="Temp signature link (vendor-based)">
+                                                <i class="bi bi-link-45deg me-1"></i>{tempSignature}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{meetingInstructions}"))" title="Meeting instructions">
+                                                <i class="bi bi-signpost me-1"></i>{meetingInstructions}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{vendorName}"))" title="Vendor name">
+                                                <i class="bi bi-building me-1"></i>{vendorName}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{vendorTourLink}"))" title="Vendor tour link placeholder">
+                                                <i class="bi bi-link-45deg me-1"></i>{vendorTourLink}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{vendorReviewLink}"))" title="Vendor review link placeholder">
+                                                <i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{allToursLink}"))" title="All tours link placeholder">
+                                                <i class="bi bi-link-45deg me-1"></i>{allToursLink}
+                                            </button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("messageWalkersMessageBody", "{galleryLink}"))" title="Gallery link placeholder">
+                                                <i class="bi bi-images me-1"></i>{galleryLink}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <textarea class="form-control" rows="12"
+                                              id="messageWalkersMessageBody"
+                                              @bind="messageWalkersMessageBody"
+                                              placeholder="Select a template or type a custom message..."></textarea>
+                                    <div class="d-flex justify-content-end mt-1">
+                                        <small class="@(messageWalkersMessageBody?.Length > 120 ? "text-warning" : "text-muted")">
+                                            @(messageWalkersMessageBody?.Length ?? 0) characters
+                                        </small>
+                                    </div>
+                                    <div class="mt-2">
+                                        @if (!string.IsNullOrWhiteSpace(messageWalkersMessageBody) && messageWalkersActiveWalker != null)
+                                        {
+                                            <div class="alert alert-info mb-0">
+                                                <div class="small text-muted">Preview for: @messageWalkersActiveWalker.Name</div>
+                                                <div style="white-space: pre-wrap;">@RenderMessageWalkersPreview()</div>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="alert alert-secondary mb-0">
+                                                <div class="small">Select a walker on the left to preview personalized text.</div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="messageWalkersDialogFooter" class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseMessageWalkersDialog">Close</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyMessageWalkersBody" disabled="@string.IsNullOrWhiteSpace(messageWalkersMessageBody)" title="Copy message to clipboard">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm"
+                            @onclick="@(() => ShowServiceNotImplemented("SMS via ClickSend"))"
+                            disabled="@(messageWalkersWalkers.Count(x => x.Selected) == 0 || string.IsNullOrWhiteSpace(messageWalkersMessageBody))"
+                            title="Send SMS via ClickSend (not implemented yet)">
+                        <i class="bi bi-chat-dots"></i>
+                    </button>
+                    <button type="button" class="btn btn-success btn-sm ms-1"
+                            @onclick="@(() => ShowServiceNotImplemented("WhatsApp bulk messaging"))"
+                            disabled="@(messageWalkersWalkers.Count(x => x.Selected) == 0 || string.IsNullOrWhiteSpace(messageWalkersMessageBody))"
+                            title="Send via WhatsApp (not implemented yet)">
+                        <i class="bi bi-whatsapp"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+<!-- Bulk SMS Dialog -->
+@if (showBulkSmsDialog)
+{
+    <div id="bulkSmsDialogModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div id="bulkSmsDialogModalDialog" class="modal-dialog modal-lg">
+            <div id="bulkSmsDialogModalContent" class="modal-content">
+                <div id="bulkSmsDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-whatsapp me-2 text-success"></i>
+                        Bulk WhatsApp to Guide
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseBulkSmsDialog"></button>
+                </div>
+                <div id="bulkSmsDialogBody" class="modal-body">
+                    <div id="bulkSmsDialogInfoRow" class="row gy-3">
+                        <div id="bulkSmsDialogTourInfoColumn" class="col-md-6">
+                            <h6>Tour Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Tour:</strong></td>
+                                    <td>@(selectedBulkSmsTourNode?.Label ?? "Unknown")</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Walkers:</strong></td>
+                                    <td>@bulkSmsWalkerList.Count walkers</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div id="bulkSmsDialogGuideInfoColumn" class="col-md-6">
+                            <label class="form-label">Guide Name / Lookup</label>
+                            <input type="text"
+                                   class="form-control"
+                                   value="@bulkSmsGuideName"
+                                   list="bulkSmsGuideLookup"
+                                   placeholder="Type or pick a guide"
+                                   @oninput="OnBulkSmsGuideNameInput" />
+                            <datalist id="bulkSmsGuideLookup">
+                                @if (DbGuides != null && DbGuides.Count > 0)
+                                {
+                                    foreach (var g in DbGuides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                                    {
+                                        var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : ($"{g.FirstName} {g.LastName}");
+                                        <option value="@label"></option>
+                                    }
+                                }
+                            </datalist>
+                            <div class="mt-2">
+                                <label class="form-label">Guide WhatsApp Number:</label>
+                                <input type="tel" class="form-control" @bind="bulkSmsPhone" placeholder="Enter guide phone number" />
+                                <small class="text-muted">Used to open WhatsApp with the walker list</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <ul class="nav nav-tabs mt-3" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 0 ? "active" : null)" id="bulk-sms-app-tab" type="button" role="tab" aria-controls="bulk-sms-app" aria-selected="@(bulkSmsActiveTabIndex == 0)" @onclick="() => SetBulkSmsActiveTab(0)">
+                                <i class="bi bi-phone me-1"></i>WhatsApp App
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 1 ? "active" : null)" id="bulk-sms-web-tab" type="button" role="tab" aria-controls="bulk-sms-web" aria-selected="@(bulkSmsActiveTabIndex == 1)" @onclick="() => SetBulkSmsActiveTab(1)">
+                                <i class="bi bi-globe me-1"></i>WhatsApp Web
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(bulkSmsActiveTabIndex == 2 ? "active" : null)" id="bulk-sms-copy-tab" type="button" role="tab" aria-controls="bulk-sms-copy" aria-selected="@(bulkSmsActiveTabIndex == 2)" @onclick="() => SetBulkSmsActiveTab(2)">
+                                <i class="bi bi-clipboard-check me-1"></i>Copy
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content mt-3" id="bulkSmsTabContent">
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 0 ? "show active" : null)" id="bulk-sms-app" role="tabpanel" aria-labelledby="bulk-sms-app-tab">
+                            <div id="bulkSmsAppMessageContainer" class="mb-3">
+                                <label class="form-label">WhatsApp Message (walker list will be appended):</label>
+                                <textarea class="form-control" rows="12" @bind="bulkSmsAppMessage" @oninput="OnBulkSmsAppMessageInput"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                                <div id="bulkSmsAppMessageInfo" class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        Will open WhatsApp for @bulkSmsPhone with walker list below
+                                    </small>
+                                    <small class="@(bulkSmsAppMessage.Length > 3500 ? "text-warning" : "text-muted")">
+                                        @bulkSmsAppMessage.Length characters
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 1 ? "show active" : null)" id="bulk-sms-web" role="tabpanel" aria-labelledby="bulk-sms-web-tab">
+                            <div id="bulkSmsApiMessageContainer" class="mb-3">
+                                <label class="form-label">WhatsApp Web Message (walker list appended):</label>
+                                <textarea class="form-control" rows="12" @bind="bulkSmsMessage" @oninput="OnBulkSmsMessageInput"
+                                          placeholder="Enter your WhatsApp message here..."></textarea>
+                                <div id="bulkSmsApiMessageInfo" class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        Opens in the browser with walker list below
+                                    </small>
+                                    <small class="@(bulkSmsMessage.Length > 3500 ? "text-warning" : "text-muted")">
+                                        @bulkSmsMessage.Length characters
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade @(bulkSmsActiveTabIndex == 2 ? "show active" : null)" id="bulk-sms-copy" role="tabpanel" aria-labelledby="bulk-sms-copy-tab">
+                            <div class="mb-3">
+                                <label class="form-label">Walker List (copyable)</label>
+                                <textarea class="form-control" rows="12" readonly>@bulkSmsCopyText</textarea>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">Includes walkers even when phones are missing.</small>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyBulkSmsTextAsync" disabled="@string.IsNullOrWhiteSpace(bulkSmsCopyText)">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="bulkSmsDialogFooter" class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseBulkSmsDialog">Cancel</button>
+                    @if (bulkSmsActiveTabIndex == 0)
+                    {
+                        <a class="btn btn-success @(string.IsNullOrWhiteSpace(bulkSmsPhone) ? "disabled" : "")" 
+                           href="@bulkSmsAppUrl" target="_blank" @onclick="CloseBulkSmsDialog" title="Open WhatsApp app">
+                            <i class="bi bi-whatsapp me-1"></i>
+                            Open WhatsApp App
+                        </a>
+                    }
+                    else if (bulkSmsActiveTabIndex == 1)
+                    {
+                        <a class="btn btn-primary @(string.IsNullOrWhiteSpace(bulkSmsPhone) ? "disabled" : "")" 
+                           href="@bulkSmsWebUrl" target="_blank" @onclick="CloseBulkSmsDialog" title="Send via WhatsApp Web">
+                            <i class="bi bi-globe me-1"></i>
+                            Send via WhatsApp Web
+                        </a>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-success" disabled title="Select WhatsApp App/Web to send">
+                            <i class="bi bi-whatsapp me-1"></i>
+                            Open WhatsApp
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+<!-- SMS Dialog -->
+@if (showSmsDialog)
+{
+    <div id="smsDialogModal" class="modal fade show" style="display: block;" tabindex="-1">
+        <div id="smsDialogModalDialog" class="modal-dialog modal-lg">
+            <div id="smsDialogModalContent" class="modal-content">
+                <div id="smsDialogHeader" class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-chat-dots me-2 text-primary"></i>
+                        Send SMS Message
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseSmsDialog"></button>
+                </div>
+                <div id="smsDialogBody" class="modal-body">
+                    <div id="smsDialogWalkerInfoContainer" class="mb-4">
+                        <h6>Walker Information</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td style="width: 150px;"><strong>Name:</strong></td>
+                                <td>@selectedSmsWalkerInfo.Name</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Phone:</strong></td>
+                                <td>
+                                    <a href="tel:@selectedSmsWalkerInfo.Phone" class="text-decoration-none">@selectedSmsWalkerInfo.Phone</a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Attendees:</strong></td>
+                                <td>@selectedSmsWalkerInfo.Attendees</td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <div id="smsDialogMessageContainer" class="mb-4">
+                        <div class="accordion mb-2" id="smsDialogAccordion">
+                            <!-- Item 1: Template Edits -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="smsTemplateEditsHeader">
+                                    <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#smsTemplateEditsCollapse" aria-expanded="false" aria-controls="smsTemplateEditsCollapse">
+                                        Template Edits
+                                    </button>
+                                </h2>
+                                <div id="smsTemplateEditsCollapse" class="accordion-collapse collapse" aria-labelledby="smsTemplateEditsHeader" data-bs-parent="#smsDialogAccordion">
+                                    <div class="accordion-body p-2">
+                                        <div class="d-flex flex-wrap gap-1">
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{monthOfTour}"))" title="Month of tour"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{displayDayOrdinal}"))" title="Display day ordinal"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{vendorTourLink}"))" title="Vendor tour link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorTourLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{vendorReviewLink}"))" title="Vendor review link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{allToursLink}"))" title="All tours link placeholder"><i class="bi bi-link-45deg me-1"></i>{allToursLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("smsMessage", "{galleryLink}"))" title="Gallery link placeholder"><i class="bi bi-images me-1"></i>{galleryLink}</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Item 2: Select Message -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="smsSelectMessageHeader">
+                                    <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#smsSelectMessageCollapse" aria-expanded="false" aria-controls="smsSelectMessageCollapse">
+                                        Select Message...
+                                    </button>
+                                </h2>
+                                <div id="smsSelectMessageCollapse" class="accordion-collapse collapse" aria-labelledby="smsSelectMessageHeader" data-bs-parent="#smsDialogAccordion">
+                                    <div class="accordion-body p-2">
+                                         <select class="form-select" value="@GetSelectedMessageId(selectedSmsWalkerInfo?.TourDate, selectedSmsWalkerInfo?.TourName)" @onchange="OnSmsDialogMessageChanged">
+                                            <option value="" hidden></option>
+                                            @if (InMemoryMessages != null)
+                                            {
+                                                foreach (var m in InMemoryMessages.OrderBy(x => x.Name))
+                                                {
+                                                    <option value="@m.Id">@m.Name</option>
+                                                }
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @* 2026-03-06: Gallery link is available whenever a vendor/default gallery exists for this tour. *@
+                        @if (isLoadingGalleryUrl || !string.IsNullOrEmpty(currentGalleryUrl))
+                        {
+                            <div class="mt-2 border p-2 rounded">
+                                <small class="d-block text-muted mb-1">Gallery Link</small>
+                                @if (isLoadingGalleryUrl)
+                                {
+                                    <div class="text-muted small">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        Checking for photo gallery...
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(currentGalleryUrl))
+                                {
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="includeGalleryLinkSMS" @bind="includeGalleryLink">
+                                        <label class="form-check-label" for="includeGalleryLinkSMS">
+                                            <i class="bi bi-camera me-1"></i> Include photo gallery link
+                                            <br/>
+                                            <small class="text-muted" style="font-size: 0.7em;">@currentGalleryUrl</small>
+                                        </label>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <textarea class="form-control" rows="8" @bind="smsMessage" @oninput="OnSmsMessageInput"
+                              id="smsMessage"
+                                  placeholder="Enter your SMS message here..."></textarea>
+                        <div id="smsDialogMessageInfo" class="d-flex justify-content-between align-items-center mt-1">
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Compose your message; length is unrestricted.
+                            </small>
+                            <small class="text-muted">
+                                @smsMessage.Length characters
+                            </small>
+                        </div>
+                        @if (HasMissingAllToursLinkWarning(smsMessage))
+                        {
+                            <div class="alert alert-warning mt-2 mb-0">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Message includes <code>[missing allToursLink]</code>. Update vendor all-tours link if needed before sending.
+                            </div>
+                        }
+                    </div>
+                
+                    <div class="accordion mt-3" id="smsDialogPreviewAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="smsDialogPreviewHeading">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#smsDialogPreviewCollapse" aria-expanded="false" aria-controls="smsDialogPreviewCollapse">
+                                    <i class="bi bi-lightbulb me-2"></i>Message Preview
+                                </button>
+                            </h2>
+                            <div id="smsDialogPreviewCollapse" class="accordion-collapse collapse" aria-labelledby="smsDialogPreviewHeading" data-bs-parent="#smsDialogPreviewAccordion">
+                                <div class="accordion-body">
+                                    <div class="mb-0" style="white-space: pre-wrap;">@((string.IsNullOrEmpty(smsMessage) ? "No message entered" : smsMessage))</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="smsDialogFooter" class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseSmsDialog">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopySmsMessage" disabled="@string.IsNullOrEmpty(smsMessage)" title="Copy SMS message to clipboard">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <a class="btn btn-primary @(string.IsNullOrEmpty(selectedSmsWalkerInfo?.Phone) ? "disabled" : "")" 
+                       href="@smsAppUrl" target="_blank" @onclick="OpenSmsAppAndTrackAsync">
+                        <i class="bi bi-chat-dots me-1"></i>
+                        Open SMS App
+                    </a>
+                    @* Textbelt/API send button is commented out until service is present in Email *@
+                    @* <button type="button" class="btn btn-primary" @onclick="SendSmsMessage" disabled="@(string.IsNullOrEmpty(smsMessage))">Send via API</button> *@
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="smsDialogBackdrop" class="modal-backdrop fade show"></div>
+}
+
+@* CSS block copied verbatim from CityShufflesWorkStation\Components\TourTreeDisplay.razor lines 3311-3436 *@
+<style>
+    .tour-tree-container {
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    
+    /* Make the card fill available height and the body host the scroll */
+    #tourTreeMainContainer,
+    #tourTreeMainRow,
+    #tourTreeMainColumn,
+    #tourTreeCard {
+        height: 100%;
+    }
+    #tourTreeCard {
+        display: flex;
+        flex-direction: column;
+    }
+    #tourTreeCardBody {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* child .tour-tree-container will scroll */
+    }
+    #tourTreeCardBody > .tour-tree-container {
+        flex: 1 1 auto;
+    }
+    
+    .tour-date-header,
+    .tour-header,
+    .vendor-header {
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        transition: background-color 0.2s;
+    }
+    
+    /* Day-level button styling */
+    .tour-date-header .btn {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        transition: all 0.2s;
+    }
+    
+    .tour-date-header .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .tour-date-header .btn-outline-success:hover {
+        background-color: #28a745;
+        border-color: #28a745;
+        color: white;
+    }
+    
+    .tour-date-header .btn-outline-secondary:hover {
+        background-color: #6c757d;
+        border-color: #6c757d;
+        color: white;
+    }
+    
+    .tour-date-header:hover,
+    .tour-header:hover,
+    .vendor-header:hover {
+        background-color: rgba(0, 123, 255, 0.1);
+    }
+    
+    .tour-date-content,
+    .tour-content,
+    .vendor-content {
+        border-left: 2px solid #e9ecef;
+        margin-left: 1rem;
+        padding-left: 1rem;
+    }
+    
+    .walker-item {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .walker-item:hover {
+        background-color: rgba(0, 123, 255, 0.1) !important;
+    }
+    
+    /* Status-specific styling */
+    .walker-item.cancelled {
+        background-color: rgba(250, 128, 114, 0.15) !important; /* Salmon red background */
+        border-left: 3px solid #fa8072; /* Salmon red border */
+    }
+    
+    .walker-item.cancelled:hover {
+        background-color: rgba(250, 128, 114, 0.25) !important;
+    }
+    
+    .walker-item.cancelled .bi-x-circle-fill {
+        color: #fa8072; /* Salmon red icon */
+    }
+    
+    .walker-item.modified {
+        background-color: rgba(255, 165, 0, 0.15) !important; /* Light orange background */
+        border-left: 3px solid #ffa500; /* Light orange border */
+    }
+    
+    .walker-item.modified:hover {
+        background-color: rgba(255, 165, 0, 0.25) !important;
+    }
+    
+    .walker-item.modified .bi-pencil-square {
+        color: #ffa500; /* Light orange icon */
+    }
+    
+    .walker-item.confirmed {
+        background-color: rgba(40, 167, 69, 0.1) !important; /* Light green background */
+        border-left: 3px solid #28a745; /* Green border */
+    }
+    
+    .walker-item.confirmed:hover {
+        background-color: rgba(40, 167, 69, 0.2) !important;
+    }
+    
+    .walker-item.confirmed .bi-check-circle-fill {
+        color: #28a745; /* Green icon */
+    }
+    
+    .tour-date-group,
+    .tour-group,
+    .vendor-group {
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Enhanced loading styles */
+    .btn-lg {
+        min-width: 160px;
+    }
+    
+    .alert-warning {
+        border-left: 4px solid #ffc107;
+    }
+    
+    .progress {
+        background-color: #e9ecef;
+    }
+    
+    .progress-bar {
+        background-color: #007bff;
+    }
+    
+    /* 2025-11-24: Message Walkers dialog width reduced by ~25% on lg+ screens */
+    @@media (min-width: 992px) {
+        #messageWalkersDialogModalDialog {
+            max-width: 75vw; /* approx 25% narrower than full viewport width */
+        }
+    }
+</style>
+
+@* JavaScript helper copied verbatim from CityShufflesWorkStation\Components\TourTreeDisplay.razor lines 3438-3454 // window.downloadFile has been removed. Use shared downloadTextFile from download.js instead. *@
+   
+

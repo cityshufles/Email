@@ -1,0 +1,61 @@
+@* 2025-11-22 00:00 UTC - Syncfusion login dialog for Email *@
+@* 2025-11-29 00:00 UTC - Plain HTML form (no Syncfusion, no JS) to fix Safari/mobile focus *@
+<div class="auth-overlay">
+    <div class="auth-card">
+        <h5 class="mb-3">Sign in</h5>
+        <form method="post" action="/login" autocomplete="on">
+            <div class="mb-3">
+                <label class="form-label" for="username">Username</label>
+                <input id="username"
+                       name="username"
+                       class="form-control"
+                       type="text"
+                       placeholder="Enter username"
+                       autocapitalize="none"
+                       autocomplete="username"
+                       autocorrect="off"
+                       spellcheck="false"
+                       inputmode="text"
+                       autofocus />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="password">Password</label>
+                <input id="password"
+                       name="password"
+                       class="form-control"
+                       type="password"
+                       placeholder="Enter password"
+                       autocomplete="current-password" />
+            </div>
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary">Login</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@code { }
+
+<style>
+    .auth-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+    }
+
+    .auth-card {
+        width: 420px;
+        max-width: 90vw;
+        background: var(--bs-body-bg);
+        color: var(--bs-body-color);
+        border-radius: .5rem;
+        box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
+        padding: 1.25rem;
+    }
+</style>
+
+

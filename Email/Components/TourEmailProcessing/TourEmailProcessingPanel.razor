@@ -1,0 +1,162 @@
+@using Syncfusion.Blazor.Grids
+@using Email.Models
+@using Email.Services.GmailProcessing.Dtos
+@inherits Email.Components.TourEmailProcessing.TourEmailProcessingPanelBase
+
+@* Created: 2025-11-25 00:00 UTC *@
+<div class="card mb-2">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Grid mode">
+                <button class="btn btn-outline-secondary @( _mode == GridMode.Unprocessed ? "active" : null)" @onclick="() => SetMode(GridMode.Unprocessed)">Unprocessed</button>
+                <button class="btn btn-outline-secondary @( _mode == GridMode.Processed ? "active" : null)" @onclick="() => SetMode(GridMode.Processed)">Processed</button>
+                <button class="btn btn-outline-secondary @( _mode == GridMode.Problems ? "active" : null)" @onclick="() => SetMode(GridMode.Problems)">Problems</button>
+            </div>
+
+            <div class="input-group input-group-sm" style="width: 280px;">
+                <input type="text" class="form-control" placeholder="Search..." @bind="_searchTerm" />
+                <button class="btn btn-outline-primary" @onclick="SearchAsync" disabled="@_busy">
+                    <i class="bi bi-search"></i>
+                </button>
+                @if (!string.IsNullOrWhiteSpace(_searchTerm))
+                {
+                    <button class="btn btn-outline-secondary" @onclick="ClearSearchAsync" disabled="@_busy">
+                        <i class="bi bi-x"></i>
+                    </button>
+                }
+            </div>
+
+            <button class="btn btn-sm btn-outline-secondary" disabled="@_busy" @onclick="RefreshAsync">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+
+            <div class="ms-auto small text-muted">
+                <span>Rows: @_rowCount</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header  d-flex justify-content-between align-items-center">
+        <div>
+            <strong>
+                @(_mode == GridMode.Unprocessed
+                    ? "Unprocessed Emails"
+                    : (_mode == GridMode.Processed ? "Processed Emails" : "Problem Emails"))
+            </strong>
+        </div>
+        <div class="btn-group">
+            @if (_mode == GridMode.Unprocessed)
+            {
+                <button class="btn btn-sm" disabled="@(_busy || !_hasSelection)" @onclick="ProcessSelectedAsync">Process Selected</button>
+            }
+            else
+            {
+                <button class="btn btn-sm " disabled="@(_busy || !_hasSelection)" @onclick="ReprocessSelectedAsync">Reprocess Selected</button>
+            }
+        </div>
+    </div>
+    <div class="card-body p-0">
+        @if (_busy)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading data...</p>
+            </div>
+        }
+        else if (_mode == GridMode.Unprocessed && _unprocessed?.Count > 0)
+        {
+            <SfGrid @ref="_unprocessedGrid"
+                    DataSource="_unprocessed"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowSelection="true"
+                    CssClass="cs-grid"
+                    EnableVirtualization="true"
+                    SelectionType="SelectionType.Multiple"
+                    TValue="UnprocessedEmailDto"
+                    Height="600">
+                <GridSelectionSettings CheckboxOnly="true" PersistSelection="true" Type="SelectionType.Multiple" />
+                <GridPageSettings PageSize="20" PageSizes="true" />
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Excel" />
+                <GridEvents TValue="UnprocessedEmailDto" RowSelected="OnUnprocessedRowSelected" RowDeselected="OnUnprocessedRowDeselected" />
+                <GridColumns>
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.Id)" HeaderText="Select" Width="80" Type="ColumnType.CheckBox" AllowSorting="false" AllowFiltering="false" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.Subject)" HeaderText="Subject" Width="300" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.FromEmail)" HeaderText="From" Width="220" />
+                    <GridColumn Field="@nameof(UnprocessedEmailDto.ReceivedDate)" HeaderText="Received" Width="160" Format="yyyy-MM-dd HH:mm" Type="ColumnType.DateTime" TextAlign="TextAlign.Center" />
+                </GridColumns>
+            </SfGrid>
+        }
+        else if (_mode == GridMode.Processed && _processed?.Count > 0)
+        {
+            <SfGrid @ref="_processedGrid"
+                    DataSource="_processed"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowSelection="true"
+                    CssClass="cs-grid"
+                    EnableVirtualization="true"
+                    SelectionType="SelectionType.Multiple"
+                    TValue="ProcessedEmailDisplayTourEmailLibModel"
+                    Height="600">
+                <GridSelectionSettings CheckboxOnly="true" PersistSelection="true" Type="SelectionType.Multiple" />
+                <GridPageSettings PageSize="20" PageSizes="true" />
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Excel" />
+                <GridEvents TValue="ProcessedEmailDisplayTourEmailLibModel" RowSelected="OnProcessedRowSelected" RowDeselected="OnProcessedRowDeselected" />
+                <GridColumns>
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.Id)" HeaderText="Select" Width="80" Type="ColumnType.CheckBox" AllowSorting="false" AllowFiltering="false" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.MessageId)" HeaderText="MessageId" Width="260" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.CustomerName)" HeaderText="Customer" Width="200" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.TourName)" HeaderText="Tour" Width="220" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.TourDate)" HeaderText="Date" Width="140" Type="ColumnType.DateTime" Format="yyyy-MM-dd" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.TourTime)" HeaderText="Time" Width="100" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayTourEmailLibModel.EmailType)" HeaderText="Type" Width="120" TextAlign="TextAlign.Center" />
+                </GridColumns>
+            </SfGrid>
+        }
+        else if (_mode == GridMode.Problems && _problems?.Count > 0)
+        {
+            <SfGrid @ref="_problemsGrid"
+                    DataSource="_problems"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowSelection="true"
+                    CssClass="cs-grid"
+                    EnableVirtualization="true"
+                    SelectionType="SelectionType.Multiple"
+                    TValue="ProcessedEmailDisplayDto"
+                    Height="600">
+                <GridSelectionSettings CheckboxOnly="true" PersistSelection="true" Type="SelectionType.Multiple" />
+                <GridPageSettings PageSize="20" PageSizes="true" />
+                <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Excel" />
+                <GridEvents TValue="ProcessedEmailDisplayDto" RowSelected="OnProblemsRowSelected" RowDeselected="OnProblemsRowDeselected" />
+                <GridColumns>
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.Id)" HeaderText="Select" Width="80" Type="ColumnType.CheckBox" AllowSorting="false" AllowFiltering="false" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.MessageId)" HeaderText="MessageId" Width="260" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.CustomerName)" HeaderText="Customer" Width="200" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.EmailType)" HeaderText="Type" Width="120" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.ProcessingStatus)" HeaderText="Status" Width="140" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(ProcessedEmailDisplayDto.ProcessingCompletedAt)" HeaderText="Completed" Width="160" Type="ColumnType.DateTime" Format="yyyy-MM-dd HH:mm" TextAlign="TextAlign.Center" />
+                </GridColumns>
+            </SfGrid>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <div class="text-muted">
+                    <i class="bi bi-envelope-open display-6"></i>
+                    <p class="mt-2">No emails found</p>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+

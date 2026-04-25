@@ -1,0 +1,175 @@
+@* 2025-11-22 00:00 UTC - Theme Demo Controls (static showcase) *@
+
+<div class="mb-4">
+  <h6>Typography</h6>
+  <h1 class="mb-1">Heading 1</h1>
+  <h2 class="mb-1">Heading 2</h2>
+  <h3 class="mb-1">Heading 3</h3>
+  <h4 class="mb-1">Heading 4</h4>
+  <h5 class="mb-1">Heading 5</h5>
+  <h6 class="mb-2">Heading 6</h6>
+  <p class="mb-1">This is a paragraph demonstrating body text style.</p>
+  <p class="text-muted mb-1">Muted text for secondary emphasis.</p>
+  <p class="mb-0"><a href="#">Example link</a> within text.</p>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Buttons</h6>
+  <div class="mb-2">
+    <button class="btn btn-primary me-2">Primary</button>
+    <button class="btn btn-secondary me-2">Secondary</button>
+    <button class="btn btn-success me-2">Success</button>
+    <button class="btn btn-danger me-2">Danger</button>
+    <button class="btn btn-warning me-2">Warning</button>
+    <button class="btn btn-info me-2">Info</button>
+    <button class="btn btn-light me-2">Light</button>
+    <button class="btn btn-dark">Dark</button>
+  </div>
+  <div class="mb-2">
+    <button class="btn btn-outline-primary me-2">Outline Primary</button>
+    <button class="btn btn-outline-secondary me-2">Outline Secondary</button>
+    <button class="btn btn-outline-success me-2">Outline Success</button>
+    <button class="btn btn-outline-danger me-2">Outline Danger</button>
+    <button class="btn btn-outline-warning me-2">Outline Warning</button>
+    <button class="btn btn-outline-info me-2">Outline Info</button>
+    <button class="btn btn-outline-dark">Outline Dark</button>
+  </div>
+  <div>
+    <button class="btn btn-primary btn-sm me-2">Small</button>
+    <button class="btn btn-primary me-2">Medium</button>
+    <button class="btn btn-primary btn-lg">Large</button>
+  </div>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Form Controls</h6>
+  <div class="row g-2">
+    <div class="col-md-6">
+      <label class="form-label" for="demoInput1">Text input</label>
+      <input type="text" id="demoInput1" class="form-control" placeholder="Enter text" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="demoSelect1">Select</label>
+      <select id="demoSelect1" class="form-select">
+        <option>Option 1</option>
+        <option>Option 2</option>
+        <option>Option 3</option>
+      </select>
+    </div>
+    <div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" value="" id="demoCheck1" checked />
+        <label class="form-check-label" for="demoCheck1">
+          Checkbox option
+        </label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="demoRadio" id="demoRadio1" checked />
+        <label class="form-check-label" for="demoRadio1">
+          Radio 1
+        </label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="demoRadio" id="demoRadio2" />
+        <label class="form-check-label" for="demoRadio2">
+          Radio 2
+        </label>
+      </div>
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="demoSwitch1" />
+        <label class="form-check-label" for="demoSwitch1">Form switch</label>
+      </div>
+    </div>
+  </div>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Table Sample</h6>
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Name</th>
+          <th scope="col">Email</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">1</th>
+          <td>Alex Johnson</td>
+          <td>alex@example.com</td>
+          <td><span class="badge bg-success">Active</span></td>
+        </tr>
+        <tr>
+          <th scope="row">2</th>
+          <td>Briana Lee</td>
+          <td>briana@example.com</td>
+          <td><span class="badge bg-secondary">Pending</span></td>
+        </tr>
+        <tr>
+          <th scope="row">3</th>
+          <td>Chris Patel</td>
+          <td>chris@example.com</td>
+          <td><span class="badge bg-danger">Blocked</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Grid Sample</h6>
+  <div class="row g-2">
+    <div class="col-md-4">
+      <div class="p-3 border rounded bg-body-secondary">col-md-4</div>
+    </div>
+    <div class="col-md-4">
+      <div class="p-3 border rounded bg-body-secondary">col-md-4</div>
+    </div>
+    <div class="col-md-4">
+      <div class="p-3 border rounded bg-body-secondary">col-md-4</div>
+    </div>
+  </div>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Alerts</h6>
+  <div class="alert alert-primary" role="alert">A simple primary alert</div>
+  <div class="alert alert-success" role="alert">A success alert with example text</div>
+  <div class="alert alert-warning" role="alert">A warning alert</div>
+  <div class="alert alert-danger" role="alert">A danger alert</div>
+  <hr />
+</div>
+
+<div class="mb-4">
+  <h6>Badges & Cards</h6>
+  <div class="mb-2">
+    <span class="badge text-bg-primary me-1">Primary</span>
+    <span class="badge text-bg-secondary me-1">Secondary</span>
+    <span class="badge text-bg-info me-1">Info</span>
+    <span class="badge text-bg-warning me-1">Warning</span>
+    <span class="badge text-bg-danger">Danger</span>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h5 class="card-title">Demo Card</h5>
+      <p class="card-text">This card demonstrates how cards adapt to the selected theme.</p>
+      <a href="#" class="btn btn-outline-primary btn-sm">Action</a>
+    </div>
+  </div>
+  <hr />
+</div>
+
+<div class="small text-muted">
+  Note: Syncfusion components use their own theme CSS (loaded first). Bootstrap components use the selected Bootswatch theme.
+  Both work together in this app.
+  </div>
+
+

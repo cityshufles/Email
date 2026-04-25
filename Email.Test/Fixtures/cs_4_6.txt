@@ -1,0 +1,134 @@
+fix decimal point on pricing for checkfront
+add vendors to combobox when manually adding a guest.
+
+
+
+
+settings
+viator -  s-b1025bb617b54c16939b402ba26a9abc+1361781265-2mehwdp6ttco5@expmessaging.tripadvisor.com
+gyg - customer-hv4gmmjuv5wytnvz@reply.getyourguide.com
+airbn
+
+pricing
+5
+
+investigate item children
+
+
+GET /api/4.0/bookings/{bookingCode}/guests/'
+get guest array with booking code, get array of guests
+https://storage.googleapis.com/api/4.0/bookings/{bookingCode}/guests/
+
+query each uuid in the array 
+https://storage.googleapis.com/api/4.0/bookings/{bookingCode}/guests/{uuid}
+
+model 
+
+{
+  "data": {
+    "uuid": "2645683b-ba9f-402b-b348-4b7dffb4d301",
+    "guestId": "1",
+    "customerAccountId": 41,
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "example@email.com",
+    "country": "Canada",
+    "region": "British Columbia",
+    "phone": "250-999-2209",
+    "fields": {
+      "uuid": "2645683b-ba9f-402b-b348-4b7dffb4d301",
+      "guestId": "1",
+      "customerAccountId": 41,
+      "firstName": "John",
+      "lastName": "Smith",
+      "email": "test@test.com",
+      "country": "Canada",
+      "region": "British Columbia",
+      "phone": "250-999-2209",
+      "guest_first_name": "Jane",
+      "guest_last_name": "smith",
+      "guest_email": "jane@example.com",
+      "guest_phone": "+12505551234",
+      "swimming_experience": "none"
+    },
+    "activities": [
+      {
+        "bookingItem": [
+          {
+            "id": 0,
+            "lineId": "string",
+            "qty": "string",
+            "name": "High-Flying Zipline Tour",
+            "sku": "string",
+            "start": "2015-10-30T18:59:05-05:00",
+            "end": "2015-10-30T18:59:05-05:00",
+            "created": "2015-10-30T18:59:05-05:00",
+            "dateDescription": "string",
+            "timeDescription": "string",
+            "subTotal": 10000,
+            "inclusiveTaxTotal": 909,
+            "taxTotal": 1200,
+            "total": 11200,
+            "guestTypes": [
+              {
+                "id": "adult",
+                "label": "Adult",
+                "visibility": "staff",
+                "items": "[1, 2, 3]",
+                "products": "[4, 5, 6]"
+              }
+            ],
+            "totalGuests": 0
+          }
+        ],
+        "guestType": "adult",
+        "guestActivityId": 12,
+        "checkIn": "2018-11-30T14:33:12-06:00",
+        "checkOut": "2018-11-30T14:33:12-06:00"
+      }
+    ],
+    "status": "incomplete",
+    "documents": null
+  },
+  "meta": {
+    "timestamp": "2019-08-24T14:15:22Z",
+    "accountId": 0,
+    "request": {}
+  }
+}
+//test codes 
+YTVD-070325
+MDFY-110325
+LXKA-160325
+LAPB-170325
+GVXG-170325
+AZBZ-170325
+GNCR-170325
+DZAN-210325
+FLNY-210325
+FATM-220325
+QRSB-220325
+ZDSV-220325
+
+
+The Beatles in NYC Tour
+9/11 The Full Story
+Ghosts of Greenwich village tour
+Lower Manhattan: Wall Street, FiDi, 9/11
+NYC Super Hero Tour
+The Broadway Ghost Tour
+The Brooklyn Bridge Sunset Tour
+The Brooklyn Bridge, Brooklyn Heights, Dumbo Tour
+The Central Park Tour
+The Chinatown Little Italy Food Tour
+The Christmas Holiday Lights tour
+The East Village Noho Food Tour
+The Grand Central Terminal Tour
+The Greenwich Village Food Tour
+The Lower East Side Food Tour
+The Soho, Little Italy, Chinatown Tour
+Times Square, Grand Central, Rockefeller Tour
+
+4/17 remove individual vcards from mobile
+
+

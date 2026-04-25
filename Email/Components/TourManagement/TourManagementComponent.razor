@@ -1,0 +1,3075 @@
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Routing
+@using Email.Models
+@using Email.Models.Reports
+@using Email.Services
+@implements IAsyncDisposable
+@inject IToursApiService ToursApi
+@inject IGuidesApiService GuidesApi
+@inject IVendorsApiService VendorsApi
+@inject ITourCatalogService TourCatalogService
+@inject ITourNameMappingService TourNameMappingService
+@inject ITourLinkService TourLinkService
+@inject IToastService ToastService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<div class="card shadow-sm">
+    <div class="card-header">
+        <div class="d-flex flex-nowrap align-items-center gap-2">
+            <select class="form-select form-select-sm"
+                    style="width: min(38rem, calc(100% - 9rem));"
+                    value="@SelectedTourIdValue"
+                    @onchange="OnTopTourChangedAsync"
+                    disabled="@(isLoading || !CanonicalSavedTourStates.Any())">
+                <option value="">-- Select Tour --</option>
+                @foreach (var state in CanonicalSavedTourStates)
+                {
+                    <option value="@state.Tour.Id">@BuildTourSelectLabel(state)</option>
+                }
+            </select>
+            <button class="btn btn-primary btn-sm" type="button" @onclick="CreateNewTour">
+                <i class="bi bi-plus-lg me-1"></i>Create New Tour
+            </button>
+        </div>
+        @if (HiddenDuplicateTourRowCount > 0)
+        {
+            <div class="form-text text-warning mt-2">
+                Canonical selection hides @HiddenDuplicateTourRowCount active duplicate master-tour row(s). Use the SQL consolidation script for cleanup.
+            </div>
+        }
+    </div>
+    <div class="card-body">
+        @if (isLoading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="text-muted mt-2">Loading tours...</div>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <div class="alert alert-danger mb-0">@loadError</div>
+        }
+        else if (tourStates.Count == 0)
+        {
+            <div class="text-muted">No tours found.</div>
+        }
+        else
+        {
+            <div>
+                @{
+                    var state = SelectedTourState;
+                }
+                @if (state is null)
+                {
+                    <div class="text-muted">Select a tour to view details.</div>
+                }
+                else
+                {
+                    <div class="border rounded p-3"
+                         id="@($"tour-row-{state.RowKey}")"
+                         @oninput="() => OnEditorInputChangedAsync(state)"
+                         @onchange="() => OnEditorInputChangedAsync(state)">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <h5 class="mb-0">@BuildAccordionTitle(state)</h5>
+                                @if (state.IsNew)
+                                {
+                                    <span class="badge bg-info">New</span>
+                                }
+                                @if (string.IsNullOrWhiteSpace(state.Tour.MasterTourName))
+                                {
+                                    <span class="badge bg-danger">Master Missing</span>
+                                }
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-success"
+                                        type="button"
+                                        title="Save"
+                                        disabled="@state.IsBusy"
+                                        @onclick="() => SaveTourAsync(state)">
+                                    <i class="bi bi-check2-circle"></i>
+                                </button>
+                                <button class="btn btn-outline-danger"
+                                        type="button"
+                                        title="Delete"
+                                        disabled="@state.IsBusy"
+                                        @onclick="() => DeleteTourAsync(state)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <div>
+                                @if (state.ShowCreateWarning && state.IsNew)
+                                {
+                                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                        <strong>MANDATORY:</strong> New tours must match tour name provided by vendor.
+                                        <div class="form-check mt-2">
+                                            <input class="form-check-input" type="checkbox" id="@($"never-show-warning-{state.RowKey}")" @bind="state.NeverShowCreateWarning" />
+                                            <label class="form-check-label" for="@($"never-show-warning-{state.RowKey}")">
+                                                Never show again
+                                            </label>
+                                        </div>
+                                        <button type="button" class="btn-close" aria-label="Close" @onclick="() => DismissCreateWarningAsync(state)"></button>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(state.ErrorMessage))
+                                {
+                                    <div class="alert alert-danger py-2">@state.ErrorMessage</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(state.SuccessMessage))
+                                {
+                                    <div class="alert alert-success py-2">@state.SuccessMessage</div>
+                                }
+
+                                <ul class="nav nav-tabs mb-3">
+                                    <li class="nav-item">
+                                        <button class='@($"nav-link {(state.ActiveTab == "basic" ? "active" : string.Empty)}")'
+                                                type="button"
+                                                @onclick='() => SetActiveTabAsync(state, "basic")'>
+                                            Basic Info
+                                        </button>
+                                    </li>
+                                    <li class="nav-item">
+                                        <button class='@($"nav-link {(state.ActiveTab == "advanced" ? "active" : string.Empty)}")'
+                                                type="button"
+                                                @onclick='() => SetActiveTabAsync(state, "advanced")'>
+                                            Advanced
+                                        </button>
+                                    </li>
+                                    <li class="nav-item">
+                                        <button class='@($"nav-link {(state.ActiveTab == "mappings" ? "active" : string.Empty)}")'
+                                                type="button"
+                                                @onclick='() => SetActiveTabAsync(state, "mappings")'>
+                                            Mapping Variants
+                                        </button>
+                                    </li>
+                                </ul>
+
+                                @if (state.ActiveTab == "basic")
+                                {
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label">Master Tour Name</label>
+                                            <input type="text" class="form-control" @bind="state.Tour.MasterTourName" @bind:event="oninput" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Master Tour Name (Desktop)</label>
+                                            <input type="text" class="form-control" @bind="state.Tour.MasterTourNameDesktop" @bind:event="oninput" />
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Abbreviation (Mobile)</label>
+                                            <input type="text" class="form-control" @bind="state.Tour.MasterTourNameMobile" @bind:event="oninput" />
+                                            <div class="form-text">If blank, a fallback abbreviation is generated on save.</div>
+                                        </div>
+
+                                        <div class="col-md-6">
+                                            <label class="form-label">
+                                                Add Tour Time (Optional)
+                                                <span class="badge bg-success ms-1">Updates schedules</span>
+                                            </label>
+                                            <div class="input-group">
+                                                <span class="input-group-text"><i class="bi bi-clock"></i></span>
+                                                <select class="form-select"
+                                                        value="@GetPendingTourTimeValue(state)"
+                                                        @onchange="e => OnPendingTourTimeChanged(state, e)">
+                                                    <option value="">-- Optional: add a tour time --</option>
+                                                    @foreach (var t in TimeOptions)
+                                                    {
+                                                        <option value="@t">@FormatTimeDisplay(t)</option>
+                                                    }
+                                                </select>
+                                                <button class="btn btn-outline-secondary"
+                                                        type="button"
+                                                        disabled="@string.IsNullOrWhiteSpace(GetPendingTourTimeValue(state))"
+                                                        @onclick="() => AddTourTimeAsync(state)">
+                                                    <i class="bi bi-plus-lg me-1"></i>Add
+                                                </button>
+                                            </div>
+                                            <div class="form-text">Optional. Use this control only when you want to add a tour time into the active standard schedule.</div>
+                                        </div>
+
+                                        <div class="col-12">
+                                            <label class="form-label mb-2">Current Tour Times (from schedules)</label>
+                                            @if (state.AvailableTourTimes.Count == 0)
+                                            {
+                                                <div class="text-muted small">No schedule times configured yet.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="d-flex flex-wrap gap-2">
+                                                    @foreach (var time in state.AvailableTourTimes)
+                                                    {
+                                                        var isSelected = string.Equals(time, state.SelectedTourTime, StringComparison.OrdinalIgnoreCase);
+                                                        <button class='@($"btn btn-sm {(isSelected ? "btn-primary" : "btn-outline-secondary")}")'
+                                                                type="button"
+                                                                @onclick="() => SetSelectedTourTime(state, time)">
+                                                            @FormatTimeDisplay(time)
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+
+                                        @* Default guide now managed in GuideSchedule; hidden here per requirement.
+                                        <div class="col-md-6">
+                                            <label class="form-label">Default Guide</label>
+                                            <select class="form-select" value="@GetGuideSelectValue(state)" @onchange="e => OnGuideSelectionChanged(state, e)">
+                                                <option value="">-- none --</option>
+                                                @foreach (var guide in availableGuides.Where(g => g.IsActive))
+                                                {
+                                                    <option value="@guide.Id">@FormatGuideName(guide)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        *@
+
+                                        @* Meeting time now managed in GuideSchedule; hidden here per requirement.
+                                        <div class="col-md-6">
+                                            <label class="form-label mb-1">Meeting Time</label>
+                                            @{
+                                                var selectedMeetingTime = GetMeetingTimeSelectValue(state);
+                                            }
+                                            <div class="d-flex align-items-end gap-2 flex-wrap">
+                                                <div style="width: 12.5rem;">
+                                                    <select class="form-select"
+                                                            value="@selectedMeetingTime"
+                                                            @onchange="e => OnMeetingTimeSelectionChanged(state, e)">
+                                                        <option value="">-- Select Meeting Time --</option>
+                                                        @if (!string.IsNullOrWhiteSpace(selectedMeetingTime) &&
+                                                             !TimeOptions.Contains(selectedMeetingTime, StringComparer.OrdinalIgnoreCase))
+                                                        {
+                                                            <option value="@selectedMeetingTime">@FormatTimeDisplay(selectedMeetingTime) (Custom)</option>
+                                                        }
+                                                        @foreach (var t in TimeOptions)
+                                                        {
+                                                            <option value="@t">@FormatTimeDisplay(t)</option>
+                                                        }
+                                                    </select>
+                                                </div>
+                                                <div class="input-group" style="width: 12.5rem;">
+                                                    <input type="number"
+                                                           class="form-control text-end"
+                                                           min="-720"
+                                                           max="-1"
+                                                           step="1"
+                                                           value="@state.MeetingOffsetMinutes"
+                                                           @onchange="e => OnMeetingOffsetChanged(state, e)" />
+                                                    <span class="input-group-text">min</span>
+                                                    <button class="btn btn-outline-secondary"
+                                                            type="button"
+                                                            title="Recalculate meeting time from Tour Time and offset."
+                                                            @onclick="() => ApplyMeetingOffset(state)">
+                                                        Apply
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        *@
+
+                                        <div class="col-md-6">
+                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                <label class="form-label mb-0">Duration (hours)</label>
+                                                <div class="form-check form-switch mb-0">
+                                                    <input class="form-check-input" type="checkbox" @bind="state.Tour.IsActive" id="@($"tour-active-{state.RowKey}")" />
+                                                    <label class="form-check-label" for="@($"tour-active-{state.RowKey}")">Is Active</label>
+                                                </div>
+                                            </div>
+                                            <select class="form-select"
+                                                    value="@GetDurationSelectValue(state)"
+                                                    @onchange="e => OnDurationSelectionChanged(state, e)">
+                                                @foreach (var duration in DurationHourOptions)
+                                                {
+                                                    <option value="@duration">@duration</option>
+                                                }
+                                            </select>
+                                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Meeting Place</label>
+                            <textarea class="form-control"
+                                      rows="3"
+                                      @bind="state.Tour.MeetingPlace"
+                                      @bind:event="oninput"></textarea>
+                        </div>
+
+                                        @* Meeting instructions intentionally hidden for now per requirement.
+                                        <div class="col-12">
+                                            <label class="form-label">Meeting Instructions</label>
+                                            <textarea class="form-control" rows="3" @bind="state.Tour.MeetingInstructions"></textarea>
+                                        </div>
+                                        *@
+
+                                    </div>
+                                }
+                                else if (state.ActiveTab == "advanced")
+                                {
+                                    <div class="row g-3">
+                                        @{
+                                            var completenessSummary = BuildVendorCompletenessSummary(state);
+                                        }
+                                        <div class="col-12">
+                                            <div class='@($"alert py-2 mb-0 {(completenessSummary.IncompleteVendors == 0 ? "alert-success" : "alert-warning")}")'>
+                                                Vendor detail completeness:
+                                                <strong>@completenessSummary.CompletedVendors/@completenessSummary.TrackedVendors</strong>
+                                                tracked vendors complete.
+                                                @if (completenessSummary.IncompleteVendors > 0)
+                                                {
+                                                    <span class="ms-1">
+                                                        Remaining incomplete vendors: <strong>@completenessSummary.IncompleteVendors</strong>.
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        @foreach (var vendor in state.VendorProfiles)
+                                        {
+                                            var completeness = BuildVendorCompleteness(vendor);
+                                            <div class="col-12">
+                                                <div class="border rounded p-3">
+                                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                                            <div class="fw-semibold">@vendor.SectionTitle</div>
+                                                            <div class="form-check form-switch mb-0">
+                                                                <input class="form-check-input"
+                                                                       type="checkbox"
+                                                                       id="@($"vendor-active-{state.RowKey}-{vendor.VendorCode}")"
+                                                                       @bind="vendor.IsActive" />
+                                                                <label class="form-check-label small"
+                                                                       for="@($"vendor-active-{state.RowKey}-{vendor.VendorCode}")">
+                                                                    Active
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        @if (!vendor.IsActive)
+                                                        {
+                                                            <span class="badge bg-secondary">Inactive</span>
+                                                        }
+                                                        else if (completeness.IsComplete)
+                                                        {
+                                                            <span class="badge bg-success">Complete</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-warning text-dark">@completeness.CompletedRequired/@completeness.RequiredFields required</span>
+                                                        }
+                                                    </div>
+                                                    @if (vendor.IsActive && !completeness.IsComplete)
+                                                    {
+                                                        <div class="text-muted small mb-3">
+                                                            Missing: @string.Join(", ", completeness.MissingFieldLabels)
+                                                        </div>
+                                                    }
+                                                    <div class="row g-3">
+                                                        <div class="col-12">
+                                                            <label class="form-label">
+                                                                @vendor.NameFieldLabel
+                                                                <span class="badge bg-danger ms-1">Must exactly match email</span>
+                                                            </label>
+                                                            <input type="text"
+                                                                   class="form-control"
+                                                                   @bind="vendor.Name"
+                                                                   @bind:event="oninput" />
+                                                        </div>
+
+                                                        @if (vendor.RequiresProductId)
+                                                        {
+                                                            <div class="col-md-6">
+                                                                <label class="form-label">@vendor.IdFieldLabel</label>
+                                                                <input type="text"
+                                                                       class="form-control"
+                                                                       @bind="vendor.ProductId"
+                                                                       @bind:event="oninput"
+                                                                       placeholder="@vendor.IdPlaceholder" />
+                                                            </div>
+                                                        }
+
+                                                        @if (vendor.RequiresTourLink)
+                                                        {
+                                                            <div class="col-12">
+                                                                <label class="form-label">@vendor.TourLinkLabel</label>
+                                                                <input type="text"
+                                                                       class="form-control"
+                                                                       @bind="vendor.TourLink"
+                                                                       @bind:event="oninput"
+                                                                       placeholder="https://..." />
+                                                                <div class="form-text">Used in Thank You messages when booking source matches this vendor.</div>
+                                                            </div>
+                                                        }
+
+                                                        @if (vendor.RequiresReviewLink)
+                                                        {
+                                                            <div class="col-12">
+                                                                <label class="form-label">@vendor.ReviewLinkLabel</label>
+                                                                <input type="text"
+                                                                       class="form-control"
+                                                                       @bind="vendor.ReviewLink"
+                                                                       @bind:event="oninput"
+                                                                       placeholder="https://..." />
+                                                                <div class="form-text">Used in post-tour review messages when booking source matches this vendor.</div>
+                                                            </div>
+                                                        }
+
+                                                        @if (vendor.RequiresAllToursLink)
+                                                        {
+                                                            <div class="col-12">
+                                                                <label class="form-label">@vendor.AllToursLinkLabel</label>
+                                                                <input type="text"
+                                                                       class="form-control"
+                                                                       @bind="vendor.AllToursLink"
+                                                                       @bind:event="oninput"
+                                                                       placeholder="https://..." />
+                                                                <div class="form-text">Today/Tomorrow/Date messages pull this link by vendor.</div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <div class="alert alert-info py-2 mb-0">
+                                                Add vendor-specific aliases for incoming email tour names. These mappings drive tree parsing and master tour resolution.
+                                            </div>
+                                        </div>
+
+                                        @foreach (var vendor in state.VendorProfiles)
+                                        {
+                                            var vendorMappings = GetMappingsForVendor(state, vendor.VendorCode);
+                                            <div class="col-12">
+                                                <div class="border rounded p-3">
+                                                    <div class="fw-semibold mb-3">@vendor.SectionTitle</div>
+                                                    <div class="input-group mb-3">
+                                                        <input type="text"
+                                                               class="form-control"
+                                                               @bind="vendor.PendingAlias"
+                                                               @bind:event="oninput"
+                                                               placeholder="Add incoming alias from email..." />
+                                                        <button class="btn btn-outline-secondary"
+                                                                type="button"
+                                                                disabled="@state.IsBusy"
+                                                                @onclick="() => AddMappingAliasAsync(state, vendor)">
+                                                            <i class="bi bi-plus-lg me-1"></i>Add Alias
+                                                        </button>
+                                                    </div>
+
+                                                    @if (vendorMappings.Count == 0)
+                                                    {
+                                                        <div class="text-muted small">No aliases saved for this vendor.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="list-group list-group-flush border rounded">
+                                                            @foreach (var mapping in vendorMappings)
+                                                            {
+                                                                <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                                                                    <div>
+                                                                        <div class="fw-semibold">@mapping.IncomingTourName</div>
+                                                                        <div class="text-muted small">Updated @FormatUserFacingTimestamp(mapping.UpdatedAt)</div>
+                                                                    </div>
+                                                                    <button class="btn btn-outline-danger btn-sm"
+                                                                            type="button"
+                                                                            title="Deactivate alias"
+                                                                            disabled="@state.IsBusy"
+                                                                            @onclick="() => DeleteMappingAliasAsync(state, mapping)">
+                                                                        <i class="bi bi-x-lg"></i>
+                                                                    </button>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @{
+                                            var unassignedMappings = GetUnassignedMappings(state);
+                                        }
+                                        @if (unassignedMappings.Count > 0)
+                                        {
+                                            <div class="col-12">
+                                                <div class="border rounded p-3">
+                                                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                                                        <div class="fw-semibold">Unassigned Legacy Variants</div>
+                                                        <button class="btn btn-outline-danger btn-sm"
+                                                                type="button"
+                                                                disabled="@state.IsBusy"
+                                                                @onclick="() => DeactivateAllUnassignedMappingsAsync(state)">
+                                                            <i class="bi bi-x-octagon me-1"></i>Deactivate All
+                                                        </button>
+                                                    </div>
+                                                    <div class="text-muted small mb-3">
+                                                        These aliases have no vendor name set. Add them under a vendor section above, then deactivate the legacy row.
+                                                    </div>
+                                                    <div class="list-group list-group-flush border rounded">
+                                                        @foreach (var mapping in unassignedMappings)
+                                                        {
+                                                            <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                                                                <div>
+                                                                    <div class="fw-semibold">@mapping.IncomingTourName</div>
+                                                                    <div class="text-muted small">Vendor: @mapping.VendorDisplayName</div>
+                                                                </div>
+                                                                <button class="btn btn-outline-danger btn-sm"
+                                                                        type="button"
+                                                                        title="Deactivate alias"
+                                                                        disabled="@state.IsBusy"
+                                                                        @onclick="() => DeleteMappingAliasAsync(state, mapping)">
+                                                                    <i class="bi bi-x-lg"></i>
+                                                                </button>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string HideCreateWarningStorageKey = "cityshuffles_hide_new_tour_warning";
+    private const string ActiveMasterTourUniqueIndexName = "UX_Tours_ActiveMasterTourName";
+
+    private readonly List<TourEditorState> tourStates = new();
+    private static readonly IReadOnlyList<string> TimeOptions = BuildTimeOptions();
+    private static readonly IReadOnlyList<string> DurationHourOptions = BuildDurationHourOptions();
+    private static readonly IReadOnlyList<VendorProfileTemplate> VendorProfileTemplates = BuildVendorProfileTemplates();
+    private readonly HashSet<int> canonicalTourIdSet = new();
+    private readonly Dictionary<int, int> canonicalTourIdByTourId = new();
+    private readonly Dictionary<int, int> duplicateCountByCanonicalTourId = new();
+
+    private List<DbGuide> availableGuides = new();
+    private TourCatalogSnapshot? tourCatalog;
+    private bool isLoading = true;
+    private string? loadError;
+    private int? selectedTourId;
+    private string? selectedRowKey;
+    private bool hideCreateWarning;
+    private IDisposable? locationChangingRegistration;
+
+    private IEnumerable<TourEditorState> SavedTourStates =>
+        tourStates
+            .Where(x => !x.IsNew)
+            .OrderBy(x => SortTourName(x), StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<TourEditorState> CanonicalSavedTourStates =>
+        SavedTourStates.Where(x => canonicalTourIdSet.Count == 0 || canonicalTourIdSet.Contains(x.Tour.Id));
+
+    private int HiddenDuplicateTourRowCount => duplicateCountByCanonicalTourId.Values.Sum();
+
+    private string SelectedTourIdValue => selectedTourId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    private TourEditorState? SelectedTourState =>
+        string.IsNullOrWhiteSpace(selectedRowKey)
+            ? null
+            : tourStates.FirstOrDefault(x => x.RowKey == selectedRowKey);
+
+    private void SetSelectedState(TourEditorState? state)
+    {
+        if (state is not null && !state.IsNew)
+        {
+            var canonicalTourId = NormalizeToCanonicalTourId(state.Tour.Id);
+            state = tourStates.FirstOrDefault(x => !x.IsNew && x.Tour.Id == canonicalTourId) ?? state;
+        }
+
+        selectedRowKey = state?.RowKey;
+        selectedTourId = state is null || state.IsNew ? null : state.Tour.Id;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        locationChangingRegistration = NavigationManager.RegisterLocationChangingHandler(ConfirmNavigationWhenDirtyAsync);
+        await RestoreCreateWarningPreferenceAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync(int? focusTourId = null)
+    {
+        try
+        {
+            isLoading = true;
+            loadError = null;
+            canonicalTourIdSet.Clear();
+            canonicalTourIdByTourId.Clear();
+            duplicateCountByCanonicalTourId.Clear();
+
+            var toursTask = ToursApi.GetToursAsync();
+            var guidesTask = GuidesApi.GetGuidesAsync();
+            var catalogTask = TourCatalogService.BuildCatalogAsync();
+            var schedulesTask = ToursApi.GetAllTourSchedulesAsync();
+            var vendorsTask = VendorsApi.GetVendorsAsync();
+            var vendorToursTask = VendorsApi.GetVendorToursAsync();
+            var mappingsTask = TourNameMappingService.GetAllActiveMappingsAsync();
+            var linksTask = TourLinkService.GetAllAsync();
+
+            await Task.WhenAll(toursTask, guidesTask, catalogTask, schedulesTask, vendorsTask, vendorToursTask, mappingsTask, linksTask);
+
+            var tours = toursTask.Result
+                .OrderBy(t => string.IsNullOrWhiteSpace(t.MasterTourName) ? t.TourName : t.MasterTourName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.TourName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            BuildCanonicalTourSelectionMetadata(tours);
+
+            availableGuides = guidesTask.Result
+                .OrderBy(g => g.FirstName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(g => g.LastName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            tourCatalog = catalogTask.Result;
+            var slotsByTourId = BuildScheduleTimeLookup(schedulesTask.Result);
+            var vendorRecordsByKey = BuildVendorRecordLookup(vendorsTask.Result);
+            var mappingsByTourId = BuildVendorMappingLookup(mappingsTask.Result);
+            var mappingVariantsByTourId = BuildMappingVariantsLookup(mappingsTask.Result);
+            var linksByTourId = BuildVendorLinkLookup(linksTask.Result);
+            var activeVendorAssignmentsByMasterTour = BuildVendorTourAssignmentLookup(vendorsTask.Result, vendorToursTask.Result);
+
+            tourStates.Clear();
+            foreach (var tour in tours)
+            {
+                slotsByTourId.TryGetValue(tour.Id, out var slots);
+                mappingsByTourId.TryGetValue(tour.Id, out var vendorMappings);
+                mappingVariantsByTourId.TryGetValue(tour.Id, out var mappingVariants);
+                linksByTourId.TryGetValue(tour.Id, out var vendorLinks);
+                var masterTourKey = NormalizeMasterTourLookupKey(tour.MasterTourName);
+                if (string.IsNullOrWhiteSpace(masterTourKey))
+                {
+                    masterTourKey = NormalizeMasterTourLookupKey(tour.TourName);
+                }
+
+                activeVendorAssignmentsByMasterTour.TryGetValue(masterTourKey, out var activeVendorsForTour);
+                tourStates.Add(CreateState(
+                    tour,
+                    slots ?? new List<MasterTourTimeSlot>(),
+                    vendorRecordsByKey,
+                    vendorMappings,
+                    mappingVariants ?? new List<TourNameMapping>(),
+                    vendorLinks,
+                    activeVendorsForTour));
+            }
+
+            TourEditorState? focused = null;
+            if (focusTourId.HasValue)
+            {
+                var canonicalFocusTourId = NormalizeToCanonicalTourId(focusTourId.Value);
+                focused = tourStates.FirstOrDefault(x => x.Tour.Id == canonicalFocusTourId);
+            }
+
+            if (focused is null && selectedTourId.HasValue)
+            {
+                var canonicalSelectedTourId = NormalizeToCanonicalTourId(selectedTourId.Value);
+                focused = tourStates.FirstOrDefault(x => x.Tour.Id == canonicalSelectedTourId);
+            }
+
+            SetSelectedState(focused);
+            await UpdateUnsavedChangesWarningAsync();
+        }
+        catch (Exception ex)
+        {
+            loadError = $"Failed to load tours: {ex.Message}";
+            tourStates.Clear();
+            availableGuides.Clear();
+            canonicalTourIdSet.Clear();
+            canonicalTourIdByTourId.Clear();
+            duplicateCountByCanonicalTourId.Clear();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void CreateNewTour()
+    {
+        tourStates.RemoveAll(x => x.IsNew);
+
+        var tour = new DbTour
+        {
+            IsActive = true,
+            Duration = "3",
+            MeetingPlace = "TBD",
+            MeetingInstructions = string.Empty,
+            MasterTourName = string.Empty,
+            MasterTourNameDesktop = string.Empty,
+            MasterTourNameMobile = string.Empty
+        };
+
+        var state = CreateState(tour, new List<MasterTourTimeSlot>(), null, null, null, null, null);
+        state.ShowCreateWarning = !hideCreateWarning;
+        state.ActiveTab = "basic";
+        state.SuccessMessage = null;
+        state.ErrorMessage = null;
+
+        tourStates.Insert(0, state);
+        SetSelectedState(state);
+    }
+
+    private async Task SaveTourAsync(TourEditorState state)
+    {
+        if (state.IsBusy) return;
+
+        state.IsBusy = true;
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+        var tabToRestore = string.IsNullOrWhiteSpace(state.ActiveTab) ? "basic" : state.ActiveTab;
+        var affectedRows = 0;
+
+        try
+        {
+            var masterTourName = NormalizeOptionalText(state.Tour.MasterTourName);
+            if (string.IsNullOrWhiteSpace(masterTourName))
+            {
+                state.ErrorMessage = "Master tour name is required.";
+                return;
+            }
+
+            state.Tour.MasterTourName = masterTourName;
+            state.Tour.TourName = string.IsNullOrWhiteSpace(state.Tour.TourName)
+                ? masterTourName
+                : state.Tour.TourName.Trim();
+            state.Tour.MasterTourNameDesktop = string.IsNullOrWhiteSpace(state.Tour.MasterTourNameDesktop)
+                ? state.Tour.MasterTourName
+                : state.Tour.MasterTourNameDesktop.Trim();
+
+            if (string.IsNullOrWhiteSpace(state.Tour.MasterTourNameMobile))
+            {
+                var source = string.IsNullOrWhiteSpace(state.Tour.MasterTourNameDesktop)
+                    ? state.Tour.TourName
+                    : state.Tour.MasterTourNameDesktop;
+                state.Tour.MasterTourNameMobile = BuildAbbreviation(source);
+            }
+            else
+            {
+                state.Tour.MasterTourNameMobile = state.Tour.MasterTourNameMobile.Trim();
+            }
+
+            if (state.Tour.IsActive &&
+                TryGetActiveMasterTourConflict(state, state.Tour.MasterTourName, out var conflictingTour))
+            {
+                state.ErrorMessage = $"An active tour already exists for master name '{conflictingTour.MasterTourName}' (Tour ID {conflictingTour.Id}).";
+                return;
+            }
+
+            ApplyLegacyVendorFallbackFields(state);
+
+            if (string.IsNullOrWhiteSpace(state.Tour.MeetingPlace))
+            {
+                state.Tour.MeetingPlace = "TBD";
+            }
+            else
+            {
+                state.Tour.MeetingPlace = state.Tour.MeetingPlace.Trim();
+            }
+
+            state.Tour.Duration = NormalizeDurationValue(state.Tour.Duration);
+
+            state.Tour.DefaultGuideId = state.Tour.DefaultGuideId is > 0 ? state.Tour.DefaultGuideId : null;
+
+            state.Tour.TourStartTime = string.IsNullOrWhiteSpace(state.SelectedTourTime)
+                ? NormalizeTime(state.Tour.TourStartTime)
+                : NormalizeTime(state.SelectedTourTime);
+            state.SelectedTourTime = state.Tour.TourStartTime;
+
+            if (string.IsNullOrWhiteSpace(state.Tour.MeetingTime))
+            {
+                state.Tour.MeetingTime = ComputeMeetingTime(state.Tour.TourStartTime, state.MeetingOffsetMinutes);
+                state.MeetingTimeManuallySet = false;
+            }
+            else
+            {
+                state.Tour.MeetingTime = NormalizeTime(state.Tour.MeetingTime);
+            }
+
+            if (!state.GuideManuallySet)
+            {
+                MaybeApplyDefaultGuide(state);
+            }
+
+            DbTour? persisted;
+            if (state.IsNew)
+            {
+                persisted = await ToursApi.CreateTourAsync(state.Tour);
+                if (persisted is null)
+                {
+                    state.ErrorMessage = "Failed to create tour.";
+                    return;
+                }
+
+                affectedRows++;
+            }
+            else
+            {
+                var updated = await ToursApi.UpdateTourAsync(state.Tour.Id, state.Tour);
+                if (!updated)
+                {
+                    state.ErrorMessage = "Failed to update tour.";
+                    return;
+                }
+
+                persisted = state.Tour;
+                affectedRows++;
+            }
+
+            if (persisted.Id > 0)
+            {
+                affectedRows += await SaveVendorDetailsAsync(state, persisted.Id);
+            }
+
+            await LoadAsync(persisted.Id);
+            var refreshedState = SelectedTourState;
+            if (refreshedState is not null)
+            {
+                refreshedState.ActiveTab = tabToRestore;
+                refreshedState.IsDirty = false;
+                refreshedState.DirtyToastShown = false;
+            }
+
+            state.IsDirty = false;
+            state.DirtyToastShown = false;
+            await UpdateUnsavedChangesWarningAsync();
+            await ToastService.ShowSuccessAsync(
+                $"Tour saved successfully. Rows affected: {affectedRows}.",
+                "Save Complete");
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = IsActiveMasterTourDuplicateConstraintViolation(ex)
+                ? $"An active tour with master name '{state.Tour.MasterTourName}' already exists."
+                : $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            state.IsBusy = false;
+        }
+    }
+
+    private async Task DeleteTourAsync(TourEditorState state)
+    {
+        if (state.IsBusy) return;
+
+        if (state.IsNew)
+        {
+            tourStates.Remove(state);
+            if (selectedRowKey == state.RowKey)
+            {
+                SetSelectedState(null);
+            }
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete '{BuildAccordionTitle(state)}'?");
+        if (!confirmed) return;
+
+        state.IsBusy = true;
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+
+        try
+        {
+            var deleted = await ToursApi.DeleteTourAsync(state.Tour.Id);
+            if (!deleted)
+            {
+                state.ErrorMessage = "Delete failed.";
+                return;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Delete failed: {ex.Message}";
+        }
+        finally
+        {
+            state.IsBusy = false;
+        }
+    }
+
+    private async Task SetActiveTabAsync(TourEditorState state, string tab)
+    {
+        if (state.IsDirty &&
+            string.Equals(state.ActiveTab, "advanced", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(tab, "advanced", StringComparison.OrdinalIgnoreCase))
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>(
+                "confirm",
+                "You have unsaved changes in Advanced. Leave this tab without saving?");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        state.ActiveTab = tab;
+    }
+
+    private async Task OnTopTourChangedAsync(ChangeEventArgs args)
+    {
+        var raw = args.Value?.ToString();
+        var current = SelectedTourState;
+        if (current?.IsDirty == true)
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>(
+                "confirm",
+                "You have unsaved changes. Switch tours without saving?");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        if (int.TryParse(raw, out var id))
+        {
+            var state = tourStates.FirstOrDefault(x => x.Tour.Id == id);
+            SetSelectedState(state);
+            return;
+        }
+
+        SetSelectedState(null);
+    }
+
+    private void SetSelectedTourTime(TourEditorState state, string? rawTime)
+    {
+        var normalized = NormalizeTime(rawTime);
+        state.SelectedTourTime = string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        state.Tour.TourStartTime = state.SelectedTourTime;
+        state.CustomTourTimeInput = state.SelectedTourTime ?? TimeOptions.First();
+
+        if (!state.MeetingTimeManuallySet || string.IsNullOrWhiteSpace(state.Tour.MeetingTime))
+        {
+            ApplyMeetingOffset(state);
+        }
+
+        MaybeApplyDefaultGuide(state);
+    }
+
+    private void OnPendingTourTimeChanged(TourEditorState state, ChangeEventArgs args)
+    {
+        var normalized = NormalizeTime(args.Value?.ToString());
+        state.CustomTourTimeInput = string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private async Task AddTourTimeAsync(TourEditorState state)
+    {
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+
+        var normalized = NormalizeTime(state.CustomTourTimeInput);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            state.ErrorMessage = "Enter a valid custom time.";
+            return;
+        }
+
+        if (!state.AvailableTourTimes.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            state.AvailableTourTimes.Add(normalized);
+            state.AvailableTourTimes = state.AvailableTourTimes
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        state.SelectedTourTime = normalized;
+        state.Tour.TourStartTime = normalized;
+        state.CustomTourTimeInput = normalized;
+
+        if (!state.MeetingTimeManuallySet || string.IsNullOrWhiteSpace(state.Tour.MeetingTime))
+        {
+            ApplyMeetingOffset(state);
+        }
+
+        MaybeApplyDefaultGuide(state);
+
+        if (state.IsNew)
+        {
+            state.SuccessMessage = "Tour time queued. Save the tour, then add/update schedules from the Schedule page.";
+            return;
+        }
+
+        try
+        {
+            var updatedSchedule = await ToursApi.EnsureTourScheduleTimeAsync(
+                state.Tour.Id,
+                normalized,
+                state.Tour.MeetingTime,
+                state.Tour.MeetingPlace);
+
+            state.SuccessMessage = updatedSchedule
+                ? "Tour time added to active schedules."
+                : "No active standard schedule found. Create a schedule first in the Schedule page.";
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Could not persist custom time: {ex.Message}";
+        }
+    }
+
+    private string GetPendingTourTimeValue(TourEditorState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.CustomTourTimeInput))
+        {
+            return state.CustomTourTimeInput;
+        }
+
+        return !string.IsNullOrWhiteSpace(state.SelectedTourTime)
+            ? state.SelectedTourTime
+            : string.Empty;
+    }
+
+    private string GetMeetingTimeSelectValue(TourEditorState state)
+    {
+        return NormalizeTime(state.Tour.MeetingTime);
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private void InitializeVendorProfiles(
+        TourEditorState state,
+        IReadOnlyDictionary<string, DbVendor>? vendorRecords,
+        IReadOnlyDictionary<string, TourNameMapping>? vendorMappings,
+        IReadOnlyDictionary<string, TourLink>? vendorLinks,
+        IReadOnlySet<string>? activeVendorCodes)
+    {
+        state.VendorProfiles = VendorProfileTemplates
+            .Select(template =>
+            {
+                var profile = new VendorProfileEditorState
+                {
+                    VendorCode = template.VendorCode,
+                    VendorRecordName = template.VendorRecordName,
+                    SectionTitle = template.SectionTitle,
+                    NameFieldLabel = template.NameFieldLabel,
+                    IdFieldLabel = template.IdFieldLabel,
+                    IdPlaceholder = template.IdPlaceholder,
+                    TourLinkLabel = template.TourLinkLabel,
+                    ReviewLinkLabel = template.ReviewLinkLabel,
+                    AllToursLinkLabel = template.AllToursLinkLabel,
+                    RequiresName = template.RequiresName,
+                    RequiresProductId = template.RequiresProductId,
+                    RequiresTourLink = template.RequiresTourLink,
+                    RequiresReviewLink = template.RequiresReviewLink,
+                    RequiresAllToursLink = template.RequiresAllToursLink
+                };
+
+                if (vendorRecords is not null &&
+                    vendorRecords.TryGetValue(template.VendorCode, out var vendorRecord))
+                {
+                    profile.VendorId = vendorRecord.Id;
+                    profile.AllToursLink = vendorRecord.AllToursLink ?? string.Empty;
+                }
+
+                if (vendorMappings is not null &&
+                    vendorMappings.TryGetValue(template.VendorCode, out var mapping))
+                {
+                    profile.MappingId = mapping.Id;
+                    profile.Name = mapping.IncomingTourName ?? string.Empty;
+                }
+
+                if (vendorLinks is not null &&
+                    vendorLinks.TryGetValue(template.VendorCode, out var link))
+                {
+                    profile.LinkId = link.Id;
+                    var linkName = NormalizeOptionalText(link.TourName);
+                    if (!string.IsNullOrWhiteSpace(linkName))
+                    {
+                        // Prefer TourLinks canonical tour name when present to keep advanced UI aligned with link records.
+                        profile.Name = linkName;
+                    }
+                    profile.ProductId = link.ProductId ?? string.Empty;
+                    profile.TourLink = link.TourLinkUrl ?? string.Empty;
+                    profile.ReviewLink = link.ReviewLink ?? string.Empty;
+                }
+
+                return profile;
+            })
+            .ToList();
+
+        if (!state.VendorProfiles.Any(x => !string.IsNullOrWhiteSpace(x.Name)) &&
+            !string.IsNullOrWhiteSpace(state.Tour.TourName) &&
+            state.VendorProfiles.Count > 0)
+        {
+            state.VendorProfiles[0].Name = state.Tour.TourName;
+        }
+
+        if (!state.VendorProfiles.Any(x =>
+                !string.IsNullOrWhiteSpace(x.ProductId) ||
+                !string.IsNullOrWhiteSpace(x.TourLink) ||
+                !string.IsNullOrWhiteSpace(x.ReviewLink)) &&
+            state.VendorProfiles.Count > 0)
+        {
+            state.VendorProfiles[0].ProductId = state.Tour.VendorTourId ?? string.Empty;
+            state.VendorProfiles[0].TourLink = state.Tour.VendorScheduleLink ?? state.Tour.VendorLink ?? string.Empty;
+            state.VendorProfiles[0].ReviewLink = state.Tour.ReviewLink ?? string.Empty;
+        }
+
+        var hasExplicitActiveAssignments = activeVendorCodes is not null && activeVendorCodes.Count > 0;
+        foreach (var profile in state.VendorProfiles)
+        {
+            profile.IsActive = hasExplicitActiveAssignments
+                ? activeVendorCodes!.Contains(profile.VendorCode)
+                : HasLegacyActiveVendorData(profile);
+        }
+    }
+
+    private static bool HasLegacyActiveVendorData(VendorProfileEditorState profile)
+    {
+        return profile.MappingId is > 0 ||
+               profile.LinkId is > 0 ||
+               !string.IsNullOrWhiteSpace(profile.ProductId) ||
+               !string.IsNullOrWhiteSpace(profile.TourLink) ||
+               !string.IsNullOrWhiteSpace(profile.ReviewLink);
+    }
+
+    private void InitializeMappingVariants(TourEditorState state, IReadOnlyList<TourNameMapping>? mappings)
+    {
+        state.MappingVariants = (mappings ?? Array.Empty<TourNameMapping>())
+            .Where(x => x.IsActive && x.TourId == state.Tour.Id)
+            .Select(x =>
+            {
+                var vendorKey = NormalizeVendorKey(x.VendorName);
+                var isSupported = IsSupportedVendor(vendorKey);
+                return new TourMappingVariantState
+                {
+                    Id = x.Id,
+                    VendorCode = isSupported ? vendorKey : "UNASSIGNED",
+                    VendorDisplayName = string.IsNullOrWhiteSpace(x.VendorName) ? "Unassigned" : x.VendorName.Trim(),
+                    IncomingTourName = x.IncomingTourName,
+                    UpdatedAt = x.UpdatedAt
+                };
+            })
+            .OrderBy(x => x.VendorCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.IncomingTourName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private List<TourMappingVariantState> GetMappingsForVendor(TourEditorState state, string vendorCode)
+    {
+        return state.MappingVariants
+            .Where(x => string.Equals(x.VendorCode, vendorCode, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.IncomingTourName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private List<TourMappingVariantState> GetUnassignedMappings(TourEditorState state)
+    {
+        return state.MappingVariants
+            .Where(x => !IsSupportedVendor(x.VendorCode))
+            .OrderBy(x => x.IncomingTourName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task AddMappingAliasAsync(TourEditorState state, VendorProfileEditorState vendor)
+    {
+        if (state.IsBusy)
+        {
+            return;
+        }
+
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+
+        if (state.Tour.Id <= 0)
+        {
+            state.ErrorMessage = "Save the tour first, then add mapping variants.";
+            return;
+        }
+
+        var desiredName = NormalizeOptionalText(vendor.PendingAlias);
+        if (string.IsNullOrWhiteSpace(desiredName))
+        {
+            state.ErrorMessage = "Enter an alias before adding.";
+            return;
+        }
+
+        var vendorKey = NormalizeVendorKey(vendor.VendorCode);
+        if (state.MappingVariants.Any(x =>
+                string.Equals(x.VendorCode, vendorKey, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.IncomingTourName?.Trim(), desiredName, StringComparison.OrdinalIgnoreCase)))
+        {
+            state.SuccessMessage = "Alias already exists for this vendor.";
+            vendor.PendingAlias = string.Empty;
+            return;
+        }
+
+        state.IsBusy = true;
+
+        try
+        {
+            var mappingId = await TourNameMappingService.AddMappingAsync(state.Tour.Id, desiredName, vendor.VendorRecordName);
+            if (mappingId <= 0)
+            {
+                var refreshed = await TourNameMappingService.GetMappingsForTourAsync(state.Tour.Id);
+                InitializeMappingVariants(state, refreshed);
+                state.SuccessMessage = "Alias already exists.";
+                vendor.PendingAlias = string.Empty;
+                return;
+            }
+
+            state.MappingVariants.Add(new TourMappingVariantState
+            {
+                Id = mappingId,
+                VendorCode = vendorKey,
+                VendorDisplayName = vendor.VendorRecordName,
+                IncomingTourName = desiredName,
+                UpdatedAt = DateTime.UtcNow
+            });
+            state.MappingVariants = state.MappingVariants
+                .OrderBy(x => x.VendorCode, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.IncomingTourName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            vendor.PendingAlias = string.Empty;
+            state.SuccessMessage = $"Alias added for {vendor.SectionTitle}.";
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Could not add alias: {ex.Message}";
+        }
+        finally
+        {
+            state.IsBusy = false;
+        }
+    }
+
+    private async Task DeleteMappingAliasAsync(TourEditorState state, TourMappingVariantState mapping)
+    {
+        if (state.IsBusy || mapping.Id <= 0)
+        {
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Deactivate alias '{mapping.IncomingTourName}'?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        state.IsBusy = true;
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+
+        try
+        {
+            var deleted = await TourNameMappingService.DeleteMappingAsync(mapping.Id);
+            if (!deleted)
+            {
+                state.ErrorMessage = "Could not deactivate alias.";
+                return;
+            }
+
+            state.MappingVariants.RemoveAll(x => x.Id == mapping.Id);
+            state.SuccessMessage = "Alias deactivated.";
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Could not deactivate alias: {ex.Message}";
+        }
+        finally
+        {
+            state.IsBusy = false;
+        }
+    }
+
+    private async Task DeactivateAllUnassignedMappingsAsync(TourEditorState state)
+    {
+        if (state.IsBusy)
+        {
+            return;
+        }
+
+        var targets = GetUnassignedMappings(state)
+            .Where(x => x.Id > 0)
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            state.SuccessMessage = "No unassigned aliases found.";
+            state.ErrorMessage = null;
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>(
+            "confirm",
+            $"Deactivate {targets.Count} unassigned legacy alias(es)? This is reversible by adding aliases again.");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        state.IsBusy = true;
+        state.ErrorMessage = null;
+        state.SuccessMessage = null;
+
+        try
+        {
+            var deactivatedIds = new List<int>(targets.Count);
+
+            foreach (var target in targets)
+            {
+                var deleted = await TourNameMappingService.DeleteMappingAsync(target.Id);
+                if (deleted)
+                {
+                    deactivatedIds.Add(target.Id);
+                }
+            }
+
+            if (deactivatedIds.Count > 0)
+            {
+                state.MappingVariants.RemoveAll(x => deactivatedIds.Contains(x.Id));
+            }
+
+            if (deactivatedIds.Count == targets.Count)
+            {
+                state.SuccessMessage = $"Deactivated {deactivatedIds.Count} unassigned alias(es).";
+            }
+            else
+            {
+                state.ErrorMessage = $"Only {deactivatedIds.Count} of {targets.Count} unassigned alias(es) were deactivated.";
+            }
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Bulk deactivation failed: {ex.Message}";
+        }
+        finally
+        {
+            state.IsBusy = false;
+        }
+    }
+
+    private VendorCompletenessSummary BuildVendorCompletenessSummary(TourEditorState state)
+    {
+        var tracked = state.VendorProfiles
+            .Select(BuildVendorCompleteness)
+            .Where(x => x.IsTracked)
+            .ToList();
+
+        if (tracked.Count == 0)
+        {
+            return new VendorCompletenessSummary
+            {
+                TrackedVendors = 0,
+                CompletedVendors = 0,
+                IncompleteVendors = 0
+            };
+        }
+
+        var completed = tracked.Count(x => x.IsComplete);
+        return new VendorCompletenessSummary
+        {
+            TrackedVendors = tracked.Count,
+            CompletedVendors = completed,
+            IncompleteVendors = tracked.Count - completed
+        };
+    }
+
+    private VendorCompletenessState BuildVendorCompleteness(VendorProfileEditorState vendor)
+    {
+        if (!vendor.IsActive)
+        {
+            return new VendorCompletenessState
+            {
+                IsTracked = false,
+                IsComplete = false,
+                RequiredFields = 0,
+                CompletedRequired = 0,
+                MissingFieldLabels = new List<string>()
+            };
+        }
+
+        var missing = new List<string>();
+        var requiredCount = 0;
+        var completedRequired = 0;
+
+        TrackField(vendor.RequiresName, vendor.Name, vendor.NameFieldLabel, missing, ref requiredCount, ref completedRequired);
+        TrackField(vendor.RequiresProductId, vendor.ProductId, vendor.IdFieldLabel, missing, ref requiredCount, ref completedRequired);
+        TrackField(vendor.RequiresTourLink, vendor.TourLink, vendor.TourLinkLabel, missing, ref requiredCount, ref completedRequired);
+        TrackField(vendor.RequiresReviewLink, vendor.ReviewLink, vendor.ReviewLinkLabel, missing, ref requiredCount, ref completedRequired);
+        TrackField(vendor.RequiresAllToursLink, vendor.AllToursLink, vendor.AllToursLinkLabel, missing, ref requiredCount, ref completedRequired);
+        var isTracked = requiredCount > 0;
+
+        return new VendorCompletenessState
+        {
+            IsTracked = isTracked,
+            RequiredFields = requiredCount,
+            CompletedRequired = completedRequired,
+            MissingFieldLabels = missing,
+            IsComplete = isTracked && missing.Count == 0
+        };
+    }
+
+    private static void TrackField(
+        bool isRequired,
+        string? value,
+        string fieldLabel,
+        List<string> missing,
+        ref int requiredCount,
+        ref int completedRequired)
+    {
+        if (!isRequired)
+        {
+            return;
+        }
+
+        requiredCount++;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            missing.Add(fieldLabel);
+            return;
+        }
+
+        completedRequired++;
+    }
+
+    private void ApplyLegacyVendorFallbackFields(TourEditorState state)
+    {
+        var primaryProfile = state.VendorProfiles.FirstOrDefault(x =>
+                !string.IsNullOrWhiteSpace(x.Name) ||
+                !string.IsNullOrWhiteSpace(x.ProductId) ||
+                !string.IsNullOrWhiteSpace(x.TourLink) ||
+                !string.IsNullOrWhiteSpace(x.ReviewLink))
+            ?? state.VendorProfiles.FirstOrDefault();
+
+        state.Tour.VendorTourId = NormalizeOptionalText(primaryProfile?.ProductId);
+        state.Tour.VendorScheduleLink = NormalizeOptionalText(primaryProfile?.TourLink);
+        state.Tour.ReviewLink = NormalizeOptionalText(primaryProfile?.ReviewLink);
+        state.Tour.VendorLink = NormalizeOptionalText(primaryProfile?.TourLink);
+
+        var activeVendors = state.VendorProfiles
+            .Where(x => x.IsActive)
+            .Select(x => x.VendorCode)
+            .ToList();
+        state.Tour.VendorNames = activeVendors.Count == 0
+            ? null
+            : string.Join(',', activeVendors);
+    }
+
+    private async Task<int> SaveVendorDetailsAsync(TourEditorState state, int tourId)
+    {
+        var existingVendors = await VendorsApi.GetVendorsAsync();
+        var existingVendorTours = await VendorsApi.GetVendorToursAsync();
+        var existingMappings = await TourNameMappingService.GetMappingsForTourAsync(tourId);
+        var existingLinks = await TourLinkService.GetLinksForTourAsync(tourId, null);
+        var activeVendorTourLookup = new HashSet<string>(
+            existingVendorTours
+                .Where(x => x.IsActive)
+                .Select(x => BuildVendorTourLookupKey(x.VendorId, x.MasterTourName)),
+            StringComparer.OrdinalIgnoreCase);
+        var affectedRows = 0;
+
+        foreach (var vendor in state.VendorProfiles)
+        {
+            affectedRows += await SaveVendorRecordAsync(vendor, existingVendors);
+            affectedRows += await SaveVendorTourAssignmentAsync(state, vendor, activeVendorTourLookup);
+            affectedRows += await SaveVendorMappingAsync(tourId, vendor, existingMappings);
+            affectedRows += await SaveVendorLinkAsync(state, tourId, vendor, existingLinks);
+        }
+
+        return affectedRows;
+    }
+
+    private async Task<int> SaveVendorRecordAsync(VendorProfileEditorState vendor, List<DbVendor> existingVendors)
+    {
+        var desiredAllToursLink = NormalizeOptionalText(vendor.AllToursLink);
+        var hasAnyData =
+            vendor.IsActive ||
+            !string.IsNullOrWhiteSpace(vendor.Name) ||
+            !string.IsNullOrWhiteSpace(vendor.ProductId) ||
+            !string.IsNullOrWhiteSpace(vendor.TourLink) ||
+            !string.IsNullOrWhiteSpace(vendor.ReviewLink) ||
+            !string.IsNullOrWhiteSpace(desiredAllToursLink);
+
+        var existing = existingVendors.FirstOrDefault(x =>
+            string.Equals(NormalizeVendorKey(x.VendorName), NormalizeVendorKey(vendor.VendorCode), StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            if (!hasAnyData)
+            {
+                return 0;
+            }
+
+            var created = await VendorsApi.CreateVendorAsync(new DbVendor
+            {
+                VendorName = vendor.VendorRecordName,
+                AllToursLink = desiredAllToursLink,
+                IsActive = true
+            });
+
+            if (created is not null)
+            {
+                vendor.VendorId = created.Id;
+                existingVendors.Add(created);
+                return 1;
+            }
+
+            return 0;
+        }
+
+        vendor.VendorId = existing.Id;
+
+        var existingAllTours = NormalizeOptionalText(existing.AllToursLink);
+        if (string.Equals(existingAllTours, desiredAllToursLink, StringComparison.OrdinalIgnoreCase) &&
+            existing.IsActive)
+        {
+            return 0;
+        }
+
+        var payload = new DbVendor
+        {
+            VendorName = string.IsNullOrWhiteSpace(existing.VendorName) ? vendor.VendorRecordName : existing.VendorName,
+            AllToursLink = desiredAllToursLink,
+            IsActive = true
+        };
+
+        var updated = await VendorsApi.UpdateVendorAsync(existing.Id, payload);
+        if (updated)
+        {
+            existing.VendorName = payload.VendorName;
+            existing.AllToursLink = payload.AllToursLink;
+            existing.IsActive = payload.IsActive;
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private async Task<int> SaveVendorTourAssignmentAsync(
+        TourEditorState state,
+        VendorProfileEditorState vendor,
+        HashSet<string> activeVendorTourLookup)
+    {
+        if (vendor.VendorId is not > 0)
+        {
+            return 0;
+        }
+
+        var masterTourName = NormalizeOptionalText(state.Tour.MasterTourName)
+            ?? NormalizeOptionalText(state.Tour.TourName);
+        if (string.IsNullOrWhiteSpace(masterTourName))
+        {
+            return 0;
+        }
+
+        var key = BuildVendorTourLookupKey(vendor.VendorId.Value, masterTourName);
+        var currentlyActive = activeVendorTourLookup.Contains(key);
+        if (currentlyActive == vendor.IsActive)
+        {
+            return 0;
+        }
+
+        var updated = await VendorsApi.SetVendorTourActiveAsync(vendor.VendorId.Value, masterTourName, vendor.IsActive);
+        if (!updated)
+        {
+            var detail = string.IsNullOrWhiteSpace(VendorsApi.LastError) ? "Unknown error." : VendorsApi.LastError;
+            throw new InvalidOperationException($"Could not update vendor tour assignment for {vendor.SectionTitle}: {detail}");
+        }
+
+        if (vendor.IsActive)
+        {
+            activeVendorTourLookup.Add(key);
+        }
+        else
+        {
+            activeVendorTourLookup.Remove(key);
+        }
+
+        return 1;
+    }
+
+    private static string BuildVendorTourLookupKey(int vendorId, string? masterTourName)
+    {
+        return $"{vendorId}|{NormalizeMasterTourLookupKey(masterTourName)}";
+    }
+
+    private async Task<int> SaveVendorMappingAsync(
+        int tourId,
+        VendorProfileEditorState vendor,
+        List<TourNameMapping> existingMappings)
+    {
+        var vendorKey = NormalizeVendorKey(vendor.VendorCode);
+        var desiredName = NormalizeOptionalText(vendor.Name);
+
+        var vendorMappings = existingMappings
+            .Where(x => x.IsActive && string.Equals(NormalizeVendorKey(x.VendorName), vendorKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(desiredName))
+        {
+            vendor.MappingId = vendorMappings
+                .OrderByDescending(x => x.UpdatedAt)
+                .Select(x => (int?)x.Id)
+                .FirstOrDefault();
+            return 0;
+        }
+
+        var matching = vendorMappings.FirstOrDefault(x =>
+            string.Equals(x.IncomingTourName?.Trim(), desiredName, StringComparison.OrdinalIgnoreCase));
+
+        if (matching is null)
+        {
+            var mappingId = await TourNameMappingService.AddMappingAsync(tourId, desiredName, vendor.VendorRecordName);
+            if (mappingId > 0)
+            {
+                existingMappings.Add(new TourNameMapping
+                {
+                    Id = mappingId,
+                    TourId = tourId,
+                    IncomingTourName = desiredName,
+                    VendorName = vendor.VendorRecordName,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+                vendor.MappingId = mappingId;
+                return 1;
+            }
+            else
+            {
+                var refreshed = await TourNameMappingService.GetMappingsForTourAsync(tourId);
+                existingMappings.Clear();
+                existingMappings.AddRange(refreshed);
+
+                var refreshedMatch = refreshed
+                    .Where(x => x.IsActive)
+                    .FirstOrDefault(x =>
+                        string.Equals(NormalizeVendorKey(x.VendorName), vendorKey, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(x.IncomingTourName?.Trim(), desiredName, StringComparison.OrdinalIgnoreCase));
+
+                if (refreshedMatch is not null)
+                {
+                    vendor.MappingId = refreshedMatch.Id;
+                    return await TourNameMappingService.TouchMappingAsync(refreshedMatch.Id) ? 1 : 0;
+                }
+                else
+                {
+                    vendor.MappingId = null;
+                    return 0;
+                }
+            }
+        }
+
+        vendor.MappingId = matching.Id;
+        var touched = await TourNameMappingService.TouchMappingAsync(matching.Id);
+        if (touched)
+        {
+            matching.UpdatedAt = DateTime.UtcNow;
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private async Task<int> SaveVendorLinkAsync(
+        TourEditorState state,
+        int tourId,
+        VendorProfileEditorState vendor,
+        List<TourLink> existingLinks)
+    {
+        var vendorKey = NormalizeVendorKey(vendor.VendorCode);
+        var desiredName = NormalizeOptionalText(vendor.Name);
+        var desiredProductId = NormalizeOptionalText(vendor.ProductId);
+        var desiredTourLink = NormalizeOptionalText(vendor.TourLink);
+        var desiredReviewLink = NormalizeOptionalText(vendor.ReviewLink);
+
+        var hasAnyData =
+            !string.IsNullOrWhiteSpace(desiredName) ||
+            !string.IsNullOrWhiteSpace(desiredProductId) ||
+            !string.IsNullOrWhiteSpace(desiredTourLink) ||
+            !string.IsNullOrWhiteSpace(desiredReviewLink);
+
+        var vendorLinks = existingLinks
+            .Where(x => string.Equals(NormalizeVendorKey(x.Vendor), vendorKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var editable = vendorLinks
+            .Where(x => x.TourDay is null && string.IsNullOrWhiteSpace(x.TourTime))
+            .OrderByDescending(x => x.UpdatedAt)
+            .FirstOrDefault()
+            ?? vendorLinks.OrderByDescending(x => x.UpdatedAt).FirstOrDefault();
+
+        if (!hasAnyData)
+        {
+            if (editable is not null && editable.Id > 0 && editable.TourDay is null && string.IsNullOrWhiteSpace(editable.TourTime))
+            {
+                var deleted = await TourLinkService.DeleteAsync(editable.Id);
+                if (deleted)
+                {
+                    existingLinks.RemoveAll(x => x.Id == editable.Id);
+                    vendor.LinkId = null;
+                    return 1;
+                }
+            }
+
+            vendor.LinkId = null;
+            return 0;
+        }
+
+        var canonicalTourName = desiredName
+            ?? NormalizeOptionalText(state.Tour.MasterTourName)
+            ?? NormalizeOptionalText(state.Tour.TourName)
+            ?? vendor.SectionTitle;
+
+        if (editable is not null)
+        {
+            var existingName = NormalizeOptionalText(editable.TourName);
+            var existingProductId = NormalizeOptionalText(editable.ProductId);
+            var existingTourLink = NormalizeOptionalText(editable.TourLinkUrl);
+            var existingReviewLink = NormalizeOptionalText(editable.ReviewLink);
+            var existingVendorName = NormalizeOptionalText(editable.Vendor);
+
+            if (string.Equals(existingName, canonicalTourName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existingProductId, desiredProductId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existingTourLink, desiredTourLink, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existingReviewLink, desiredReviewLink, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existingVendorName, vendor.VendorRecordName, StringComparison.OrdinalIgnoreCase))
+            {
+                vendor.LinkId = editable.Id;
+                return 0;
+            }
+        }
+
+        var payload = editable ?? new TourLink
+        {
+            Vendor = vendor.VendorRecordName,
+            TourId = tourId
+        };
+
+        payload.Vendor = vendor.VendorRecordName;
+        payload.TourId = tourId;
+        payload.TourName = canonicalTourName;
+        payload.ProductId = desiredProductId;
+        payload.TourLinkUrl = desiredTourLink;
+        payload.ReviewLink = desiredReviewLink;
+
+        var savedId = await TourLinkService.SaveAsync(payload);
+        var resolvedId = savedId > 0 ? savedId : payload.Id;
+        vendor.LinkId = resolvedId > 0 ? resolvedId : null;
+
+        if (editable is null)
+        {
+            payload.Id = vendor.LinkId ?? payload.Id;
+            existingLinks.Add(payload);
+        }
+
+        return resolvedId > 0 ? 1 : 0;
+    }
+
+    private static Dictionary<string, DbVendor> BuildVendorRecordLookup(IReadOnlyList<DbVendor> vendors)
+    {
+        var result = new Dictionary<string, DbVendor>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var vendor in vendors)
+        {
+            var key = NormalizeVendorKey(vendor.VendorName);
+            if (string.IsNullOrWhiteSpace(key) || !IsSupportedVendor(key))
+            {
+                continue;
+            }
+
+            if (!result.TryGetValue(key, out var existing) ||
+                GetVendorSortDate(vendor) >= GetVendorSortDate(existing))
+            {
+                result[key] = vendor;
+            }
+        }
+
+        return result;
+    }
+
+    private static DateTime GetVendorSortDate(DbVendor vendor)
+    {
+        return vendor.UpdatedAt ?? vendor.CreatedAt ?? DateTime.MinValue;
+    }
+
+    private static Dictionary<string, HashSet<string>> BuildVendorTourAssignmentLookup(
+        IReadOnlyList<DbVendor> vendors,
+        IReadOnlyList<DbVendorTour> vendorTours)
+    {
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        if (vendors.Count == 0 || vendorTours.Count == 0)
+        {
+            return result;
+        }
+
+        var vendorsById = vendors
+            .Where(x => x.Id > 0)
+            .GroupBy(x => x.Id)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(GetVendorSortDate).First());
+
+        foreach (var vendorTour in vendorTours.Where(x => x.IsActive))
+        {
+            if (!vendorsById.TryGetValue(vendorTour.VendorId, out var vendorRecord))
+            {
+                continue;
+            }
+
+            var vendorKey = NormalizeVendorKey(vendorRecord.VendorName);
+            if (string.IsNullOrWhiteSpace(vendorKey) || !IsSupportedVendor(vendorKey))
+            {
+                continue;
+            }
+
+            var masterTourKey = NormalizeMasterTourLookupKey(vendorTour.MasterTourName);
+            if (string.IsNullOrWhiteSpace(masterTourKey))
+            {
+                continue;
+            }
+
+            if (!result.TryGetValue(masterTourKey, out var assignedVendors))
+            {
+                assignedVendors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                result[masterTourKey] = assignedVendors;
+            }
+
+            assignedVendors.Add(vendorKey);
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, Dictionary<string, TourNameMapping>> BuildVendorMappingLookup(
+        IReadOnlyList<TourNameMapping> mappings)
+    {
+        var result = new Dictionary<int, Dictionary<string, TourNameMapping>>();
+
+        foreach (var mapping in mappings.Where(x => x.IsActive && x.TourId > 0))
+        {
+            var vendorKey = NormalizeVendorKey(mapping.VendorName);
+            if (string.IsNullOrWhiteSpace(vendorKey) || !IsSupportedVendor(vendorKey))
+            {
+                continue;
+            }
+
+            if (!result.TryGetValue(mapping.TourId, out var mapByVendor))
+            {
+                mapByVendor = new Dictionary<string, TourNameMapping>(StringComparer.OrdinalIgnoreCase);
+                result[mapping.TourId] = mapByVendor;
+            }
+
+            if (!mapByVendor.TryGetValue(vendorKey, out var existing) ||
+                mapping.UpdatedAt >= existing.UpdatedAt)
+            {
+                mapByVendor[vendorKey] = mapping;
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, List<TourNameMapping>> BuildMappingVariantsLookup(IReadOnlyList<TourNameMapping> mappings)
+    {
+        var result = new Dictionary<int, List<TourNameMapping>>();
+
+        foreach (var mapping in mappings.Where(x => x.IsActive && x.TourId > 0))
+        {
+            if (!result.TryGetValue(mapping.TourId, out var variants))
+            {
+                variants = new List<TourNameMapping>();
+                result[mapping.TourId] = variants;
+            }
+
+            variants.Add(mapping);
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, Dictionary<string, TourLink>> BuildVendorLinkLookup(IReadOnlyList<TourLink> links)
+    {
+        var result = new Dictionary<int, Dictionary<string, TourLink>>();
+
+        foreach (var link in links.Where(x => x.TourId is > 0))
+        {
+            var vendorKey = NormalizeVendorKey(link.Vendor);
+            if (string.IsNullOrWhiteSpace(vendorKey) || !IsSupportedVendor(vendorKey))
+            {
+                continue;
+            }
+
+            var tourId = link.TourId!.Value;
+            if (!result.TryGetValue(tourId, out var mapByVendor))
+            {
+                mapByVendor = new Dictionary<string, TourLink>(StringComparer.OrdinalIgnoreCase);
+                result[tourId] = mapByVendor;
+            }
+
+            if (!mapByVendor.TryGetValue(vendorKey, out var existing) ||
+                IsPreferredLink(link, existing))
+            {
+                mapByVendor[vendorKey] = link;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsPreferredLink(TourLink candidate, TourLink current)
+    {
+        var candidateScore = ScoreLink(candidate);
+        var currentScore = ScoreLink(current);
+        if (candidateScore != currentScore)
+        {
+            return candidateScore > currentScore;
+        }
+
+        return candidate.UpdatedAt >= current.UpdatedAt;
+    }
+
+    private static int ScoreLink(TourLink link)
+    {
+        var score = 0;
+        if (link.TourDay is null) score += 2;
+        if (string.IsNullOrWhiteSpace(link.TourTime)) score += 2;
+        if (!string.IsNullOrWhiteSpace(link.ProductId)) score += 1;
+        if (!string.IsNullOrWhiteSpace(link.TourLinkUrl)) score += 1;
+        if (!string.IsNullOrWhiteSpace(link.ReviewLink)) score += 1;
+        return score;
+    }
+
+    private static bool IsSupportedVendor(string vendorKey)
+    {
+        return VendorProfileTemplates.Any(x =>
+            string.Equals(x.VendorCode, vendorKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeVendorKey(string? vendorName)
+    {
+        if (string.IsNullOrWhiteSpace(vendorName))
+        {
+            return string.Empty;
+        }
+
+        var upper = vendorName.Trim().ToUpperInvariant();
+        var compact = Regex.Replace(upper, "[^A-Z0-9]", string.Empty, RegexOptions.CultureInvariant);
+
+        if (compact.Contains("VIATOR", StringComparison.Ordinal))
+        {
+            return "VIATOR";
+        }
+
+        if (compact.Contains("GURUWALK", StringComparison.Ordinal) || compact.StartsWith("GURU", StringComparison.Ordinal))
+        {
+            return "GURUWALK";
+        }
+
+        if (compact.Contains("FREETOUR", StringComparison.Ordinal))
+        {
+            return "FREETOUR";
+        }
+
+        if (compact.Contains("GETYOURGUIDE", StringComparison.Ordinal) || compact.Equals("GYG", StringComparison.Ordinal))
+        {
+            return "GETYOURGUIDE";
+        }
+
+        if (compact.Contains("AIRBNB", StringComparison.Ordinal))
+        {
+            return "AIRBNB";
+        }
+
+        if (compact.Contains("CIVITATIS", StringComparison.Ordinal) || compact.Contains("CIVATASIS", StringComparison.Ordinal))
+        {
+            return "CIVITATIS";
+        }
+
+        if (compact.Contains("CITYSHUFFLES", StringComparison.Ordinal) || compact.Contains("WEBSITE", StringComparison.Ordinal))
+        {
+            return "WEBSITE";
+        }
+
+        return compact;
+    }
+
+    private string GetDurationSelectValue(TourEditorState state)
+    {
+        var normalized = NormalizeDurationValue(state.Tour.Duration);
+        state.Tour.Duration = normalized;
+        return normalized;
+    }
+
+    private void OnDurationSelectionChanged(TourEditorState state, ChangeEventArgs args)
+    {
+        var selected = args.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(selected) && DurationHourOptions.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            state.Tour.Duration = selected;
+            return;
+        }
+
+        state.Tour.Duration = "3";
+    }
+
+    private void OnMeetingTimeSelectionChanged(TourEditorState state, ChangeEventArgs args)
+    {
+        var normalized = NormalizeTime(args.Value?.ToString());
+        state.Tour.MeetingTime = string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        state.MeetingTimeManuallySet = !string.IsNullOrWhiteSpace(state.Tour.MeetingTime);
+
+        if (!state.MeetingTimeManuallySet)
+        {
+            ApplyMeetingOffset(state);
+        }
+    }
+
+    private void OnMeetingOffsetChanged(TourEditorState state, ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return;
+        }
+
+        state.MeetingOffsetMinutes = NormalizeNegativeOffset(parsed);
+
+        if (!state.MeetingTimeManuallySet || string.IsNullOrWhiteSpace(state.Tour.MeetingTime))
+        {
+            ApplyMeetingOffset(state);
+        }
+    }
+
+    private void ApplyMeetingOffset(TourEditorState state)
+    {
+        var computed = ComputeMeetingTime(state.SelectedTourTime, state.MeetingOffsetMinutes);
+        if (string.IsNullOrWhiteSpace(computed))
+        {
+            return;
+        }
+
+        state.Tour.MeetingTime = computed;
+        state.MeetingTimeManuallySet = false;
+    }
+
+    private void OnGuideSelectionChanged(TourEditorState state, ChangeEventArgs args)
+    {
+        state.GuideManuallySet = true;
+
+        if (int.TryParse(args.Value?.ToString(), out var guideId) && guideId > 0)
+        {
+            state.Tour.DefaultGuideId = guideId;
+            return;
+        }
+
+        state.Tour.DefaultGuideId = null;
+    }
+
+    private string GetGuideSelectValue(TourEditorState state)
+    {
+        return state.Tour.DefaultGuideId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private void MaybeApplyDefaultGuide(TourEditorState state)
+    {
+        if (state.GuideManuallySet || tourCatalog is null)
+        {
+            return;
+        }
+
+        var entry = FindCatalogEntry(state.Tour.TourName);
+        if (entry is null)
+        {
+            return;
+        }
+
+        int? resolvedGuideId = null;
+        if (entry.TourId is int tourId &&
+            tourCatalog.GuideDefaultsByTourId.TryGetValue(tourId, out var defaults) &&
+            defaults.Count > 0)
+        {
+            var normalizedTime = NormalizeTime(state.SelectedTourTime);
+            if (!string.IsNullOrWhiteSpace(normalizedTime))
+            {
+                var byTime = defaults.FirstOrDefault(d =>
+                    string.Equals(NormalizeTime(d.StartTime), normalizedTime, StringComparison.OrdinalIgnoreCase));
+                resolvedGuideId = byTime?.GuideId;
+            }
+
+            resolvedGuideId ??= defaults.FirstOrDefault()?.GuideId;
+        }
+
+        resolvedGuideId ??= entry.DefaultGuideId;
+
+        if (resolvedGuideId.HasValue && availableGuides.Any(g => g.Id == resolvedGuideId.Value))
+        {
+            state.Tour.DefaultGuideId = resolvedGuideId;
+        }
+    }
+
+    private TourCatalogEntry? FindCatalogEntry(string? tourName)
+    {
+        if (tourCatalog is null || string.IsNullOrWhiteSpace(tourName))
+        {
+            return null;
+        }
+
+        var normalized = NormalizeName(tourName);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return tourCatalog.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.CanonicalName, normalized, StringComparison.OrdinalIgnoreCase) ||
+            entry.Aliases.Any(alias =>
+                string.Equals(NormalizeName(alias), normalized, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task DismissCreateWarningAsync(TourEditorState state)
+    {
+        state.ShowCreateWarning = false;
+
+        if (!state.NeverShowCreateWarning)
+        {
+            return;
+        }
+
+        hideCreateWarning = true;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", HideCreateWarningStorageKey, "true");
+        }
+        catch
+        {
+            // no-op
+        }
+    }
+
+    private async Task RestoreCreateWarningPreferenceAsync()
+    {
+        try
+        {
+            var stored = await JSRuntime.InvokeAsync<string>("localStorage.getItem", HideCreateWarningStorageKey);
+            hideCreateWarning = string.Equals(stored, "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            hideCreateWarning = false;
+        }
+    }
+
+    private TourEditorState CreateState(
+        DbTour source,
+        IReadOnlyList<MasterTourTimeSlot> scheduleSlots,
+        IReadOnlyDictionary<string, DbVendor>? vendorRecords,
+        IReadOnlyDictionary<string, TourNameMapping>? vendorMappings,
+        IReadOnlyList<TourNameMapping>? mappingVariants,
+        IReadOnlyDictionary<string, TourLink>? vendorLinks,
+        IReadOnlySet<string>? activeVendorCodes)
+    {
+        var tour = CloneTour(source);
+        var state = new TourEditorState
+        {
+            Tour = tour,
+            ScheduleTimeSlots = scheduleSlots.ToList()
+        };
+
+        InitializeVendorProfiles(state, vendorRecords, vendorMappings, vendorLinks, activeVendorCodes);
+        InitializeMappingVariants(state, mappingVariants);
+
+        state.AvailableTourTimes = state.ScheduleTimeSlots
+            .Select(x => NormalizeTime(x.TourTime))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var selected = NormalizeTime(tour.TourStartTime);
+        if (string.IsNullOrWhiteSpace(selected) && state.AvailableTourTimes.Count > 0)
+        {
+            selected = state.AvailableTourTimes[0];
+        }
+
+        if (!string.IsNullOrWhiteSpace(selected) && !state.AvailableTourTimes.Contains(selected, StringComparer.OrdinalIgnoreCase))
+        {
+            state.AvailableTourTimes.Add(selected);
+            state.AvailableTourTimes = state.AvailableTourTimes
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        state.SelectedTourTime = selected;
+        state.Tour.TourStartTime = string.IsNullOrWhiteSpace(selected) ? null : selected;
+        state.CustomTourTimeInput = string.IsNullOrWhiteSpace(selected) ? null : selected;
+
+        var selectedScheduleSlot = state.ScheduleTimeSlots
+            .FirstOrDefault(x => string.Equals(NormalizeTime(x.TourTime), state.SelectedTourTime, StringComparison.OrdinalIgnoreCase));
+        var scheduleMeetingTime = selectedScheduleSlot?.MeetingTime;
+        var usingScheduleMeetingTime = !string.IsNullOrWhiteSpace(scheduleMeetingTime);
+
+        var normalizedMeetingTime = NormalizeTime(usingScheduleMeetingTime ? scheduleMeetingTime : state.Tour.MeetingTime);
+        var derivedOffset = DeriveOffsetMinutes(state.SelectedTourTime, normalizedMeetingTime);
+
+        if (usingScheduleMeetingTime && IsOffsetOutsideNormalScheduleRange(derivedOffset))
+        {
+            // Guard against bad schedule AM/PM values (e.g. 12-hour drift).
+            state.MeetingOffsetMinutes = -10;
+            normalizedMeetingTime = ComputeMeetingTime(state.SelectedTourTime, state.MeetingOffsetMinutes);
+        }
+        else
+        {
+            state.MeetingOffsetMinutes = derivedOffset;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.SelectedTourTime))
+        {
+            // Backfill to rule-based meeting time when value is missing or equals tour start.
+            if (string.IsNullOrWhiteSpace(normalizedMeetingTime) ||
+                string.Equals(normalizedMeetingTime, state.SelectedTourTime, StringComparison.OrdinalIgnoreCase))
+            {
+                state.Tour.MeetingTime = ComputeMeetingTime(state.SelectedTourTime, state.MeetingOffsetMinutes);
+            }
+            else
+            {
+                state.Tour.MeetingTime = normalizedMeetingTime;
+            }
+
+            state.MeetingTimeManuallySet = false;
+        }
+        else
+        {
+            state.Tour.MeetingTime = string.IsNullOrWhiteSpace(normalizedMeetingTime) ? null : normalizedMeetingTime;
+        }
+
+        state.Tour.Duration = NormalizeDurationValue(state.Tour.Duration);
+        state.Tour.MeetingPlace = string.IsNullOrWhiteSpace(state.Tour.MeetingPlace) ? "TBD" : state.Tour.MeetingPlace;
+        state.ShowCreateWarning = state.IsNew && !hideCreateWarning;
+
+        return state;
+    }
+
+    private async Task OnEditorInputChangedAsync(TourEditorState state)
+    {
+        if (state.IsBusy || state.IsDirty)
+        {
+            return;
+        }
+
+        state.IsDirty = true;
+        if (!state.DirtyToastShown)
+        {
+            state.DirtyToastShown = true;
+            await ToastService.ShowInfoAsync("Editing... Save to keep changes.", "Unsaved Changes");
+        }
+
+        await UpdateUnsavedChangesWarningAsync();
+    }
+
+    private bool HasUnsavedChanges()
+    {
+        return tourStates.Any(x => x.IsDirty);
+    }
+
+    private async Task UpdateUnsavedChangesWarningAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setPageUnsavedChanges", HasUnsavedChanges());
+        }
+        catch (JSException ex) when (ex.Message.Contains("setPageUnsavedChanges", StringComparison.OrdinalIgnoreCase) ||
+                                     ex.Message.Contains("undefined", StringComparison.OrdinalIgnoreCase))
+        {
+            // JS file not loaded yet; ignore and continue.
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("JavaScript interop calls cannot be issued at this time", StringComparison.Ordinal))
+        {
+            // prerender/no-op
+        }
+        catch (JSDisconnectedException)
+        {
+            // disconnected/no-op
+        }
+    }
+
+    private async ValueTask ConfirmNavigationWhenDirtyAsync(LocationChangingContext context)
+    {
+        if (!HasUnsavedChanges())
+        {
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>(
+            "confirm",
+            "You have unsaved changes. Leave this page without saving?");
+
+        if (!confirmed)
+        {
+            context.PreventNavigation();
+        }
+    }
+
+    private static DbTour CloneTour(DbTour source)
+    {
+        return new DbTour
+        {
+            Id = source.Id,
+            TourName = source.TourName,
+            TourNameAlias = source.TourNameAlias,
+            VendorNames = source.VendorNames,
+            MeetingPlace = source.MeetingPlace,
+            TourStartTime = source.TourStartTime,
+            MeetingTime = source.MeetingTime,
+            MeetingInstructions = source.MeetingInstructions,
+            DefaultGuideId = source.DefaultGuideId,
+            Duration = source.Duration,
+            MaxCapacity = source.MaxCapacity,
+            IsActive = source.IsActive,
+            VendorLink = source.VendorLink,
+            Notes = source.Notes,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
+            MasterTourName = source.MasterTourName,
+            MasterTourNameDesktop = source.MasterTourNameDesktop,
+            MasterTourNameMobile = source.MasterTourNameMobile,
+            VendorTourId = source.VendorTourId,
+            VendorScheduleLink = source.VendorScheduleLink,
+            ReviewLink = source.ReviewLink
+        };
+    }
+
+    private Dictionary<int, List<MasterTourTimeSlot>> BuildScheduleTimeLookup(IReadOnlyList<DbTourSchedule> schedules)
+    {
+        var result = new Dictionary<int, Dictionary<string, MasterTourTimeSlot>>();
+
+        foreach (var schedule in schedules.Where(x => x.IsActive))
+        {
+            if (!result.TryGetValue(schedule.TourId, out var slotMap))
+            {
+                slotMap = new Dictionary<string, MasterTourTimeSlot>(StringComparer.OrdinalIgnoreCase);
+                result[schedule.TourId] = slotMap;
+            }
+
+            foreach (var slot in ParseScheduleSlots(schedule))
+            {
+                UpsertSlot(slotMap, slot);
+            }
+        }
+
+        return result.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Values.OrderBy(x => x.TourTime, StringComparer.OrdinalIgnoreCase).ToList());
+    }
+
+    private IEnumerable<MasterTourTimeSlot> ParseScheduleSlots(DbTourSchedule schedule)
+    {
+        var slots = new List<MasterTourTimeSlot>();
+
+        if (string.IsNullOrWhiteSpace(schedule.TimeSlotsJson))
+        {
+            return slots;
+        }
+
+        try
+        {
+            if (schedule.TimeSlotsJson.TrimStart().StartsWith("[", StringComparison.Ordinal))
+            {
+                var parsed = JsonSerializer.Deserialize<List<TimeSlotModel>>(schedule.TimeSlotsJson) ?? new List<TimeSlotModel>();
+                foreach (var slot in parsed)
+                {
+                    var normalized = NormalizeTime(slot.TourTime);
+                    if (string.IsNullOrWhiteSpace(normalized))
+                    {
+                        continue;
+                    }
+
+                    slots.Add(new MasterTourTimeSlot
+                    {
+                        TourTime = normalized,
+                        MeetingTime = NormalizeTime(string.IsNullOrWhiteSpace(slot.MeetingTime) ? schedule.MeetingTime : slot.MeetingTime),
+                        MeetingPlace = string.IsNullOrWhiteSpace(slot.MeetingPlace) ? schedule.MeetingPlace : slot.MeetingPlace,
+                        MeetingInstructions = string.IsNullOrWhiteSpace(slot.MeetingInstructions) ? schedule.MeetingInstructions : slot.MeetingInstructions,
+                        IsOverride = schedule.IsOverride
+                    });
+                }
+            }
+            else
+            {
+                var values = schedule.TimeSlotsJson.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var value in values)
+                {
+                    var normalized = NormalizeTime(value);
+                    if (string.IsNullOrWhiteSpace(normalized))
+                    {
+                        continue;
+                    }
+
+                    slots.Add(new MasterTourTimeSlot
+                    {
+                        TourTime = normalized,
+                        MeetingTime = NormalizeTime(schedule.MeetingTime),
+                        MeetingPlace = schedule.MeetingPlace,
+                        MeetingInstructions = schedule.MeetingInstructions,
+                        IsOverride = schedule.IsOverride
+                    });
+                }
+            }
+        }
+        catch
+        {
+            // no-op
+        }
+
+        return slots;
+    }
+
+    private static void UpsertSlot(Dictionary<string, MasterTourTimeSlot> slotMap, MasterTourTimeSlot incoming)
+    {
+        if (!slotMap.TryGetValue(incoming.TourTime, out var existing))
+        {
+            slotMap[incoming.TourTime] = incoming;
+            return;
+        }
+
+        if (incoming.IsOverride && !existing.IsOverride)
+        {
+            slotMap[incoming.TourTime] = incoming;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(existing.MeetingPlace) && !string.IsNullOrWhiteSpace(incoming.MeetingPlace))
+        {
+            existing.MeetingPlace = incoming.MeetingPlace;
+        }
+
+        if (string.IsNullOrWhiteSpace(existing.MeetingInstructions) && !string.IsNullOrWhiteSpace(incoming.MeetingInstructions))
+        {
+            existing.MeetingInstructions = incoming.MeetingInstructions;
+        }
+
+        if (string.IsNullOrWhiteSpace(existing.MeetingTime) && !string.IsNullOrWhiteSpace(incoming.MeetingTime))
+        {
+            existing.MeetingTime = incoming.MeetingTime;
+        }
+    }
+
+    private int DeriveOffsetMinutes(string? tourTime, string? meetingTime)
+    {
+        if (!TryParseTime(tourTime, out var tourParsed) || !TryParseTime(meetingTime, out var meetingParsed))
+        {
+            return -10;
+        }
+
+        var offset = (int)(meetingParsed - tourParsed).TotalMinutes;
+        if (offset > 720) offset -= 1440;
+        if (offset < -720) offset += 1440;
+        return NormalizeNegativeOffset(offset);
+    }
+
+    private static bool IsOffsetOutsideNormalScheduleRange(int offsetMinutes)
+    {
+        // Normal schedule-derived offsets are expected to be relatively close to tour start.
+        return offsetMinutes < -30 || offsetMinutes > -1;
+    }
+
+    private static int NormalizeNegativeOffset(int offsetMinutes)
+    {
+        if (offsetMinutes == 0)
+        {
+            return -10;
+        }
+
+        var normalized = -Math.Abs(offsetMinutes);
+        return Math.Clamp(normalized, -720, -1);
+    }
+
+    private static string NormalizeDurationValue(string? rawDuration)
+    {
+        if (string.IsNullOrWhiteSpace(rawDuration))
+        {
+            return "3";
+        }
+
+        if (decimal.TryParse(rawDuration.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var directHours))
+        {
+            return NormalizeDurationNumber(directHours);
+        }
+
+        var numeric = Regex.Match(rawDuration, @"\d+(\.\d+)?", RegexOptions.CultureInvariant).Value;
+        if (decimal.TryParse(numeric, NumberStyles.Number, CultureInfo.InvariantCulture, out var extractedHours))
+        {
+            return NormalizeDurationNumber(extractedHours);
+        }
+
+        return "3";
+    }
+
+    private static string NormalizeDurationNumber(decimal hours)
+    {
+        if (hours <= 0m)
+        {
+            return "3";
+        }
+
+        if (hours <= 0.75m)
+        {
+            return "0.5";
+        }
+
+        var rounded = (int)Math.Round(hours, MidpointRounding.AwayFromZero);
+        rounded = Math.Clamp(rounded, 1, 12);
+        return rounded.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryParseTime(string? raw, out DateTime parsed)
+    {
+        if (!string.IsNullOrWhiteSpace(raw) && DateTime.TryParse(raw, out parsed))
+        {
+            return true;
+        }
+
+        parsed = default;
+        return false;
+    }
+
+    private string ComputeMeetingTime(string? tourTime, int offsetMinutes)
+    {
+        if (!TryParseTime(tourTime, out var parsed))
+        {
+            return string.Empty;
+        }
+
+        return parsed.AddMinutes(offsetMinutes).ToString("HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private string NormalizeTime(string? rawTime)
+    {
+        return TourCatalogService.NormalizeTime(rawTime ?? string.Empty);
+    }
+
+    private static string FormatUserFacingTimestamp(DateTime source)
+    {
+        // Mapping timestamps have historically been displayed as UTC; keep that assumption for consistency.
+        var utc = source.Kind == DateTimeKind.Utc
+            ? source
+            : DateTime.SpecifyKind(source, DateTimeKind.Utc);
+
+        var eastern = ResolveEasternTimeZone();
+        if (eastern is null)
+        {
+            return utc.ToString("MMM d, yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+        }
+
+        var easternTime = TimeZoneInfo.ConvertTimeFromUtc(utc, eastern);
+        var suffix = eastern.IsDaylightSavingTime(easternTime) ? "EDT" : "EST";
+        return easternTime.ToString("MMM d, yyyy h:mm tt", CultureInfo.InvariantCulture) + $" {suffix}";
+    }
+
+    private static TimeZoneInfo? ResolveEasternTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return null;
+        }
+    }
+
+    private string NormalizeName(string? rawName)
+    {
+        return TourCatalogService.NormalizeName(rawName ?? string.Empty);
+    }
+
+    private static string FormatTimeDisplay(string? rawTime)
+    {
+        if (!string.IsNullOrWhiteSpace(rawTime) && DateTime.TryParse(rawTime, out var parsed))
+        {
+            return parsed.ToString("h:mm tt", CultureInfo.InvariantCulture);
+        }
+
+        return rawTime ?? string.Empty;
+    }
+
+    private string BuildAccordionTitle(TourEditorState state)
+    {
+        var title = string.IsNullOrWhiteSpace(state.Tour.MasterTourName)
+            ? state.Tour.TourName
+            : state.Tour.MasterTourName;
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = "Unnamed Tour";
+        }
+
+        return title;
+    }
+
+    private string BuildTourSelectLabel(TourEditorState state)
+    {
+        var baseLabel = string.IsNullOrWhiteSpace(state.Tour.MasterTourName)
+            ? (string.IsNullOrWhiteSpace(state.Tour.TourName) ? "Unnamed Tour" : state.Tour.TourName)
+            : state.Tour.MasterTourName;
+
+        var label = $"{baseLabel} (ID {state.Tour.Id})";
+        if (duplicateCountByCanonicalTourId.TryGetValue(state.Tour.Id, out var duplicates) &&
+            duplicates > 0)
+        {
+            label += $" [{duplicates} active duplicate row(s) hidden]";
+        }
+
+        return label;
+    }
+
+    private static string FormatGuideName(DbGuide guide)
+    {
+        if (string.IsNullOrWhiteSpace(guide.LastName))
+        {
+            return guide.FirstName ?? string.Empty;
+        }
+
+        return $"{guide.FirstName} {guide.LastName}";
+    }
+
+    private string SortTourName(TourEditorState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.Tour.MasterTourName))
+        {
+            return state.Tour.MasterTourName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.Tour.TourName))
+        {
+            return state.Tour.TourName;
+        }
+
+        return "zzz";
+    }
+
+    private void BuildCanonicalTourSelectionMetadata(IReadOnlyList<DbTour> tours)
+    {
+        canonicalTourIdSet.Clear();
+        canonicalTourIdByTourId.Clear();
+        duplicateCountByCanonicalTourId.Clear();
+
+        var groups = tours
+            .GroupBy(GetMasterTourKey, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in groups)
+        {
+            var members = group.ToList();
+            var canonical = SelectCanonicalTourRow(members);
+            canonicalTourIdSet.Add(canonical.Id);
+            duplicateCountByCanonicalTourId[canonical.Id] = members.Count(x => x.IsActive && x.Id != canonical.Id);
+
+            foreach (var member in members)
+            {
+                canonicalTourIdByTourId[member.Id] = canonical.Id;
+            }
+        }
+    }
+
+    private int NormalizeToCanonicalTourId(int tourId)
+    {
+        return canonicalTourIdByTourId.TryGetValue(tourId, out var canonicalTourId)
+            ? canonicalTourId
+            : tourId;
+    }
+
+    private static string GetMasterTourKey(DbTour tour)
+    {
+        var master = tour.MasterTourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(master))
+        {
+            return $"master::{master.ToUpperInvariant()}";
+        }
+
+        var tourName = tour.TourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(tourName))
+        {
+            return $"tour::{tourName.ToUpperInvariant()}";
+        }
+
+        return $"id::{tour.Id}";
+    }
+
+    private bool TryGetActiveMasterTourConflict(TourEditorState currentState, string? candidateMasterTourName, out DbTour conflictingTour)
+    {
+        conflictingTour = null!;
+        var candidateKey = NormalizeMasterTourLookupKey(candidateMasterTourName);
+        if (string.IsNullOrWhiteSpace(candidateKey))
+        {
+            return false;
+        }
+
+        var conflict = tourStates
+            .Where(state => !ReferenceEquals(state, currentState))
+            .Select(state => state.Tour)
+            .FirstOrDefault(tour =>
+                tour.IsActive &&
+                string.Equals(NormalizeMasterTourLookupKey(tour.MasterTourName), candidateKey, StringComparison.OrdinalIgnoreCase));
+
+        if (conflict is null)
+        {
+            return false;
+        }
+
+        conflictingTour = conflict;
+        return true;
+    }
+
+    private static string NormalizeMasterTourLookupKey(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static bool IsActiveMasterTourDuplicateConstraintViolation(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message) &&
+                current.Message.Contains(ActiveMasterTourUniqueIndexName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static DbTour SelectCanonicalTourRow(IEnumerable<DbTour> tours)
+    {
+        return tours
+            .OrderByDescending(t => t.IsActive)
+            .ThenByDescending(t => !string.IsNullOrWhiteSpace(t.MasterTourName))
+            .ThenByDescending(t => t.UpdatedAt ?? DateTime.MinValue)
+            .ThenByDescending(t => t.CreatedAt ?? DateTime.MinValue)
+            .ThenByDescending(t => t.Id)
+            .First();
+    }
+
+    private static string BuildAbbreviation(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return string.Empty;
+        }
+
+        var compact = source.Trim();
+        var spaced = Regex.Replace(compact, "([a-z0-9])([A-Z])", "$1 $2", RegexOptions.CultureInvariant);
+
+        var tokens = Regex
+            .Split(spaced, "[^A-Za-z0-9]+")
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+
+        if (tokens.Count <= 1)
+        {
+            tokens = Regex
+                .Matches(compact, "[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+")
+                .Select(m => m.Value)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+        }
+
+        if (tokens.Count > 1)
+        {
+            var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "the", "of", "and", "at", "in", "to", "for", "a", "an"
+            };
+
+            var filtered = tokens.Where(x => !stopWords.Contains(x)).ToList();
+            if (filtered.Count > 0)
+            {
+                tokens = filtered;
+            }
+        }
+
+        var initials = tokens
+            .Where(x => x.Length > 0)
+            .Select(x => char.ToUpperInvariant(x[0]))
+            .Take(8)
+            .ToArray();
+
+        if (initials.Length > 0)
+        {
+            return new string(initials);
+        }
+
+        var fallback = new string(compact.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        return fallback.Length <= 8 ? fallback : fallback[..8];
+    }
+
+    private static IReadOnlyList<string> BuildTimeOptions()
+    {
+        var list = new List<string>(288);
+        var start = TimeOnly.MinValue;
+
+        for (var i = 0; i < 288; i++)
+        {
+            list.Add(start.AddMinutes(i * 5).ToString("HH:mm", CultureInfo.InvariantCulture));
+        }
+
+        return list;
+    }
+
+    private static IReadOnlyList<string> BuildDurationHourOptions()
+    {
+        var list = new List<string>(13) { "0.5" };
+        for (var i = 1; i <= 12; i++)
+        {
+            list.Add(i.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Defines advanced-tab vendor profile behavior.
+    /// </summary>
+    /// <remarks>
+    /// Each <c>Requires*</c> flag controls two things:
+    /// 1) Field visibility in the Advanced tab
+    /// 2) Inclusion in completeness scoring and missing-field warnings
+    /// When a flag is <c>false</c>, that field is hidden and excluded from badges.
+    /// </remarks>
+    private static IReadOnlyList<VendorProfileTemplate> BuildVendorProfileTemplates()
+    {
+        return new List<VendorProfileTemplate>
+        {
+          
+            new()
+            {
+                VendorCode = "GURUWALK",
+                VendorRecordName = "GuruWalk",
+                SectionTitle = "GuruWalk",
+                NameFieldLabel = "NAME",
+                IdFieldLabel = "ID NUMBER",
+                IdPlaceholder = "60260",
+                TourLinkLabel = "Guruwalk Tour Link",
+                ReviewLinkLabel = "GuruWalk Review Link",
+                AllToursLinkLabel = "All GuruWalk tours Link"
+            },
+            new()
+            {
+                VendorCode = "FREETOUR",
+                VendorRecordName = "FreeTour",
+                SectionTitle = "FreeTour",
+                NameFieldLabel = "name",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "none",
+                TourLinkLabel = "FREETOUR Tour Link",
+                ReviewLinkLabel = "FREETOUR Review Link",
+                AllToursLinkLabel = "All FreeTour tours link",
+                RequiresProductId = false,
+                // FreeTour currently has no stable tour/review URLs. Keep hidden and excluded from warnings.
+                RequiresTourLink = false,
+                RequiresReviewLink = false
+            },
+              new()
+            {
+                VendorCode = "VIATOR",
+                VendorRecordName = "Viator",
+                SectionTitle = "VIATOR",
+                NameFieldLabel = "NAME",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "Product code: 5527066P17",
+                TourLinkLabel = "Viator Tour Link",
+                ReviewLinkLabel = "Viator Review Link",
+                AllToursLinkLabel = "All Viator tours Link"
+            },
+            new()
+            {
+                VendorCode = "GETYOURGUIDE",
+                VendorRecordName = "GetYourGuide",
+                SectionTitle = "GetYourGuide",
+                NameFieldLabel = "NAME",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "Reference Code: 2331",
+                TourLinkLabel = "GYG Tour Link",
+                ReviewLinkLabel = "REVIEW LINK",
+                AllToursLinkLabel = "All GETYOURGUIDE tours link"
+            },
+            
+            new()
+            {
+                VendorCode = "AIRBNB",
+                VendorRecordName = "Airbnb",
+                SectionTitle = "AirBNB",
+                NameFieldLabel = "name",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "none",
+                TourLinkLabel = "AirBNB Tour Link",
+                ReviewLinkLabel = "AirBNB review Link",
+                AllToursLinkLabel = "All AirBNB tours",
+                RequiresProductId = false
+            },
+            new()
+            {
+                VendorCode = "CIVITATIS",
+                VendorRecordName = "Civitatis",
+                SectionTitle = "Civatasis",
+                NameFieldLabel = "name",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "ID",
+                TourLinkLabel = "Civitatis Tour Link",
+                ReviewLinkLabel = "Civitatis Review Link",
+                AllToursLinkLabel = "All Civitatis tours",
+                RequiresProductId = false,
+                RequiresTourLink = false,
+                RequiresReviewLink = false,
+                RequiresAllToursLink = false
+            },
+            new()
+            {
+                VendorCode = "WEBSITE",
+                VendorRecordName = "Website",
+                SectionTitle = "Website",
+                NameFieldLabel = "name",
+                IdFieldLabel = "ID",
+                IdPlaceholder = "2331",
+                TourLinkLabel = "tour link",
+                ReviewLinkLabel = "review Link",
+                AllToursLinkLabel = "all tours"
+            }
+        };
+    }
+
+    /// <summary>
+    /// UI + completeness metadata for a vendor block in the Advanced tab.
+    /// </summary>
+    private sealed class VendorProfileTemplate
+    {
+        public string VendorCode { get; set; } = string.Empty;
+        public string VendorRecordName { get; set; } = string.Empty;
+        public string SectionTitle { get; set; } = string.Empty;
+        public string NameFieldLabel { get; set; } = string.Empty;
+        public string IdFieldLabel { get; set; } = string.Empty;
+        public string IdPlaceholder { get; set; } = string.Empty;
+        public string TourLinkLabel { get; set; } = string.Empty;
+        public string ReviewLinkLabel { get; set; } = string.Empty;
+        public string AllToursLinkLabel { get; set; } = string.Empty;
+        /// <summary>When false, name is hidden from required scoring and warning badges.</summary>
+        public bool RequiresName { get; set; } = true;
+        /// <summary>When false, Product ID field is hidden and excluded from warning badges.</summary>
+        public bool RequiresProductId { get; set; } = true;
+        /// <summary>When false, Tour Link field is hidden and excluded from warning badges.</summary>
+        public bool RequiresTourLink { get; set; } = true;
+        /// <summary>When false, Review Link field is hidden and excluded from warning badges.</summary>
+        public bool RequiresReviewLink { get; set; } = true;
+        /// <summary>When false, All Tours Link field is hidden and excluded from warning badges.</summary>
+        public bool RequiresAllToursLink { get; set; } = true;
+    }
+
+    private sealed class VendorProfileEditorState
+    {
+        public string VendorCode { get; set; } = string.Empty;
+        public string VendorRecordName { get; set; } = string.Empty;
+        public string SectionTitle { get; set; } = string.Empty;
+        public string NameFieldLabel { get; set; } = string.Empty;
+        public string IdFieldLabel { get; set; } = string.Empty;
+        public string IdPlaceholder { get; set; } = string.Empty;
+        public string TourLinkLabel { get; set; } = string.Empty;
+        public string ReviewLinkLabel { get; set; } = string.Empty;
+        public string AllToursLinkLabel { get; set; } = string.Empty;
+        public bool RequiresName { get; set; } = true;
+        public bool RequiresProductId { get; set; } = true;
+        public bool RequiresTourLink { get; set; } = true;
+        public bool RequiresReviewLink { get; set; } = true;
+        public bool RequiresAllToursLink { get; set; } = true;
+        public bool IsActive { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
+        public string TourLink { get; set; } = string.Empty;
+        public string ReviewLink { get; set; } = string.Empty;
+        public string AllToursLink { get; set; } = string.Empty;
+        public string PendingAlias { get; set; } = string.Empty;
+        public int? VendorId { get; set; }
+        public int? MappingId { get; set; }
+        public int? LinkId { get; set; }
+    }
+
+    private sealed class VendorCompletenessState
+    {
+        public bool IsTracked { get; set; }
+        public bool IsComplete { get; set; }
+        public int RequiredFields { get; set; }
+        public int CompletedRequired { get; set; }
+        public List<string> MissingFieldLabels { get; set; } = new();
+    }
+
+    private sealed class VendorCompletenessSummary
+    {
+        public int TrackedVendors { get; set; }
+        public int CompletedVendors { get; set; }
+        public int IncompleteVendors { get; set; }
+    }
+
+    private sealed class TourMappingVariantState
+    {
+        public int Id { get; set; }
+        public string VendorCode { get; set; } = string.Empty;
+        public string VendorDisplayName { get; set; } = string.Empty;
+        public string IncomingTourName { get; set; } = string.Empty;
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    private sealed class TourEditorState
+    {
+        public string RowKey { get; } = Guid.NewGuid().ToString("N");
+        public DbTour Tour { get; set; } = new();
+        public List<MasterTourTimeSlot> ScheduleTimeSlots { get; set; } = new();
+        public List<string> AvailableTourTimes { get; set; } = new();
+        public string? SelectedTourTime { get; set; }
+        public string? CustomTourTimeInput { get; set; }
+        public int MeetingOffsetMinutes { get; set; } = -10;
+        public bool MeetingTimeManuallySet { get; set; }
+        public bool GuideManuallySet { get; set; }
+        public bool IsBusy { get; set; }
+        public string ActiveTab { get; set; } = "basic";
+        public string? ErrorMessage { get; set; }
+        public string? SuccessMessage { get; set; }
+        public bool IsDirty { get; set; }
+        public bool DirtyToastShown { get; set; }
+        public bool ShowCreateWarning { get; set; }
+        public bool NeverShowCreateWarning { get; set; }
+        public List<VendorProfileEditorState> VendorProfiles { get; set; } = new();
+        public List<TourMappingVariantState> MappingVariants { get; set; } = new();
+        public bool IsNew => Tour.Id <= 0;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        locationChangingRegistration?.Dispose();
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setPageUnsavedChanges", false);
+        }
+        catch
+        {
+            // no-op
+        }
+    }
+}

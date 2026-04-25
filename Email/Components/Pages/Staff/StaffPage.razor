@@ -1,0 +1,354 @@
+﻿@page "/staff"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "CanManageUsers")]
+@using Email.Models.Staff
+@using Email.Services.Staff
+@inject IStaffService StaffService
+@inject IToastService ToastService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Staff</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-people me-2"></i>Staff</h4>
+        <button class="btn btn-primary" @onclick="OpenNewStaff">Add Staff</button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="mt-2">Loading staff...</div>
+        </div>
+    }
+    else if (staffMembers.Count == 0)
+    {
+        <div class="text-muted">No staff records found.</div>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var staff in staffMembers)
+            {
+                var isInactive = (staff.UserId.HasValue && !staff.IsUserActive)
+                    || (staff.GuideId.HasValue && !staff.IsGuideActive);
+                var isAdmin = string.Equals(staff.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+                var roleBadgeClass = isAdmin ? "badge bg-warning text-dark" : "badge border";
+                var roleLabel = isAdmin ? "Admin" : "Guide";
+                var showUserSource = staff.UserId.HasValue;
+                var showGuideSource = staff.GuideId.HasValue;
+                var contactEmail = !string.IsNullOrWhiteSpace(staff.UserEmail)
+                    ? staff.UserEmail
+                    : staff.ContactEmail;
+                <div class="list-group-item staff-list-row @(isInactive ? "opacity-50" : "")">
+                    <div class="d-flex align-items-start gap-3">
+                        <div>
+                            @if (!string.IsNullOrWhiteSpace(staff.ImagePath))
+                            {
+                                <img src="@staff.ImagePath" alt="Staff photo" class="rounded-circle staff-list-photo" />
+                            }
+                            else
+                            {
+                                <div class="staff-list-placeholder d-flex align-items-center justify-content-center border rounded-circle">
+                                    <i class="bi bi-person-circle"></i>
+                                </div>
+                            }
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-semibold d-flex align-items-center gap-2">
+                                        <span>@staff.DisplayName</span>
+                                        <span class="@roleBadgeClass">@roleLabel</span>
+                                        @if (showUserSource)
+                                        {
+                                            <span class="badge border" title="User table">
+                                                <i class="bi bi-key me-1"></i>User
+                                            </span>
+                                        }
+                                        @if (showGuideSource)
+                                        {
+                                            <span class="badge border" title="Guide table">
+                                                <i class="bi bi-geo-alt me-1"></i>Guide
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="small text-muted">@staff.Username</div>
+                                    @if (isInactive)
+                                    {
+                                        <div class="small text-muted">Inactive</div>
+                                    }
+                                </div>
+                                <div class="text-end">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" checked="@IsStaffActive(staff)"
+                                               @onchange="@(e => ToggleActiveAsync(staff, e))" />
+                                        <label class="form-check-label small">Active</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-2 small">
+                                @if (!string.IsNullOrWhiteSpace(staff.FirstName) || !string.IsNullOrWhiteSpace(staff.LastName))
+                                {
+                                    <div><i class="bi bi-person me-1"></i>@staff.FirstName @staff.LastName</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(staff.Phone))
+                                {
+                                    <div><i class="bi bi-telephone me-1"></i>@staff.Phone</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(contactEmail))
+                                {
+                                    <div><i class="bi bi-envelope me-1"></i>@contactEmail</div>
+                                }
+                                @if (!showUserSource)
+                                {
+                                    <div class="text-muted">No login account</div>
+                                }
+                                @if (!showGuideSource)
+                                {
+                                    <div class="text-muted">No guide profile</div>
+                                }
+                            </div>
+                        </div>
+                        <div class="text-end d-flex flex-column gap-2">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenEditStaff(staff)">
+                                <i class="bi bi-pencil me-1"></i>Edit
+                            </button>
+                            @if ((staff.UserId.HasValue && staff.IsUserActive) || (staff.GuideId.HasValue && staff.IsGuideActive))
+                            {
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeactivateStaff(staff)">
+                                    <i class="bi bi-person-x me-1"></i>Deactivate
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<StaffEditorDialog IsOpen="showEditor"
+                   Staff="editingStaff"
+                   IsNew="isNew"
+                   IsSimple="false"
+                   OnClose="CloseEditor"
+                   OnSaved="HandleSaved" />
+
+<style>
+    .staff-list-row {
+        padding: 0.75rem 1rem;
+    }
+
+    .staff-list-photo,
+    .staff-list-placeholder {
+        width: 56px;
+        height: 56px;
+    }
+
+    .staff-list-photo {
+        object-fit: cover;
+    }
+
+    .staff-list-placeholder i {
+        font-size: 1.75rem;
+    }
+</style>
+
+@code {
+    private List<StaffMember> staffMembers = new();
+    private StaffMember? editingStaff;
+    private bool isLoading = true;
+    private bool showEditor = false;
+    private bool isNew = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            await LoadStaffAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] OnInitializedAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to load staff.");
+        }
+    }
+
+    private async Task LoadStaffAsync()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            staffMembers = await StaffService.GetAllStaffAsync();
+            staffMembers = staffMembers
+                .OrderBy(s => string.IsNullOrWhiteSpace(s.FirstName) ? s.DisplayName : s.FirstName)
+                .ThenBy(s => s.LastName)
+                .ThenBy(s => s.Username)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] LoadStaffAsync failed: {ex}");
+#endif
+            staffMembers = new();
+            await ToastService.ShowErrorAsync("Error", "Failed to load staff list.");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool IsStaffActive(StaffMember staff)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        var userActive = staff.UserId.HasValue ? staff.IsUserActive : true;
+        var guideActive = staff.GuideId.HasValue ? staff.IsGuideActive : true;
+        return userActive && guideActive;
+    }
+
+    private async Task ToggleActiveAsync(StaffMember staff, ChangeEventArgs e)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            var isActive = e.Value switch
+            {
+                bool value => value,
+                string text when bool.TryParse(text, out var parsed) => parsed,
+                _ => IsStaffActive(staff)
+            };
+
+            if (staff.UserId.HasValue)
+            {
+                staff.IsUserActive = isActive;
+            }
+
+            if (staff.GuideId.HasValue)
+            {
+                staff.IsGuideActive = isActive;
+            }
+
+            await StaffService.SaveStaffMemberAsync(staff);
+            await LoadStaffAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] ToggleActiveAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to update active status.");
+        }
+    }
+
+    private async Task OpenNewStaff()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            isNew = true;
+            editingStaff = new StaffMember
+            {
+                Role = "Guide",
+                IsUserActive = true,
+                IsGuideActive = true,
+                IsTouring = true,
+                Permissions = new UserPermissions(),
+                IncludeUserAccount = true,
+                IncludeGuideProfile = true
+            };
+            showEditor = true;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] OpenNewStaff failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to open staff editor.");
+        }
+    }
+
+    private async Task OpenEditStaff(StaffMember staff)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            isNew = false;
+            editingStaff = staff;
+            showEditor = true;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] OpenEditStaff failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to open staff editor.");
+        }
+    }
+
+    private async Task CloseEditor()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            showEditor = false;
+            editingStaff = null;
+            isNew = false;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] CloseEditor failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to close editor.");
+        }
+    }
+
+    private async Task HandleSaved()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            await LoadStaffAsync();
+            await CloseEditor();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] HandleSaved failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to refresh staff list.");
+        }
+    }
+
+    private async Task DeactivateStaff(StaffMember staff)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(staff.DisplayName) ? staff.Username : staff.DisplayName;
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Deactivate {name}?");
+            if (!confirmed) return;
+
+            await StaffService.DeleteStaffMemberAsync(staff.UserId, staff.GuideId);
+            await ToastService.ShowSuccessAsync("Saved", "Staff member deactivated.");
+            await LoadStaffAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffPage] DeactivateStaff failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", "Failed to deactivate staff.");
+        }
+    }
+}

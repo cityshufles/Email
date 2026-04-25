@@ -1,0 +1,468 @@
+@page "/tour-guide-calendar"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.Mobile
+@using Email.Services
+@using Email.Calendar.Services
+@inject ITourGuideAssignmentService AssignmentService
+@inject ICalendarDataService CalendarService
+@inject IGuidesApiService GuidesService
+@inject IToastService ToastService
+@inject IBookingsInboxService BookingsInboxService
+@inject ITourEmailsService TourEmailsService
+
+<!-- Created: 2026-01-08 - Tour Guide Calendar for per-tour-instance guide assignment -->
+
+<PageTitle>Guide Calendar</PageTitle>
+
+<div class="container-fluid py-3">
+    <h4 class="mb-3"><i class="bi bi-person-badge me-2"></i>Guide Calendar</h4>
+    
+    <div class="row">
+        <!-- Left Panel: Date Picker & Tour List -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-calendar3 me-1"></i> Select Date
+                </div>
+                <div class="card-body">
+                    <input type="date" class="form-control mb-3" 
+                           value="@SelectedDate.ToString("yyyy-MM-dd")" 
+                           @onchange="OnDateChanged" />
+                    
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    }
+                    else if (DailyTours.Count == 0)
+                    {
+                        <div class="text-muted small">No tours found for this date.</div>
+                    }
+                    else
+                    {
+                        <div class="fw-semibold mb-2">Tours on @SelectedDate.ToString("MMM d, yyyy"):</div>
+                        <ul class="list-unstyled">
+                            @foreach (var tour in DailyTours)
+                            {
+                                var isActive = SelectedTour?.TourName == tour.TourName && SelectedTour?.TourTime == tour.TourTime;
+                                <li class="mb-1">
+                                    <button class='@($"btn btn-sm w-100 text-start {(isActive ? "btn-primary" : "btn-outline-secondary")}")'
+                                            @onclick="() => SelectTour(tour)">
+                                        <i class="bi bi-clock me-1"></i>@tour.TourTime
+                                        <br />
+                                        <small>@tour.TourName (@tour.TotalGuests guests)</small>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Tour Detail -->
+        <div class="col-md-9">
+            @if (SelectedTour == null)
+            {
+                <div class="card">
+                    <div class="card-body text-center text-muted py-5">
+                        <i class="bi bi-arrow-left-circle" style="font-size: 3rem;"></i>
+                        <div class="mt-3">Select a tour from the left panel to view details</div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>@SelectedDate.ToString("dddd, MMMM d, yyyy")</strong>
+                            <span class="badge border ms-2">@SelectedTour.TotalGuests guests</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Tour Header with Guide Dropdown -->
+                        <div class="d-flex justify-content-between align-items-center mb-3 p-2 border rounded">
+                            <div>
+                                <h5 class="mb-0">@SelectedTour.TourName</h5>
+                                <small class="text-muted"><i class="bi bi-clock me-1"></i>@SelectedTour.TourTime</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small fw-semibold">Guide:</label>
+                                <select class="form-select form-select-sm" style="width: 180px;"
+                                        value="@(SelectedGuideId.HasValue ? SelectedGuideId.Value.ToString() : "")"
+                                        @onchange="OnGuideSelectChange">
+                                    <option value="">Select Guide...</option>
+                                    <option value="none">No guide</option>
+                                    @foreach (var g in Guides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                                    {
+                                        var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : $"{g.FirstName} {g.LastName}";
+                                        <option value="@g.Id">@label</option>
+                                    }
+                                </select>
+                                @if (isSaving)
+                                {
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                        <span class="visually-hidden">Saving...</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        
+                        <!-- Walker List by Vendor -->
+                        @foreach (var vendor in SelectedTour.Vendors)
+                        {
+                            <div class="mb-3">
+                                <div class="fw-semibold mb-2">
+                                    <i class="bi bi-building me-1"></i>@vendor.VendorName
+                                    <span class="badge border ms-1">@vendor.TotalGuests guests</span>
+                                </div>
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th class="text-center">Attendees</th>
+                                            <th>Phone</th>
+                                            <th class="text-center">Contact</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var walker in vendor.Walkers)
+                                        {
+                                            var hasPhone = !string.IsNullOrWhiteSpace(walker.Phone);
+                                            <tr>
+                                                <td>
+                                                    @walker.DisplayName
+                                                    @if (walker.NeedsNumber)
+                                                    {
+                                                        <span class="badge text-bg-warning ms-1">needs number</span>
+                                                    }
+                                                </td>
+                                                <td class="text-center">@walker.Attendees</td>
+                                                <td>
+                                                    @if (hasPhone)
+                                                    {
+                                                        <a href="tel:@walker.Phone" class="text-decoration-none">
+                                                            <i class="bi bi-telephone me-1"></i>@walker.Phone
+                                                        </a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">No phone</span>
+                                                    }
+                                                </td>
+                                                <td class="text-center">
+                                                    <span class="me-2" title="@GetContactStateTitle("SMS", walker.SmsContactState)">
+                                                        <i class="bi bi-circle-fill @GetContactStateColorClass(walker.SmsContactState)"></i>
+                                                        <small class="ms-1 text-muted">SMS</small>
+                                                    </span>
+                                                    <span title="@GetContactStateTitle("WA", walker.WaContactState)">
+                                                        <i class="bi bi-circle-fill @GetContactStateColorClass(walker.WaContactState)"></i>
+                                                        <small class="ms-1 text-muted">WA</small>
+                                                    </span>
+                                                </td>
+                                                <td class="text-center">
+                                                    @if (hasPhone)
+                                                    {
+                                                        <a href="tel:@walker.Phone" class="btn btn-sm btn-outline-success" title="Call">
+                                                            <i class="bi bi-telephone"></i>
+                                                        </a>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private List<TourDaySummary> DailyTours { get; set; } = new();
+    private TourDaySummary? SelectedTour { get; set; }
+    private int? SelectedGuideId { get; set; }
+    private List<DbGuide> Guides { get; set; } = new();
+    private bool isLoading = false;
+    private bool isSaving = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Guides = await GuidesService.GetGuidesAsync();
+        await LoadToursForDateAsync();
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            SelectedDate = date;
+            SelectedTour = null;
+            await LoadToursForDateAsync();
+        }
+    }
+
+    private async Task LoadToursForDateAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var start = SelectedDate.Date;
+            var end = start; // Same day only - CalendarSqlDataService uses <= which is inclusive
+            var appointments = await CalendarService.GetAppointmentsAsync(start, end);
+            
+            // Get existing assignments for this date
+            var assignments = await AssignmentService.GetAssignmentsForDateAsync(SelectedDate);
+            var assignmentDict = assignments.ToDictionary(a => (a.TourName, a.TourTime), a => a.GuideId);
+
+            // Group by tour name + time
+            DailyTours = appointments
+                .GroupBy(a => new { a.TourName, Time = a.StartTime.ToString("h:mm tt") })
+                .Select(g => new TourDaySummary
+                {
+                    TourName = g.Key.TourName ?? "Unknown Tour",
+                    TourTime = g.Key.Time,
+                    TotalGuests = g.Sum(a => a.NumberOfAttendees ?? 1),
+                    GuideId = assignmentDict.TryGetValue((g.Key.TourName ?? "", g.Key.Time), out var gid) ? gid : null,
+                    Vendors = BuildVendorGroups(g.ToList())
+                })
+                .OrderBy(t => t.TourTime)
+                .ToList();
+
+            await ApplyNeedsNumberLabelsToDailyToursAsync();
+            await ApplyContactStatesToDailyToursAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tours: {ex.Message}");
+            DailyTours = new();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private List<MobileVendorGroupModel> BuildVendorGroups(List<Email.Calendar.Models.CalendarAppointmentModel> appointments)
+    {
+        // For now, group all into a single "Bookings" vendor since CalendarAppointmentModel doesn't have vendor info
+        // This can be enhanced later to pull from booking details
+        var walkers = appointments.Select(a => new MobileWalkerInfoModel
+        {
+            DisplayName = a.CustomerName ?? "Guest",
+                                    Phone = a.CustomerPhone ?? "", // 2026-01-08 - Now pulled from CalendarAppointmentModel
+                                    Attendees = a.NumberOfAttendees ?? 1,
+                                    TourName = a.TourName ?? "",
+                                    DateLabel = a.StartTime.ToString("dddd, MMM d, yyyy"),
+                                    CustomerId = a.CustomerId,
+                                    CustomerIdentifier = a.CustomerIdentifier ?? string.Empty,
+                                    MessageId = a.MessageId ?? string.Empty,
+                                    BookingCode = a.BookingCode ?? string.Empty
+                                }).ToList();
+
+        return new List<MobileVendorGroupModel>
+        {
+            new MobileVendorGroupModel
+            {
+                VendorName = "All Bookings",
+                Walkers = walkers
+            }
+        };
+    }
+
+    private async Task ApplyNeedsNumberLabelsToDailyToursAsync()
+    {
+        var customerIds = DailyTours
+            .SelectMany(t => t.Vendors)
+            .SelectMany(v => v.Walkers)
+            .Select(w => w.CustomerId)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+
+        if (customerIds.Count == 0)
+        {
+            return;
+        }
+
+        var labelsByCustomer = await BookingsInboxService.GetCustomerLabelsAsync(customerIds);
+        foreach (var walker in DailyTours.SelectMany(t => t.Vendors).SelectMany(v => v.Walkers))
+        {
+            if (walker.CustomerId > 0 &&
+                labelsByCustomer.TryGetValue(walker.CustomerId, out var labels))
+            {
+                walker.NeedsNumber = labels.NeedsNumber;
+            }
+        }
+    }
+
+    private async Task ApplyContactStatesToDailyToursAsync()
+    {
+        var keys = DailyTours
+            .SelectMany(t => t.Vendors)
+            .SelectMany(v => v.Walkers)
+            .Where(w => !string.IsNullOrWhiteSpace(w.MessageId) && !string.IsNullOrWhiteSpace(w.BookingCode))
+            .Select(w => new ContactChannelStateKey
+            {
+                MessageId = w.MessageId,
+                BookingCode = w.BookingCode
+            })
+            .GroupBy(k => BuildMessageBookingKey(k.MessageId, k.BookingCode), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        if (keys.Count == 0)
+        {
+            return;
+        }
+
+        var rows = await TourEmailsService.GetBookingContactChannelStatesAsync(keys);
+        var stateByKey = new Dictionary<string, (byte smsState, byte waState)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            if (row == null ||
+                string.IsNullOrWhiteSpace(row.MessageId) ||
+                string.IsNullOrWhiteSpace(row.BookingCode) ||
+                string.IsNullOrWhiteSpace(row.Channel))
+            {
+                continue;
+            }
+
+            var key = BuildMessageBookingKey(row.MessageId, row.BookingCode);
+            stateByKey.TryGetValue(key, out var state);
+            var normalizedState = row.ContactState > 3 ? (byte)0 : row.ContactState;
+            if (string.Equals(row.Channel, "sms", StringComparison.OrdinalIgnoreCase))
+            {
+                state.smsState = normalizedState;
+            }
+            else if (string.Equals(row.Channel, "wa", StringComparison.OrdinalIgnoreCase))
+            {
+                state.waState = normalizedState;
+            }
+            stateByKey[key] = state;
+        }
+
+        foreach (var walker in DailyTours.SelectMany(t => t.Vendors).SelectMany(v => v.Walkers))
+        {
+            if (string.IsNullOrWhiteSpace(walker.MessageId) || string.IsNullOrWhiteSpace(walker.BookingCode))
+            {
+                walker.SmsContactState = 0;
+                walker.WaContactState = 0;
+                continue;
+            }
+
+            if (stateByKey.TryGetValue(BuildMessageBookingKey(walker.MessageId, walker.BookingCode), out var state))
+            {
+                walker.SmsContactState = state.smsState;
+                walker.WaContactState = state.waState;
+            }
+            else
+            {
+                walker.SmsContactState = 0;
+                walker.WaContactState = 0;
+            }
+        }
+    }
+
+    private static string BuildMessageBookingKey(string? messageId, string? bookingCode)
+    {
+        return $"{(messageId ?? string.Empty).Trim()}||{(bookingCode ?? string.Empty).Trim()}";
+    }
+
+    private static string GetContactStateColorClass(byte state)
+    {
+        return state switch
+        {
+            1 => "text-success",
+            2 => "text-danger",
+            3 => "text-secondary",
+            _ => "text-contact-yellow"
+        };
+    }
+
+    private static string GetContactStateTitle(string channelLabel, byte state)
+    {
+        var label = state switch
+        {
+            1 => "Green (contacted)",
+            2 => "Red (failed)",
+            3 => "Gray (skipped / unknown)",
+            _ => "Yellow (no outcome)"
+        };
+        return $"{channelLabel}: {label}";
+    }
+
+    private void SelectTour(TourDaySummary tour)
+    {
+        SelectedTour = tour;
+        SelectedGuideId = tour.GuideId;
+    }
+
+    private async Task OnGuideSelectChange(ChangeEventArgs e)
+    {
+        if (SelectedTour == null) return;
+
+        var val = e.Value?.ToString();
+        int? newId = null;
+        if (!string.IsNullOrWhiteSpace(val) && val != "none" && int.TryParse(val, out var id))
+        {
+            newId = id;
+        }
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            var assignment = new TourGuideAssignment
+            {
+                TourDate = SelectedDate,
+                TourName = SelectedTour.TourName,
+                TourTime = SelectedTour.TourTime,
+                GuideId = newId
+            };
+            await AssignmentService.SaveAssignmentAsync(assignment);
+            SelectedGuideId = newId;
+            SelectedTour.GuideId = newId;
+            
+            var guideName = newId.HasValue 
+                ? Guides.FirstOrDefault(g => g.Id == newId.Value)?.FirstName ?? "guide"
+                : "none";
+            await ToastService.ShowSuccessAsync("Saved", $"Guide set to {guideName}");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Summary model for a tour on a specific day
+    /// </summary>
+    public class TourDaySummary
+    {
+        public string TourName { get; set; } = string.Empty;
+        public string TourTime { get; set; } = string.Empty;
+        public int TotalGuests { get; set; }
+        public int? GuideId { get; set; }
+        public List<MobileVendorGroupModel> Vendors { get; set; } = new();
+    }
+}

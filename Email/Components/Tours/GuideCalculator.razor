@@ -1,0 +1,247 @@
+@using Email.Models.GuideCalculator
+@using Syncfusion.Blazor.Charts
+
+<!-- Created: 2026-01-09 - Display component for Guide Calculator results -->
+
+@if (Result == null || Result.Tours.Count == 0)
+{
+    <div class="card">
+        <div class="card-body text-center text-muted py-4">
+            <i class="bi bi-calendar-x" style="font-size: 2rem;"></i>
+            <div class="mt-2">No tours found for @Result?.GuideName on @Result?.TourDate.ToString("MMMM d, yyyy")</div>
+        </div>
+    </div>
+}
+else
+{
+    <!-- Summary Card -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-person-badge me-2"></i>@Result.GuideName
+                <span class="badge bg-secondary ms-2">@Result.TourDate.ToString("dddd, MMMM d, yyyy")</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-4">
+                    <div class="h5 mb-0 text-success">$@Result.TotalEarned.ToString("N2")</div>
+                    <small class="text-muted">Guide Earns (Viator/GYG)</small>
+                </div>
+                <div class="col-md-4">
+                    <div class="h5 mb-0 text-danger">$@Result.TotalOwed.ToString("N2")</div>
+                    <small class="text-muted">Guide Owes (FreeTour/GuruWalk)</small>
+                </div>
+                <div class="col-md-4">
+                    @{
+                        var net = Result.TotalEarned - Result.TotalOwed;
+                        var netClass = net >= 0 ? "text-success" : "text-danger";
+                        var netLabel = net >= 0 ? "Net: Guide Earns" : "Net: Guide Owes";
+                    }
+                    <div class='@($"h5 mb-0 {netClass}")'>$@Math.Abs(net).ToString("N2")</div>
+                    <small class="text-muted">@netLabel</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tour Details -->
+    @foreach (var tour in Result.Tours)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-0">
+                        <i class="bi bi-clock me-1"></i>@tour.TourTime
+                        <span class="ms-2">@tour.TourName</span>
+                    </h6>
+                </div>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-primary">@tour.TotalGuests guests</span>
+                    @if (tour.TourEarned > 0)
+                    {
+                        <span class="badge bg-success">+$@tour.TourEarned.ToString("N2")</span>
+                    }
+                    @if (tour.TourOwed > 0)
+                    {
+                        <span class="badge bg-danger">-$@tour.TourOwed.ToString("N2")</span>
+                    }
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>Walker</th>
+                                <th>Vendor</th>
+                                <th class="text-center">Charged</th>
+                                <th class="text-center">Earned</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var guest in tour.GuestRoster)
+                            {
+                                <tr>
+                                    <td>@guest.Position</td>
+                                    <td>
+                                        @guest.CustomerName
+                                        @if (guest.IsChild)
+                                        {
+                                            <span class="badge bg-info ms-1">Child</span>
+                                        }
+                                    </td>
+                                    <td>@guest.VendorName</td>
+                                    <td class="text-center">
+                                        @if (guest.ChargeAmount > 0)
+                                        {
+                                            <span class="text-danger">$@guest.ChargeAmount.ToString("N2")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        @if (guest.EarnAmount > 0)
+                                        {
+                                            <span class="text-success">$@guest.EarnAmount.ToString("N2")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold">
+                                <td colspan="3">Tour Total</td>
+                                <td class="text-center text-danger">
+                                    @if (tour.TourOwed > 0)
+                                    {
+                                        @:$@tour.TourOwed.ToString("N2")
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td class="text-center text-success">
+                                    @if (tour.TourEarned > 0)
+                                    {
+                                        @:$@tour.TourEarned.ToString("N2")
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Vendor Breakdown Chart (below tour details for mobile) -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h6 class="mb-0">
+                <i class="bi bi-bar-chart me-2"></i>Vendor Breakdown
+            </h6>
+            <small class="text-muted">
+                @Result.TourDate.ToString("MMMM d, yyyy") • 
+                @Result.Tours.Count() Tours • 
+                @Result.Tours.Sum(t => t.TotalGuests) Walkers • 
+                <span class="text-danger fw-semibold">Owed: $@Result.TotalOwed.ToString("N2")</span>
+            </small>
+        </div>
+        <div class="card-body">
+            <SfChart Height="350px">
+                <ChartPrimaryXAxis ValueType="Syncfusion.Blazor.Charts.ValueType.Category" Title="Vendor">
+                    <ChartAxisLabelStyle FontWeight="500" Size="12px"></ChartAxisLabelStyle>
+                </ChartPrimaryXAxis>
+                <ChartPrimaryYAxis Title="Walker Count">
+                </ChartPrimaryYAxis>
+                <ChartTooltipSettings Enable="true"></ChartTooltipSettings>
+                <ChartLegendSettings Visible="true" Position="Syncfusion.Blazor.Charts.LegendPosition.Bottom"></ChartLegendSettings>
+                <ChartSeriesCollection>
+                    <ChartSeries DataSource="@GetVendorChartData()" Name="Adults" XName="VendorName" YName="Adults" Type="ChartSeriesType.Column" Fill="#198754">
+                        <ChartMarker>
+                            <ChartDataLabel Visible="true" Position="Syncfusion.Blazor.Charts.LabelPosition.Top">
+                                <ChartDataLabelFont FontWeight="600" Size="14px"></ChartDataLabelFont>
+                            </ChartDataLabel>
+                        </ChartMarker>
+                    </ChartSeries>
+                    <ChartSeries DataSource="@GetVendorChartData()" Name="Children" XName="VendorName" YName="Children" Type="ChartSeriesType.Column" Fill="#0dcaf0">
+                        <ChartMarker>
+                            <ChartDataLabel Visible="true" Position="Syncfusion.Blazor.Charts.LabelPosition.Top">
+                                <ChartDataLabelFont FontWeight="600" Size="14px"></ChartDataLabelFont>
+                            </ChartDataLabel>
+                        </ChartMarker>
+                    </ChartSeries>
+                    <ChartSeries DataSource="@GetVendorChartData()" Name="Owed ($)" XName="VendorName" YName="Owed" Type="ChartSeriesType.Column" Fill="#dc3545">
+                        <ChartMarker>
+                            <ChartDataLabel Visible="true" Position="Syncfusion.Blazor.Charts.LabelPosition.Top" Format="C0">
+                                <ChartDataLabelFont FontWeight="600" Size="14px"></ChartDataLabelFont>
+                            </ChartDataLabel>
+                        </ChartMarker>
+                    </ChartSeries>
+                </ChartSeriesCollection>
+            </SfChart>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public GuideCalculationResult? Result { get; set; }
+
+    private List<VendorChartData> GetVendorChartData()
+    {
+        if (Result == null) return new List<VendorChartData>();
+
+        // Aggregate all guests across all tours by vendor
+        var allGuests = Result.Tours.SelectMany(t => t.GuestRoster);
+        
+        var vendorData = allGuests
+            .GroupBy(g => g.VendorName)
+            .Select(group => new VendorChartData
+            {
+                VendorName = group.Key,
+                Adults = group.Count(g => !g.IsChild),
+                Children = group.Count(g => g.IsChild),
+                Owed = group.Sum(g => g.ChargeAmount)
+            })
+            .ToList();
+
+        if (!vendorData.Any(v => string.Equals(v.VendorName, "Direct", StringComparison.OrdinalIgnoreCase)))
+        {
+            vendorData.Add(new VendorChartData
+            {
+                VendorName = "Direct",
+                Adults = 0,
+                Children = 0,
+                Owed = 0m
+            });
+        }
+
+        vendorData = vendorData
+            .OrderBy(v => v.VendorName)
+            .ToList();
+
+        return vendorData;
+    }
+
+    private class VendorChartData
+    {
+        public string VendorName { get; set; } = "";
+        public int Adults { get; set; }
+        public int Children { get; set; }
+        public decimal Owed { get; set; }
+    }
+}

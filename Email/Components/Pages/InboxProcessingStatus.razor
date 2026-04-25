@@ -1,0 +1,133 @@
+@page "/inbox-processing-status"
+@using Email.Services.GmailProcessing.Dtos
+@using Email.Services.GmailCollection.Models
+@inject Email.Services.GmailProcessing.GmailProcessingV2Service ProcessingService
+@inject ILogger<InboxProcessingStatus> Logger
+
+<PageTitle>Inbox Processing Status</PageTitle>
+
+<div class="container py-3">
+	<h5 class="mb-3">Inbox Processing Status</h5>
+
+	<div class="mb-2 d-flex gap-2">
+		<button class="btn btn-primary btn-sm" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
+		<button class="btn btn-success btn-sm" @onclick="ProcessBookingsAsync" disabled="@isBusy">Process Bookings/Confirmations</button>
+		<button class="btn btn-warning btn-sm" @onclick="ProcessModificationsAsync" disabled="@isBusy">Process Modifications</button>
+		<button class="btn btn-danger btn-sm" @onclick="ProcessCancellationsAsync" disabled="@isBusy">Process Cancellations</button>
+	</div>
+
+	<div class="card">
+		<div class="card-body p-2">
+			<table class="table table-sm table-striped mb-0">
+				<thead>
+					<tr>
+						<th class="text-nowrap">Status</th>
+						<th class="text-end">Count</th>
+					</tr>
+				</thead>
+				<tbody>
+					@foreach (var row in orderedCounts)
+					{
+						<tr>
+							<td class="text-nowrap">@StatusLabel(row.Status)</td>
+							<td class="text-end">@row.Count</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+
+@code {
+	private bool isBusy = false;
+	private List<InboxProcessingStatusCountDto> counts = new();
+	private List<InboxProcessingStatusCountDto> orderedCounts => counts
+		.OrderBy(c => c.Status)
+		.ToList();
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LoadCountsAsync();
+	}
+
+	private async Task LoadCountsAsync()
+	{
+		try
+		{
+			counts = (await ProcessingService.GetInboxProcessingStatusCountsAsync(CancellationToken.None)).ToList();
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[InboxProcessingStatus] LoadCountsAsync failed: {Message}", ex.Message);
+		}
+		StateHasChanged();
+	}
+
+	private Task RefreshAsync() => LoadCountsAsync();
+
+	private async Task ProcessBookingsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			await ProcessingService.ProcessAllBookingsAsync(CancellationToken.None);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[InboxProcessingStatus] ProcessBookingsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			await LoadCountsAsync();
+		}
+	}
+
+	private async Task ProcessModificationsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			await ProcessingService.ProcessAllModificationsAsync(CancellationToken.None);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[InboxProcessingStatus] ProcessModificationsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			await LoadCountsAsync();
+		}
+	}
+
+	private async Task ProcessCancellationsAsync()
+	{
+		try
+		{
+			isBusy = true;
+			await ProcessingService.ProcessAllCancellationsAsync(CancellationToken.None);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "[InboxProcessingStatus] ProcessCancellationsAsync failed: {Message}", ex.Message);
+		}
+		finally
+		{
+			isBusy = false;
+			await LoadCountsAsync();
+		}
+	}
+
+	private static string StatusLabel(short status) => status switch
+	{
+		(short)TourEmailInboxProcessingStatus.Processed => "Processed (0)",
+		(short)TourEmailInboxProcessingStatus.NonBooking => "NonBooking (1)",
+		(short)TourEmailInboxProcessingStatus.Failed => "Failed (2)",
+		(short)TourEmailInboxProcessingStatus.Pending => "Pending (3)",
+		_ => $"Unknown ({status})"
+	};
+}
+
+

@@ -1,0 +1,97 @@
+﻿@using Email.Models.Staff
+
+<div class="card h-100 @(Staff.IsDimmed ? "opacity-50" : "")">
+    <div class="card-body d-flex gap-3">
+        <div class="staff-photo">
+            @if (!string.IsNullOrWhiteSpace(Staff.ImagePath))
+            {
+                <img src="@Staff.ImagePath" alt="Staff photo" class="rounded-circle staff-photo-img" />
+            }
+            else
+            {
+                <div class="staff-photo-placeholder d-flex align-items-center justify-content-center border rounded-circle">
+                    <i class="bi bi-person-circle"></i>
+                </div>
+            }
+        </div>
+        <div class="flex-grow-1">
+            @{
+                var showInactive = (Staff.UserId.HasValue && !Staff.IsUserActive)
+                    || (Staff.GuideId.HasValue && !Staff.IsGuideActive);
+                var isAdmin = string.Equals(Staff.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+                var roleBadgeClass = isAdmin ? "badge bg-warning text-dark" : "badge border";
+                var roleLabel = isAdmin ? "Admin" : "Guide";
+                var contactEmail = !string.IsNullOrWhiteSpace(Staff.UserEmail) ? Staff.UserEmail : Staff.ContactEmail;
+            }
+
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fw-semibold">@Staff.DisplayName</div>
+                    @if (!string.IsNullOrWhiteSpace(Staff.Username))
+                    {
+                        <div class="small text-muted">@Staff.Username</div>
+                    }
+                </div>
+                <div class="text-end">
+                    <span class="@roleBadgeClass">@roleLabel</span>
+                    @if (showInactive)
+                    {
+                        <div class="small text-muted">Inactive</div>
+                    }
+                </div>
+            </div>
+
+            <div class="mt-2 small">
+                @if (!string.IsNullOrWhiteSpace(Staff.Phone))
+                {
+                    <div><i class="bi bi-telephone me-1"></i>@Staff.Phone</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(contactEmail))
+                {
+                    <div><i class="bi bi-envelope me-1"></i>@contactEmail</div>
+                }
+                @if (Staff.UserId == null)
+                {
+                    <div class="text-muted">No login account</div>
+                }
+                @if (Staff.GuideId == null)
+                {
+                    <div class="text-muted">No guide profile</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="card-footer bg-transparent border-0 d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" @onclick="() => OnEdit.InvokeAsync(Staff)">
+            <i class="bi bi-pencil me-1"></i>Edit
+        </button>
+        @if ((Staff.UserId.HasValue && Staff.IsUserActive) || (Staff.GuideId.HasValue && Staff.IsGuideActive))
+        {
+            <button class="btn btn-sm btn-outline-danger" @onclick="() => OnDeactivate.InvokeAsync(Staff)">
+                <i class="bi bi-person-x me-1"></i>Deactivate
+            </button>
+        }
+    </div>
+</div>
+
+<style>
+    .staff-photo-img,
+    .staff-photo-placeholder {
+        width: 72px;
+        height: 72px;
+    }
+
+    .staff-photo-img {
+        object-fit: cover;
+    }
+
+    .staff-photo-placeholder i {
+        font-size: 2rem;
+    }
+</style>
+
+@code {
+    [Parameter] public StaffMember Staff { get; set; } = new();
+    [Parameter] public EventCallback<StaffMember> OnEdit { get; set; }
+    [Parameter] public EventCallback<StaffMember> OnDeactivate { get; set; }
+}

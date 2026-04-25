@@ -1,0 +1,300 @@
+@using Email.Models
+
+<div class="card shadow-sm" id="MessagesComponent-root">
+    <div class="card-body">
+        <ul class="nav nav-tabs" role="tablist" id="MessagesComponent-TabsNav">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "create" ? "active" : null)" @onclick='() => SetTab("create")' type="button" role="tab">
+                    <i class="bi bi-plus-circle me-1"></i> Create new message
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "preview" ? "active" : null)" @onclick='() => SetTab("preview")' type="button" role="tab">
+                    <i class="bi bi-list-ul me-1"></i> Preview messages
+                </button>
+            </li>
+        </ul>
+
+        <div class="d-flex justify-content-end mt-2">
+            <button class="btn btn-outline-secondary btn-sm"
+                    @onclick="RefreshMessageContextAsync"
+                    disabled="@isRefreshingContext">
+                <i class="bi bi-arrow-clockwise me-1"></i>
+                @(isRefreshingContext ? "Refreshing..." : "Refresh Data")
+            </button>
+        </div>
+
+        <div class="tab-content p-3 border border-top-0" id="MessagesComponent-TabContent">
+            <div class="tab-pane fade @(activeTab == "create" ? "show active" : null)" id="MessagesComponent-TabCreate">
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (!string.IsNullOrWhiteSpace(lastMessageError))
+                                {
+                                    <div class="alert alert-warning" role="alert">
+                                        <strong>Message save failed:</strong> @lastMessageError
+                                    </div>
+                                }
+                                <div class="mb-3">
+                                    <label class="form-label">Message Name:</label>
+                                    <input type="text" class="form-control" @bind="newMessageName" placeholder="Enter message name (e.g., Welcome, Reminder)" />
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-lg-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Tour (for template context):</label>
+                                            <select class="form-select"
+                                                    value="@(newMessageTourId?.ToString() ?? (string.Equals(newMessageTourName, "All", System.StringComparison.OrdinalIgnoreCase) ? "ALL" : string.Empty))"
+                                                    @onchange="@(e => { var val = e.Value?.ToString(); if (string.Equals(val, "ALL", System.StringComparison.OrdinalIgnoreCase)) { newMessageTourId = null; newMessageTourName = "All"; newMessageTourStartTime = null; messageTimeOptions = new List<string>(); } else { newMessageTourId = int.TryParse(val, out var id) ? id : null; OnMessageTourChanged(); } })">
+                                                <option value="">-- select tour --</option>
+                                                <option value="ALL">All tours</option>
+                                                @foreach (var t in distinctToursForContext)
+                                                {
+                                                    <option value="@t.Id">@FormatTourLabel(t)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Vendor (for template context):</label>
+                                            <select class="form-select" @bind="newMessageVendorName" @bind:after="OnNewMessageVendorChanged">
+                                                <option value="">-- select vendor --</option>
+                                                @foreach (var vendor in ActiveVendors)
+                                                {
+                                                    <option value="@vendor.VendorName">@vendor.VendorName</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Guide (optional context):</label>
+                                    <select class="form-select" @bind="newMessageGuideId">
+                                        <option value="">-- select guide --</option>
+                                        @foreach (var g in availableDbGuides)
+                                        {
+                                            <option value="@g.Id">@($"{g.FirstName} {g.LastName}")</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Message Content</label>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-secondary @(messageEditorTab=="edit"?"active":null)" @onclick="SetMessageEditorTabToEdit">Edit</button>
+                                            <button type="button" class="btn btn-outline-secondary @(messageEditorTab=="preview"?"active":null)" @onclick="SetMessageEditorTabToPreview">Preview</button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <div class="d-flex flex-wrap gap-1 mb-2">
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{monthOfTour}"))" title="Month of tour"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDayOrdinal}"))" title="Display day ordinal"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+                                            <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+                                            <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorTourLink}"))" title="Vendor tour link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorTourLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorReviewLink}"))" title="Vendor review link placeholder"><i class="bi bi-link-45deg me-1"></i>{vendorReviewLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{allToursLink}"))" title="All tours link placeholder"><i class="bi bi-link-45deg me-1"></i>{allToursLink}</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{galleryLink}"))" title="Gallery link placeholder"><i class="bi bi-images me-1"></i>{galleryLink}</button>
+                                        </div>
+                                    </div>
+                                    @if (messageEditorTab == "edit")
+                                    {
+                                        <textarea class="form-control" rows="8" @bind="newMessageContent" @bind:event="oninput" id="newMessageContent" placeholder="Enter message content..."></textarea>
+                                    }
+                                    else
+                                    {
+                                        <div class="form-control" style="height: auto; min-height: 12rem; white-space: pre-wrap;">
+                                            @RenderMessagePreview()
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="msgIsActive" @bind="newMessageIsActive" />
+                                    <label class="form-check-label" for="msgIsActive">Is Active</label>
+                                </div>
+
+                                <div class="d-flex gap-2 mt-3">
+                                    <button class="btn btn-success btn-sm" @onclick="AddMessageTemplate" disabled="@string.IsNullOrWhiteSpace(newMessageName)">
+                                        <i class="bi bi-check2-circle me-1"></i>
+                                        @(editingMessageId.HasValue ? "Save Message" : "Add Message")
+                                    </button>
+                                    @if (editingMessageId.HasValue)
+                                    {
+                                        <button class="btn btn-secondary btn-sm" @onclick="CancelMessageEdit">
+                                            <i class="bi bi-x-circle me-1"></i>
+                                            Cancel Edit
+                                        </button>
+                                    }
+                                    <button class="btn btn-warning btn-sm" @onclick="ClearMessageForm">
+                                        <i class="bi bi-eraser me-1"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (inMemoryMessages.Count > 0)
+                                {
+                                    <div class="d-flex flex-column gap-3">
+                                        @foreach (var message in inMemoryMessages)
+                                        {
+                                            <div class="border rounded p-2">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <strong>@message.Name</strong>
+                                                        <span class="badge bg-secondary ms-2">@message.Type</span>
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-primary btn-sm" @onclick="@(() => EditMessageById(message.Id))" title="Edit message">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </button>
+                                                        <button class="btn btn-outline-danger btn-sm" @onclick="@(() => RemoveMessageById(message.Id))" title="Remove message">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(message.Description))
+                                                {
+                                                    <div class="text-muted small mt-1">@message.Description</div>
+                                                }
+                                                <textarea class="form-control form-control-sm mt-2" rows="4" readonly>@message.Content</textarea>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-info mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        No messages added yet. Add your first message using the form on the left.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade @(activeTab == "preview" ? "show active" : null)" id="MessagesComponent-TabPreview">
+                <div class="row g-4">
+                    <div class="col-lg-5">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Message Time</label>
+                                    <select class="form-select" @bind="previewMessageTime" @bind:after="OnPreviewMessageTimeChanged">
+                                        <option value="TODAY">Today</option>
+                                        <option value="TOMORROW">Tomorrow</option>
+                                        <option value="DATE">Date</option>
+                                        <option value="THANKYOU">Thank you</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Tour</label>
+                                    <select class="form-select" @onchange="OnPreviewTourChanged">
+                                        <option value="">-- select tour --</option>
+                                        @foreach (var t in distinctToursForContext)
+                                        {
+                                            <option value="@t.Id" selected="@(previewTourId.HasValue && previewTourId.Value == t.Id)">@FormatTourLabel(t)</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Guide</label>
+                                    <select class="form-select" @onchange="OnPreviewGuideChanged">
+                                        <option value="">-- select guide --</option>
+                                        @foreach (var g in availableDbGuides)
+                                        {
+                                            <option value="@g.Id" selected="@(previewGuideId.HasValue && previewGuideId.Value == g.Id)">@($"{g.FirstName} {g.LastName}")</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Message Vendor</label>
+                                    <input class="form-control" list="MessagesPreviewVendorOptions" @bind="previewVendorName" @bind:after="OnPreviewVendorChanged" placeholder="Select or type vendor" />
+                                    <datalist id="MessagesPreviewVendorOptions">
+                                        @foreach (var vendor in previewVendorOptions)
+                                        {
+                                            <option value="@vendor"></option>
+                                        }
+                                    </datalist>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Tour Date</label>
+                                    @if (previewMessageTime == "DATE")
+                                    {
+                                        <select class="form-select" @onchange="OnPreviewDateChanged">
+                                            @foreach (var d in previewDateOptions)
+                                            {
+                                                var value = d.ToString("yyyy-MM-dd");
+                                                <option value="@value" selected="@(value == previewDateValue)">@d.ToString("MMM d, yyyy")</option>
+                                            }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <input class="form-control" value="@PreviewDateLabel" readonly />
+                                    }
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Guest Name</label>
+                                    <input class="form-control" @bind="previewGuestName" placeholder="Enter guest name" />
+                                </div>
+
+                                <div class="text-muted small">
+                                    Template: @PreviewTemplateName
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <label class="form-label">Generated Message</label>
+                                <textarea class="form-control" rows="14" readonly>@PreviewGeneratedMessage</textarea>
+                                @if (string.IsNullOrWhiteSpace(PreviewGeneratedMessage))
+                                {
+                                    <div class="text-muted small mt-2">Select a message time and template to generate the preview.</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

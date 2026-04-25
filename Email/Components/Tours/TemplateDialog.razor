@@ -1,0 +1,194 @@
+@* Created: 2025-11-19 00:00 UTC - Copied verbatim from CityShufflesWorkStation\Components\TemplateDialog.razor (namespaces adjusted; toasts omitted) *@
+@using Email.Models
+@* @using CityShufflesWorkStation.Services (omitted in Email) *@
+@using Microsoft.Extensions.Logging
+@inject ILogger<TemplateDialog> Logger
+@* @inject IToastService ToastService (omitted in Email) *@
+
+@if (IsVisible)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-file-text me-2 text-info"></i>
+                        Message Template Editor
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label class="form-label">Template Name:</label>
+                                <input type="text" class="form-control" @bind="TemplateName" placeholder="Enter template name..." />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Template Content:</label>
+                                <textarea class="form-control" rows="12" @bind="TemplateContent" 
+                                          placeholder="Enter your message template here. Use placeholders like {Name}, {TourName}, etc."></textarea>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">Available Placeholders:</label>
+                                <div class="list-group">
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertName">
+                                        <strong>{Name}</strong> - Walker's name
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertPhone">
+                                        <strong>{Phone}</strong> - Walker's phone
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertAttendees">
+                                        <strong>{Attendees}</strong> - Number of attendees
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertTourName">
+                                        <strong>{TourName}</strong> - Tour name
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertTourDate">
+                                        <strong>{TourDate}</strong> - Tour date
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertVendorName">
+                                        <strong>{VendorName}</strong> - Vendor name
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertCurrentDate">
+                                        <strong>{CurrentDate}</strong> - Current date
+                                    </div>
+                                    <div class="list-group-item list-group-item-action" @onclick="InsertCurrentTime">
+                                        <strong>{CurrentTime}</strong> - Current time
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Preview:</label>
+                                <div class="border rounded p-3" style="min-height: 200px; max-height: 300px; overflow-y: auto;">
+                                    @if (!string.IsNullOrEmpty(TemplatePreview))
+                                    {
+                                        <div>@((MarkupString)TemplatePreview)</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-muted">Preview will appear here...</div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
+                    <button type="button" class="btn btn-info" @onclick="UpdatePreview">Update Preview</button>
+                    <button type="button" class="btn btn-success" @onclick="UseForWhatsApp">Use for WhatsApp</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public EventCallback<string> OnTemplateSelected { get; set; }
+    [Parameter] public WalkerInfo WalkerInfo { get; set; } = new WalkerInfo();
+    [Parameter] public string TourName { get; set; } = "";
+    [Parameter] public string TourDate { get; set; } = "";
+    [Parameter] public string VendorName { get; set; } = "";
+
+    private string TemplateName { get; set; } = "";
+    private string TemplateContent { get; set; } = "";
+    private string TemplatePreview { get; set; } = "";
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible && string.IsNullOrEmpty(TemplateContent))
+        {
+            // Set default template
+            TemplateContent = @"Hi {Name}! 👋
+
+Welcome to {TourName}! 
+
+We're excited to have you join us on {TourDate}. 
+
+Please arrive 10 minutes before the tour starts.
+
+If you have any questions, feel free to reach out.
+
+See you soon! 🚶‍♂️";
+            
+            UpdatePreview();
+        }
+    }
+
+    private async Task CloseDialog()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private void InsertName() { TemplateContent += "{Name}"; StateHasChanged(); }
+    private void InsertPhone() { TemplateContent += "{Phone}"; StateHasChanged(); }
+    private void InsertAttendees() { TemplateContent += "{Attendees}"; StateHasChanged(); }
+    private void InsertTourName() { TemplateContent += "{TourName}"; StateHasChanged(); }
+    private void InsertTourDate() { TemplateContent += "{TourDate}"; StateHasChanged(); }
+    private void InsertVendorName() { TemplateContent += "{VendorName}"; StateHasChanged(); }
+    private void InsertCurrentDate() { TemplateContent += "{CurrentDate}"; StateHasChanged(); }
+    private void InsertCurrentTime() { TemplateContent += "{CurrentTime}"; StateHasChanged(); }
+
+    private void UpdatePreview()
+    {
+        try
+        {
+            var preview = TemplateContent;
+            
+            // Replace placeholders with actual data
+            preview = preview.Replace("{Name}", WalkerInfo.Name ?? "Guest");
+            preview = preview.Replace("{Phone}", WalkerInfo.Phone ?? "N/A");
+            preview = preview.Replace("{Attendees}", WalkerInfo.Attendees?.ToString() ?? "1");
+            preview = preview.Replace("{TourName}", TourName);
+            preview = preview.Replace("{TourDate}", TourDate);
+            preview = preview.Replace("{VendorName}", VendorName);
+            preview = preview.Replace("{CurrentDate}", DateTime.Now.ToString("MMMM dd, yyyy"));
+            preview = preview.Replace("{CurrentTime}", DateTime.Now.ToString("HH:mm"));
+            
+            // Convert line breaks to HTML
+            TemplatePreview = preview.Replace("\n", "<br>");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error updating template preview");
+            TemplatePreview = "Error generating preview";
+        }
+    }
+
+    private async Task UseForWhatsApp()
+    {
+        try
+        {
+            var processedTemplate = TemplateContent;
+            
+            // Replace placeholders with actual data
+            processedTemplate = processedTemplate.Replace("{Name}", WalkerInfo.Name ?? "Guest");
+            processedTemplate = processedTemplate.Replace("{Phone}", WalkerInfo.Phone ?? "N/A");
+            processedTemplate = processedTemplate.Replace("{Attendees}", WalkerInfo.Attendees?.ToString() ?? "1");
+            processedTemplate = processedTemplate.Replace("{TourName}", TourName);
+            processedTemplate = processedTemplate.Replace("{TourDate}", TourDate);
+            processedTemplate = processedTemplate.Replace("{VendorName}", VendorName);
+            processedTemplate = processedTemplate.Replace("{CurrentDate}", DateTime.Now.ToString("MMMM dd, yyyy"));
+            processedTemplate = processedTemplate.Replace("{CurrentTime}", DateTime.Now.ToString("HH:mm"));
+            
+            await OnTemplateSelected.InvokeAsync(processedTemplate);
+            await CloseDialog();
+            
+            // Toast omitted in Email:
+            // await ToastService.ShowSuccessAsync("Success", "Template applied to WhatsApp message!");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error applying template");
+            // Toast omitted in Email:
+            // await ToastService.ShowErrorAsync("Error", "Failed to apply template");
+        }
+    }
+}
+

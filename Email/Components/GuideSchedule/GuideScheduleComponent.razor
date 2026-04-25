@@ -1,0 +1,1306 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Globalization
+@using Email.Services
+@using Email.Models
+@using Email.Components.Tours
+@inject IToursApiService ToursApi
+@inject IGuidesApiService GuidesApi
+@inject IJSRuntime JSRuntime
+
+<div class="card shadow-sm">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <button class='@($"nav-link {(activeTab == 0 ? "active" : "")}")' type="button" @onclick="() => SetActiveTab(0)">
+                    Schedule
+                </button>
+            </li>
+            @* Logistics tab hidden per request *@
+            @if (showLogisticsTab)
+            {
+                <li class="nav-item">
+                    <button class='@($"nav-link {(activeTab == 1 ? "active" : "")} {(selectedDbTour == null ? "disabled" : "")}")' 
+                            @onclick="() => SetActiveTab(1)"
+                            disabled="@(selectedDbTour == null)"
+                            type="button">
+                        Logistics
+                    </button>
+                </li>
+            }
+            <li class="nav-item">
+                <button class='@($"nav-link {(activeTab == 2 ? "active" : "")}")'
+                        @onclick="() => SetActiveTab(2)"
+                        type="button">
+                    Current Schedules
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class='@($"nav-link {(activeTab == 3 ? "active" : "")}")' type="button" @onclick="() => SetActiveTab(3)">
+                    All Schedules
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        
+        <div class="tab-content">
+            @* TAB 0: SCHEDULE *@
+            <div class='@($"tab-pane fade {(activeTab == 0 ? "show active" : "")}")'>
+                @* Row 0: Tour and Language Selection *@
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <label class="form-label">Select Tour</label>
+                        <div class="input-group">
+                            <select class="form-select" value="@SelectedTourIdValue" @onchange="OnTourSelectionChanged">
+                                <option value="">-- Select Tour --</option>
+                                @if (tourOptions != null)
+                                {
+                                    @foreach (var option in tourOptions)
+                                    {
+                                        <option value="@option.TourId">@option.Label</option>
+                                    }
+                                }
+                            </select>
+                            <a class="btn btn-outline-secondary"
+                               href="tour-managment"
+                               title="Manage Tours">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Manage Tours
+                            </a>
+                        </div>
+                    </div>
+                    @if (selectedDbTour != null) 
+                    {
+                        <div class="col-12">
+                             <label class="form-label">Schedule Name</label>
+                             <input type="text" class="form-control" @bind="scheduleNameInput" placeholder="e.g. Architecture Tour Schedule" />
+                        </div>
+                    }
+                    <div class="col-12">
+                        <label class="form-label">Language</label>
+                        <select class="form-select" @bind="selectedLanguage">
+                            <option value="English">English</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                            <option value="Portuguese">Portuguese</option>
+                        </select>
+                    </div>
+                </div>
+
+                @* Row 1: Date Range Pickers and Time Selection *@
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control" @bind="startDate" @bind:after="OnDatesChanged" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control" @bind="endDate" @bind:after="OnDatesChanged" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end pb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="isOverrideCheck" @bind="isOverride" />
+                            <label class="form-check-label" for="isOverrideCheck">
+                                <span class="badge bg-warning text-dark">Override</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-end gap-2">
+                             <div class="flex-grow-1">
+                                <label class="form-label">Add Tour Time</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-clock"></i></span>
+                                    <select class="form-select" @bind="newTimeStr">
+                                        @foreach (var t in TimeOptions)
+                                        {
+                                            <option value="@t">@DateTime.Parse(t).ToString("h:mm tt")</option>
+                                        }
+                                    </select>
+                                    <button class="btn btn-outline-secondary" @onclick="AddTime" type="button">
+                                        <i class="bi bi-plus-lg"></i> Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                         @* Selected Times List *@
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            @foreach (var slot in selectedTimes)
+                            {
+                                <div class='@($"badge rounded-pill p-2 pe-3 d-flex align-items-center gap-2 {(activeTimeSlot == slot ? "bg-primary text-white" : "bg-light text-dark border")}")' 
+                                     style="cursor: pointer;"
+                                     @onclick="() => SelectTimeSlot(slot)">
+                                    
+                                    <i class="bi bi-clock"></i>
+                                    <span class="fs-6">@FormatTimeDisplay(slot.TourTime)</span>
+                                    
+                                    <button type="button" class='@($"btn-close ms-2 {(activeTimeSlot == slot ? "btn-close-white" : "")}")' 
+                                            aria-label="Remove" 
+                                            style="font-size: 0.7em;"
+                                            @onclick="() => RemoveTime(slot)" 
+                                            @onclick:stopPropagation="true"></button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @* Row 2: Vertical Days List with Guide Selection *@
+                <div class="mb-4">
+                    <label class="form-label mb-2">Days of Week & Guide Assignment</label>
+                    <div class="d-flex flex-column gap-2">
+                        @foreach (var day in daysOfWeek)
+                        {
+                            <div class="d-flex align-items-center p-2 border rounded">
+                                @* Day Pill/Label (Interactive Toggle) *@
+                                <button type="button" 
+                                        class='@($"btn {(IsDaySelected(day) ? "btn-primary" : "btn-outline-secondary")} rounded-pill me-3")'
+                                        style="min-width: 100px; text-align: center;"
+                                        @onclick="() => ToggleDay(day)">
+                                    @day
+                                </button>
+
+                                @* Guide Selector (Only enabled if day is selected) *@
+                                <div class="flex-grow-1">
+                                    <select class="form-select form-select-sm" 
+                                            @bind="selectedGuides[day]" 
+                                            @bind:after="() => OnGuideChanged(day)"
+                                            disabled="@(!IsDaySelected(day))">
+                                        <option value="">-- Select Guide --</option>
+                                        @foreach (var guide in availableGuides)
+                                        {
+                                            <option value="@guide.Id">@FormatGuideName(guide)</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+
+            </div>
+
+            @* TAB 1: LOGISTICS (Hidden per request) *@
+            @if (showLogisticsTab)
+            {
+                <div class='@($"tab-pane fade {(activeTab == 1 ? "show active" : "")}")'>
+                    @* Determine if we are editing a specific slot or the global defaults *@
+                    @{
+                        ITourLogistics? logisticsModel = activeTimeSlot;
+                        string title = activeTimeSlot != null 
+                            ? $"{GetSelectedTourDisplayName()} - {FormatTimeDisplay(activeTimeSlot.TourTime)}" 
+                            : "Global Defaults / Fallback";
+                            
+                        // Fallback to schedule defaults if no slot selected? 
+                        // Or force user to select one? 
+                        // User said "logistics tab needs to be the specific tour+time slot".
+                        // But we might still want to edit the schedule-level defaults for new slots?
+                        // Let's allow editing currentSchedule if nothing selected, but label it clearly.
+                        if (logisticsModel == null) logisticsModel = currentSchedule;
+                    }
+                    
+                    @if (activeTimeSlot == null)
+                    {
+                         <div class="alert alert-warning">
+                             <i class="bi bi-info-circle me-1"></i> No time slot selected. Editing <strong>default</strong> values for new slots.
+                             <br/>Select a time slot in the "Schedule" tab to edit its specific details.
+                         </div>
+                    }
+                    
+                    <TourLogisticsComponent @key="logisticsModel" Model="logisticsModel" Title="@title" />
+                </div>
+            }
+
+            @* TAB 2: CURRENT SCHEDULES LIST *@
+            <div class='@($"tab-pane fade {(activeTab == 2 ? "show active" : "")}")'>
+                <div class="d-flex justify-content-end flex-wrap gap-2 mb-3">
+                    <select class="form-select form-select-sm"
+                            style="max-width: 280px;"
+                            value="@CurrentSchedulesTourFilterIdValue"
+                            @onchange="OnCurrentSchedulesTourFilterChanged">
+                        <option value="">All Tours</option>
+                        @foreach (var option in tourOptions)
+                        {
+                            <option value="@option.TourId">@option.Label</option>
+                        }
+                    </select>
+                    <select class="form-select form-select-sm"
+                            style="max-width: 320px;"
+                            @bind="selectedCurrentScheduleNameFilter"
+                            disabled="@(existingSchedules == null || existingSchedules.Count == 0)">
+                        <option value="">All Schedule Names</option>
+                        @foreach (var scheduleName in ExistingScheduleNameOptions)
+                        {
+                            <option value="@scheduleName">@scheduleName</option>
+                        }
+                    </select>
+                </div>
+                @if (existingSchedules == null)
+                {
+                   <div class="text-center p-5 text-muted">Select a tour to view existing schedules.</div>
+                }
+                else if (existingSchedules.Count == 0)
+                {
+                   <div class="text-center p-5 text-muted">No schedules found for this tour.</div>
+                }
+                else
+                {
+                    @if (!FilteredExistingSchedules.Any())
+                    {
+                        <div class="text-center p-4 text-muted">No schedules match the selected name filter.</div>
+                    }
+                    else
+                    {
+                        <div class="list-group">
+                            @foreach (var s in FilteredExistingSchedules)
+                            {
+                                var dayMap = ParseDayMap(s.DayAssignmentsJson);
+                                var times = ParseTimeSlots(s.TimeSlotsJson);
+
+                                <div class="list-group-item list-group-item-action mb-2 border rounded shadow-sm">
+                                    <div class="d-flex w-100 justify-content-between align-items-start">
+                                        <div>
+                                            <h5 class="mb-1">@s.ScheduleName</h5>
+                                            <small class="text-muted">
+                                                @s.StartDate.ToString("MMM d, yyyy") - @s.EndDate.ToString("MMM d, yyyy")
+                                            </small>
+                                        </div>
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditScheduleFromAll(s)" title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteScheduleFromCurrent(s)">
+                                                 <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mt-2 row">
+                                        <div class="col-md-6 mb-2">
+                                            <strong><i class="bi bi-clock me-1"></i> Meeting Info:</strong>
+                                            <div class="ms-3 small text-muted">
+                                                @* Show configured meeting times if available *@
+                                                @if (times.Count > 0)
+                                                {
+                                                    @foreach(var t in times)
+                                                    {
+                                                        <div>Tour: @FormatTimeDisplay(t.TourTime) &rarr; Meet: @(string.IsNullOrWhiteSpace(t.MeetingTime) ? "Auto" : t.MeetingTime)</div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <div>@s.MeetingTime @(string.IsNullOrWhiteSpace(s.MeetingPlace) ? "" : $"@ {s.MeetingPlace}")</div>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 mb-2">
+                                            <strong><i class="bi bi-calendar-week me-1"></i> Active Days:</strong>
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                @foreach(var d in daysOfWeek)
+                                                {
+                                                    bool isActive = dayMap.ContainsKey(d);
+                                                    string badgeClass = isActive ? "badge bg-info text-dark" : "badge bg-secondary opacity-25";
+                                                    string guideName = isActive ? GetGuideName(dayMap[d]) : "";
+                                                    
+                                                    <span class="@badgeClass" title="@(isActive ? $"Guide: {guideName}" : "Not Scheduled")">
+                                                        @d.Substring(0, 3) 
+                                                        @if(!string.IsNullOrEmpty(guideName)) { <i class="bi bi-person-fill ms-1"></i> }
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            
+            @* TAB 3: ALL SCHEDULES (Read-Only List) *@
+            <div class='@($"tab-pane fade {(activeTab == 3 ? "show active" : "")}")'>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                     <div class="d-flex align-items-center gap-3">
+                        <h5 class="mb-0">All Schedules</h5>
+                        <input type="text" class="form-control form-control-sm" placeholder="Search Schedule Name..." 
+                               @bind="scheduleSearchTerm" @bind:event="oninput" style="width: 250px;" />
+                     </div>
+                     <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllSchedules">
+                         <i class="bi bi-arrow-clockwise"></i> Refresh
+                     </button>
+                </div>
+
+                @if (allSchedulesList == null)
+                {
+                   <div class="text-center p-5">
+                       <div class="spinner-border text-primary" role="status">
+                           <span class="visually-hidden">Loading...</span>
+                       </div>
+                   </div>
+                }
+                else if (allSchedulesList.Count == 0)
+                {
+                   <div class="text-center p-5 text-muted">No schedules found in the system.</div>
+                }
+                else
+                {
+                   <div class="table-responsive">
+                       <table class="table table-hover align-middle">
+                           <thead>
+                               <tr>
+                                   <th>Tour</th>
+                                   <th>Schedule Name</th>
+                                   <th>Dates</th>
+                                   <th>Active</th>
+                                   <th class="text-end">Actions</th>
+                               </tr>
+                           </thead>
+                           <tbody>
+                                @foreach (var s in FilteredAllSchedules)
+                               {
+                                   <tr>
+                                       <td><small class="fw-bold">@s.TourName</small></td>
+                                       <td>@s.ScheduleName</td>
+                                       <td>
+                                           <small class="text-muted">
+                                               @s.StartDate.ToString("MMM d, yyyy") - @s.EndDate.ToString("MMM d, yyyy")
+                                           </small>
+                                       </td>
+                                        <td>
+                                            @if (s.IsActive)
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Inactive</span>
+                                            }
+                                            
+                                            @if (s.IsOverride)
+                                            {
+                                                <span class="badge bg-warning text-dark ms-1">Override</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <div class="btn-group">
+                                                 <button class="btn btn-sm btn-outline-primary" @onclick="() => EditScheduleFromAll(s)" title="Edit Schedule">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning" @onclick="() => CreateOverrideFromSchedule(s)" title="Create Override (temporary replacement)">
+                                                    <i class="bi bi-calendar-plus"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => DeleteScheduleFromAll(s)">
+                                                     <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                   </tr>
+                               }
+                           </tbody>
+                       </table>
+                   </div>
+                }
+            </div>
+
+
+        </div>
+
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="text-muted small">
+            Tour links are managed in <a href="tour-managment">Tours</a> (Advanced tab) to keep one canonical workflow.
+        </div>
+        <div class="d-flex gap-2">
+            @if (activeTab != 2)
+            {
+                <button class="btn btn-outline-primary" @onclick="InitializeCurrentSchedule" title="Prepare form for a new schedule"><i class="bi bi-plus-lg"></i> Add Another Schedule</button>
+            }
+            <button class="btn btn-primary" @onclick="OnSaveSchedule">Save Schedule</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int activeTab = 0;
+    private bool showLogisticsTab = false;
+    
+    private async Task SetActiveTab(int index)
+    {
+        activeTab = index;
+        if (activeTab == 2)
+        {
+            await LoadCurrentSchedulesForFilter();
+        }
+        else if (activeTab == 3)
+        {
+            await LoadAllSchedules();
+        }
+    }
+    
+    private int? selectedTourId;
+    private string SelectedTourIdValue => selectedTourId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    private string selectedLanguage = "English";
+    private DateTime startDate = DateTime.Today;
+    private DateTime endDate = DateTime.Today.AddMonths(3);
+    private string scheduleNameInput = ""; // SAFE local variable for binding
+
+    // NEW: Use string binding for the select dropdown
+    private string newTimeStr = "09:30";
+
+    private List<string> TimeOptions
+    {
+        get
+        {
+            var list = new List<string>();
+            var start = TimeOnly.MinValue; // 00:00
+            for (int i = 0; i < 288; i++) // 24 * 12 (5 min intervals)
+            {
+                list.Add(start.AddMinutes(i * 5).ToString("HH:mm"));
+            }
+            return list;
+        }
+    }
+    
+    private DateTime newTime = DateTime.Today.AddHours(9).AddMinutes(30); // Default 9:30 AM
+    
+    // Active Tour Object for Tab 2
+    private DbTour? selectedDbTour;
+    private List<DbTourSchedule>? existingSchedules; // For Tab 2
+    private int? currentSchedulesTourFilterTourId;
+    private string CurrentSchedulesTourFilterIdValue => currentSchedulesTourFilterTourId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    private string selectedCurrentScheduleNameFilter = "";
+    private List<DbTourSchedule>? allSchedulesList; // For Tab 3
+    
+    private IEnumerable<string> ExistingScheduleNameOptions
+    {
+        get
+        {
+            if (existingSchedules == null) return Enumerable.Empty<string>();
+
+            return existingSchedules
+                .Select(s => s.ScheduleName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name);
+        }
+    }
+    
+    private IEnumerable<DbTourSchedule> FilteredExistingSchedules
+    {
+        get
+        {
+            if (existingSchedules == null) return Enumerable.Empty<DbTourSchedule>();
+            if (string.IsNullOrWhiteSpace(selectedCurrentScheduleNameFilter)) return existingSchedules;
+
+            return existingSchedules.Where(s =>
+                string.Equals(s.ScheduleName, selectedCurrentScheduleNameFilter, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+    
+    // Search Implementation
+    private string scheduleSearchTerm = "";
+    private IEnumerable<DbTourSchedule> FilteredAllSchedules
+    {
+        get
+        {
+            if (allSchedulesList == null) return Enumerable.Empty<DbTourSchedule>();
+            if (string.IsNullOrWhiteSpace(scheduleSearchTerm)) return allSchedulesList;
+            
+            return allSchedulesList.Where(s => 
+                (s.ScheduleName?.Contains(scheduleSearchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+            );
+        }
+    }
+    
+    // NOTE: This object represents the specific schedule we are creating/editing.
+    // It starts as a copy of the global tour defaults but can be overridden.
+    private DbTourSchedule? currentSchedule;
+
+    private List<string> daysOfWeek = new() 
+    { 
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" 
+    };
+
+    // Track which days are active
+    private HashSet<string> activeDays = new(); // Defaults: none
+    
+    // 2026-02-05: Override flag for temporary schedule
+    private bool isOverride = false;
+
+    private Dictionary<string, string> selectedGuides = new();
+    
+    // CHANGED: Use TimeSlotModel instead of string
+    private List<TimeSlotModel> selectedTimes = new(); 
+    
+    // Data wiring
+    private List<TourSelectionOption> tourOptions = new();
+    private List<DbTour> allTours = new(); // Cache full objects
+    private readonly Dictionary<int, int> canonicalTourIdByTourId = new();
+    private readonly Dictionary<int, List<int>> memberTourIdsByCanonicalTourId = new();
+    private List<DbGuide> availableGuides = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize dictionary
+        foreach(var day in daysOfWeek)
+        {
+            selectedGuides[day] = "";
+        }
+        
+        await LoadToursAsync();
+        await LoadGuidesAsync();
+    }
+
+    private async Task LoadToursAsync()
+    {
+        try
+        {
+            allTours = await ToursApi.GetToursAsync();
+            canonicalTourIdByTourId.Clear();
+            memberTourIdsByCanonicalTourId.Clear();
+
+            var options = new List<TourSelectionOption>();
+            var groups = allTours
+                .GroupBy(GetMasterTourKey, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in groups)
+            {
+                var members = group.ToList();
+                var canonical = SelectCanonicalTour(members);
+                var memberIds = members
+                    .Select(x => x.Id)
+                    .Distinct()
+                    .ToList();
+
+                foreach (var member in members)
+                {
+                    canonicalTourIdByTourId[member.Id] = canonical.Id;
+                }
+
+                memberTourIdsByCanonicalTourId[canonical.Id] = memberIds;
+
+                var baseLabel = ResolveTourDisplayName(canonical);
+                var duplicateCount = members.Count(x => x.IsActive && x.Id != canonical.Id);
+                var label = $"{baseLabel} (ID {canonical.Id})";
+                if (duplicateCount > 0)
+                {
+                    label += $" [{duplicateCount} active duplicate row(s)]";
+                }
+
+                options.Add(new TourSelectionOption
+                {
+                    TourId = canonical.Id,
+                    Label = label,
+                    DuplicateCount = duplicateCount
+                });
+            }
+
+            tourOptions = options
+                .OrderBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (selectedTourId.HasValue)
+            {
+                selectedTourId = NormalizeToCanonicalTourId(selectedTourId.Value);
+            }
+
+            if (currentSchedulesTourFilterTourId.HasValue)
+            {
+                currentSchedulesTourFilterTourId = NormalizeToCanonicalTourId(currentSchedulesTourFilterTourId.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tours: {ex.Message}");
+        }
+    }
+
+    private async Task LoadGuidesAsync()
+    {
+        try
+        {
+            availableGuides = await GuidesApi.GetGuidesAsync();
+            availableGuides = availableGuides.OrderBy(g => g.FirstName).ToList();
+        }
+        catch (Exception ex)
+        {
+           Console.WriteLine($"Error loading guides: {ex.Message}");
+        }
+    }
+
+    private async Task OnTourSelectionChanged(ChangeEventArgs args)
+    {
+        selectedTourId = ParseNullableTourId(args.Value?.ToString());
+        if (selectedTourId.HasValue)
+        {
+            selectedTourId = NormalizeToCanonicalTourId(selectedTourId.Value);
+        }
+
+        await OnTourSelectionChangedAsync();
+    }
+
+    private async Task OnTourSelectionChangedAsync()
+    {
+        selectedCurrentScheduleNameFilter = "";
+        
+        if (selectedTourId.HasValue)
+        {
+            selectedDbTour = allTours.FirstOrDefault(t => t.Id == selectedTourId.Value);
+            InitializeCurrentSchedule();
+            await LoadExistingSchedules();
+        }
+        else
+        {
+            selectedDbTour = null;
+            currentSchedule = null;
+            existingSchedules = null;
+        }
+        StateHasChanged();
+    }
+    
+    private async Task LoadExistingSchedules()
+    {
+        if (selectedDbTour == null) return;
+        try 
+        {
+            existingSchedules = await LoadSchedulesForCanonicalTourAsync(selectedDbTour.Id);
+            if (!string.IsNullOrWhiteSpace(selectedCurrentScheduleNameFilter) &&
+                !existingSchedules.Any(s => string.Equals(s.ScheduleName, selectedCurrentScheduleNameFilter, StringComparison.OrdinalIgnoreCase)))
+            {
+                selectedCurrentScheduleNameFilter = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading schedules: {ex.Message}");
+        }
+    }
+    
+    private async Task OnCurrentSchedulesTourFilterChanged(ChangeEventArgs args)
+    {
+        currentSchedulesTourFilterTourId = ParseNullableTourId(args.Value?.ToString());
+        if (currentSchedulesTourFilterTourId.HasValue)
+        {
+            currentSchedulesTourFilterTourId = NormalizeToCanonicalTourId(currentSchedulesTourFilterTourId.Value);
+        }
+
+        await LoadCurrentSchedulesForFilter();
+    }
+    
+    private async Task LoadCurrentSchedulesForFilter()
+    {
+        selectedCurrentScheduleNameFilter = "";
+        try
+        {
+            if (!currentSchedulesTourFilterTourId.HasValue)
+            {
+                var rawList = await ToursApi.GetAllTourSchedulesAsync();
+                existingSchedules = rawList
+                    .OrderBy(x => x.TourName)
+                    .ThenByDescending(x => x.StartDate)
+                    .ToList();
+                return;
+            }
+
+            var selectedFilterTour = allTours.FirstOrDefault(t => t.Id == currentSchedulesTourFilterTourId.Value);
+            existingSchedules = selectedFilterTour is null
+                ? new List<DbTourSchedule>()
+                : await LoadSchedulesForCanonicalTourAsync(selectedFilterTour.Id);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading schedules for current tab filter: {ex.Message}");
+        }
+    }
+
+    private string GetSelectedTourDisplayName()
+    {
+        if (selectedDbTour is null)
+        {
+            return "Selected Tour";
+        }
+
+        var master = selectedDbTour.MasterTourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(master))
+        {
+            return master;
+        }
+
+        return selectedDbTour.TourName?.Trim() ?? "Selected Tour";
+    }
+
+    private async Task<List<DbTourSchedule>> LoadSchedulesForCanonicalTourAsync(int canonicalTourId)
+    {
+        var memberTourIds = GetMemberTourIds(canonicalTourId);
+        if (memberTourIds.Count == 0)
+        {
+            memberTourIds = new List<int> { canonicalTourId };
+        }
+
+        var loadTasks = memberTourIds
+            .Select(ToursApi.GetTourSchedulesAsync)
+            .ToArray();
+        var loaded = await Task.WhenAll(loadTasks);
+
+        var canonicalTour = allTours.FirstOrDefault(t => t.Id == canonicalTourId);
+        var canonicalTourName = canonicalTour?.TourName;
+
+        var merged = loaded
+            .SelectMany(x => x)
+            .GroupBy(x => x.Id)
+            .Select(g => g.First())
+            .OrderByDescending(x => x.StartDate)
+            .ToList();
+
+        foreach (var schedule in merged)
+        {
+            schedule.TourId = canonicalTourId;
+            if (!string.IsNullOrWhiteSpace(canonicalTourName))
+            {
+                schedule.TourName = canonicalTourName;
+            }
+        }
+
+        return merged;
+    }
+
+    private List<int> GetMemberTourIds(int canonicalTourId)
+    {
+        if (memberTourIdsByCanonicalTourId.TryGetValue(canonicalTourId, out var members))
+        {
+            return members;
+        }
+
+        return new List<int> { canonicalTourId };
+    }
+
+    private int NormalizeToCanonicalTourId(int tourId)
+    {
+        return canonicalTourIdByTourId.TryGetValue(tourId, out var canonicalTourId)
+            ? canonicalTourId
+            : tourId;
+    }
+
+    private static int? ParseNullableTourId(string? raw)
+    {
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id
+            : null;
+    }
+
+    private static string ResolveTourDisplayName(DbTour tour)
+    {
+        var master = tour.MasterTourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(master))
+        {
+            return master;
+        }
+
+        var tourName = tour.TourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(tourName))
+        {
+            return tourName;
+        }
+
+        return $"Tour {tour.Id}";
+    }
+
+    private static string GetMasterTourKey(DbTour tour)
+    {
+        var master = tour.MasterTourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(master))
+        {
+            return $"master::{master.ToUpperInvariant()}";
+        }
+
+        var tourName = tour.TourName?.Trim();
+        if (!string.IsNullOrWhiteSpace(tourName))
+        {
+            return $"tour::{tourName.ToUpperInvariant()}";
+        }
+
+        return $"id::{tour.Id}";
+    }
+
+    private static DbTour SelectCanonicalTour(IEnumerable<DbTour> tours)
+    {
+        return tours
+            .OrderByDescending(t => t.IsActive)
+            .ThenByDescending(t => !string.IsNullOrWhiteSpace(t.MasterTourName))
+            .ThenByDescending(t => t.UpdatedAt ?? DateTime.MinValue)
+            .ThenByDescending(t => t.CreatedAt ?? DateTime.MinValue)
+            .ThenByDescending(t => t.Id)
+            .First();
+    }
+
+    // Active Selection State
+    private TimeSlotModel? activeTimeSlot; // The slot currently being edited in Logistics Tab
+
+    private void InitializeCurrentSchedule()
+    {
+        if (selectedDbTour == null) return;
+        
+        // Reset local UI state for new schedule
+        selectedTimes.Clear(); 
+        activeTimeSlot = null;
+        
+        // Clear Days for new schedule
+        activeDays.Clear();
+        foreach (var day in daysOfWeek) selectedGuides[day] = "";
+
+        // Create a new schedule instance seeded with the global tour's defaults
+        // In the future, we will try to load an existing schedule from the DB here.
+        currentSchedule = new DbTourSchedule
+        {
+            TourId = selectedDbTour.Id,
+            ScheduleName = selectedDbTour.TourName.EndsWith("Tour", StringComparison.OrdinalIgnoreCase) 
+                ? $"{selectedDbTour.TourName} Schedule" 
+                : $"{selectedDbTour.TourName} Tour Schedule",
+            MeetingPlace = selectedDbTour.MeetingPlace,
+            MeetingTime = selectedDbTour.MeetingTime,
+            MeetingInstructions = selectedDbTour.MeetingInstructions,
+            VendorLink = selectedDbTour.VendorLink,
+            IsActive = true
+            // Dates will be bound to startDate/endDate variables
+        };
+        scheduleNameInput = currentSchedule.ScheduleName; // Sync local var
+    }
+
+    private string FormatGuideName(DbGuide guide)
+    {
+        if (string.IsNullOrWhiteSpace(guide.LastName)) return guide.FirstName ?? "";
+        return $"{guide.FirstName} {guide.LastName}";
+    }
+
+    private bool IsDaySelected(string day) => activeDays.Contains(day);
+
+    private void ToggleDay(string day)
+    {
+        if (activeDays.Contains(day))
+        {
+            activeDays.Remove(day);
+        }
+        else
+        {
+            activeDays.Add(day);
+        }
+    }
+
+    private void OnDatesChanged()
+    {
+        // Logic to handle date changes if needed
+    }
+
+    private void OnGuideChanged(string day)
+    {
+        // Logic to handle guide assignment for the day
+    }
+
+    private void AddTime()
+    {
+        // Use logic 
+        if (!selectedTimes.Any(x => x.TourTime == newTimeStr))
+        {
+            var calculated = CalculateMeetingTime(newTimeStr);
+            var slot = new TimeSlotModel 
+            { 
+               TourTime = newTimeStr,
+               MeetingTime = calculated,
+               // Seed with defaults from the schedule/tour
+               MeetingPlace = currentSchedule?.MeetingPlace,
+               MeetingInstructions = currentSchedule?.MeetingInstructions,
+               VendorLink = currentSchedule?.VendorLink
+            };
+            selectedTimes.Add(slot);
+            selectedTimes.Sort((a,b) => string.Compare(a.TourTime, b.TourTime));
+            
+            // Sync global meeting time from first slot for backwards compatibility
+            if (currentSchedule != null && selectedTimes.Count == 1)
+            {
+                 currentSchedule.MeetingTime = calculated;
+            }
+
+            // Auto-select the new slot so user can edit logistics immediately if they want
+            SelectTimeSlot(slot);
+        }
+    }
+
+    private void SelectTimeSlot(TimeSlotModel slot)
+    {
+        activeTimeSlot = slot;
+        // Optional: Switch to Logistics tab automatically?
+        // SetActiveTab(1); 
+    }
+
+    private string CalculateMeetingTime(string tourTime)
+    {
+        if (DateTime.TryParse(tourTime, out var dt))
+        {
+            return dt.AddMinutes(-10).ToString("HH:mm");
+        }
+        return "";
+    }
+
+    private void RemoveTime(TimeSlotModel slot)
+    {
+        selectedTimes.Remove(slot);
+        if (activeTimeSlot == slot) activeTimeSlot = null;
+    }
+
+    private async Task OnSaveSchedule()
+    {
+        // 1. Validation
+        if (currentSchedule == null) return;
+        if (selectedDbTour == null) return;
+
+        currentSchedule.TourId = selectedDbTour.Id;
+        
+        // 2. Hydrate the schedule object from UI state
+        currentSchedule.StartDate = startDate;
+        currentSchedule.EndDate = endDate;
+        // 2026-02-05: Preserve user-edited Schedule Name
+        // Update from local input binding
+        if (!string.IsNullOrWhiteSpace(scheduleNameInput))
+        {
+            currentSchedule.ScheduleName = scheduleNameInput;
+        }
+        else
+        {
+             // Default if empty
+             currentSchedule.ScheduleName = selectedDbTour.TourName.EndsWith("Tour", StringComparison.OrdinalIgnoreCase) 
+                ? $"{selectedDbTour.TourName} Schedule" 
+                : $"{selectedDbTour.TourName} Tour Schedule";
+        }
+        
+        // Serialize assignments and times slots
+        // ONLY include days that are actually marked as 'Active'
+        var activeGuideMap = selectedGuides
+            .Where(kvp => activeDays.Contains(kvp.Key))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            
+        currentSchedule.DayAssignmentsJson = System.Text.Json.JsonSerializer.Serialize(activeGuideMap);
+        
+        // NEW: Serialize List<TimeSlotModel>
+        currentSchedule.TimeSlotsJson = System.Text.Json.JsonSerializer.Serialize(selectedTimes);
+        
+        // 2026-02-05: Set IsOverride from UI checkbox
+        currentSchedule.IsOverride = isOverride;
+        
+        // 2026-02-05: Check for conflicts using detailed method
+        var (hasStandardConflict, hasOverrideConflict, conflictNames) = await ToursApi.CheckScheduleConflictsDetailedAsync(currentSchedule);
+        
+        if (conflictNames.Count > 0)
+        {
+            if (isOverride)
+            {
+                // User is trying to create an Override schedule
+                if (hasOverrideConflict)
+                {
+                    // Already an Override exists - block
+                    await JSRuntime.InvokeVoidAsync("alert", $"An override already exists: '{string.Join(", ", conflictNames)}'.\n\nDelete the current override to create a new one.");
+                    return;
+                }
+                else
+                {
+                    // Overriding a Standard schedule - confirm
+                    var msg = $"This contradicts '{string.Join(", ", conflictNames)}'.\n\nOverride?";
+                    bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", msg);
+                    if (!confirm) return;
+                }
+            }
+            else
+            {
+                // User is trying to create a Standard schedule
+                // Block if there's already a Standard schedule for this slot
+                if (hasStandardConflict)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", $"A standard schedule already exists: '{string.Join(", ", conflictNames)}'.\n\nDeactivate or delete the existing schedule first.");
+                    return;
+                }
+                // If only Override conflict, allow (Standard + Override is fine)
+            }
+        }
+        else
+        {
+            // 2026-02-05: No conflicts found (no overlaps)
+            // If user checked 'Override' but there is nothing to override, warn them!
+            if (isOverride)
+            {
+                 bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Warning: You are creating an 'Override' but no Standard schedule was found active for these dates.\n\nThis means you are creating an 'Orphan Override' - it will work, but you won't be able to override it later (since max 1 override is allowed).\n\nAre you sure you want to proceed?");
+                 if (!confirm) return;
+            }
+        }
+
+        // 3. Save to Backend
+        try
+        {
+            Console.WriteLine("Saving schedule...");
+            var id = await ToursApi.SaveTourScheduleAsync(currentSchedule);
+            currentSchedule.Id = id; // Update ID if new
+            
+            Console.WriteLine($"Schedule Saved! ID: {id}");
+
+            // Trigger generation of individual assignments based on this rule
+            await ToursApi.GenerateAssignmentsFromScheduleAsync(currentSchedule);
+            Console.WriteLine("Assignments generated successfully.");
+            
+            // Refresh list
+            await LoadExistingSchedules();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving schedule: {ex.Message}");
+        }
+    }
+    
+    // --- Helpers for Tab 3 Display & Editing ---
+
+    private Dictionary<string, string> ParseDayMap(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, string>();
+        try
+        {
+            // Try parse as <string, string>
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) 
+                   ?? new Dictionary<string, string>();
+        }
+        catch 
+        {
+            // Backward compat or error
+            return new Dictionary<string, string>(); 
+        }
+    }
+    
+    private List<TimeSlotModel> ParseTimeSlots(string? json)
+    {
+         if (string.IsNullOrWhiteSpace(json)) return new List<TimeSlotModel>();
+         
+         try 
+         {
+             // Try NEW format first
+             if (json.Trim().StartsWith("["))
+             {
+                 return System.Text.Json.JsonSerializer.Deserialize<List<TimeSlotModel>>(json) ?? new List<TimeSlotModel>();
+             }
+         }
+         catch {}
+         
+         // Fallback to OLD CSV format
+         return json.Split(',', StringSplitOptions.RemoveEmptyEntries)
+             .Select(s => s.Trim())
+             .Select(t => new TimeSlotModel { TourTime = t, MeetingTime = CalculateMeetingTime(t) })
+             .ToList();
+    }
+    
+    private string GetGuideName(string? guideIdStr)
+    {
+        if (string.IsNullOrWhiteSpace(guideIdStr) || !int.TryParse(guideIdStr, out var gid)) return "";
+        var g = availableGuides.FirstOrDefault(x => x.Id == gid);
+        return g == null ? "" : FormatGuideName(g);
+    }
+    
+    private string FormatTimeDisplay(string timeStr)
+    {
+        if (DateTime.TryParse(timeStr, out var dt))
+        {
+            return dt.ToString("h:mm tt"); // e.g. "2:00 PM"
+        }
+        return timeStr;
+    }
+
+    private async Task DeleteSchedule(DbTourSchedule s)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the schedule '{s.ScheduleName}'?");
+        if (confirmed)
+        {
+            try
+            {
+                await ToursApi.DeleteTourScheduleAsync(s.Id);
+                await LoadExistingSchedules();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting schedule: {ex.Message}");
+            }
+        }
+    }
+    
+    private async Task DeleteScheduleFromCurrent(DbTourSchedule s)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the schedule '{s.ScheduleName}'?");
+        if (!confirmed) return;
+        
+        try
+        {
+            await ToursApi.DeleteTourScheduleAsync(s.Id);
+            await LoadCurrentSchedulesForFilter();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting schedule: {ex.Message}");
+        }
+    }
+
+    private void EditSchedule(DbTourSchedule s)
+    {
+        s.TourId = NormalizeToCanonicalTourId(s.TourId);
+        if (selectedDbTour != null)
+        {
+            s.TourName = selectedDbTour.TourName;
+        }
+
+        currentSchedule = s;
+        startDate = s.StartDate;
+        endDate = s.EndDate;
+        scheduleNameInput = s.ScheduleName ?? ""; // Sync local var
+        
+        // Deserialize active days categories
+        activeDays.Clear();
+        foreach(var day in daysOfWeek) selectedGuides[day] = "";
+
+        var map = ParseDayMap(s.DayAssignmentsJson);
+        foreach(var kvp in map)
+        {
+            if (!string.IsNullOrEmpty(kvp.Value)) // If guide assigned, or day marked active
+            {
+               activeDays.Add(kvp.Key);
+               selectedGuides[kvp.Key] = kvp.Value;
+            }
+            // Logic gap: if active but no guide? assuming map key existence = active
+            activeDays.Add(kvp.Key);
+        }
+        
+        selectedTimes = ParseTimeSlots(s.TimeSlotsJson);
+        
+        // Switch to main tab
+        activeTab = 0;
+        // Switch to main tab
+        activeTab = 0;
+    }
+
+    private async Task LoadAllSchedules()
+    {
+        try
+        {
+            var rawList = await ToursApi.GetAllTourSchedulesAsync();
+            // Sort: Tour Name -> Standard first (IsOverride=false) vs Override (true) -> StartDate desc
+            allSchedulesList = rawList
+                .OrderBy(x => x.TourName)
+                .ThenBy(x => x.IsOverride) // Standards first (false) then Overrides (true)
+                .ThenByDescending(x => x.StartDate)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+             Console.WriteLine($"Error loading all schedules: {ex.Message}");
+        }
+    }
+
+    private async Task EditScheduleFromAll(DbTourSchedule s)
+    {
+        var canonicalTourId = NormalizeToCanonicalTourId(s.TourId);
+
+        // 1. We must select the tour context first
+        if (selectedTourId != canonicalTourId)
+        {
+            selectedTourId = canonicalTourId;
+            await OnTourSelectionChangedAsync();
+        }
+
+        // 2. Now call EditSchedule
+        s.TourId = canonicalTourId;
+        if (selectedDbTour != null)
+        {
+            s.TourName = selectedDbTour.TourName;
+        }
+        EditSchedule(s);
+    }
+    
+    // 2026-02-05: Create a NEW Override schedule based on an existing schedule
+    // This does NOT edit the original - it creates a fresh schedule with Id=0
+    private async Task CreateOverrideFromSchedule(DbTourSchedule source)
+    {
+        var canonicalTourId = NormalizeToCanonicalTourId(source.TourId);
+
+        // 1. Set tour context
+        if (selectedTourId != canonicalTourId)
+        {
+            selectedTourId = canonicalTourId;
+            await OnTourSelectionChangedAsync();
+        }
+        
+        // 2. Create a FRESH schedule (Id=0 means new, not edit)
+        currentSchedule = new DbTourSchedule
+        {
+            Id = 0, // NEW schedule, not editing the source!
+            TourId = canonicalTourId,
+            ScheduleName = $"{source.TourName} Override",
+            IsActive = true,
+            IsOverride = true // This is the key - mark it as Override
+        };
+        scheduleNameInput = currentSchedule.ScheduleName; // Sync local var
+        
+        // 3. Pre-fill dates: default to today (manager will pick the actual override date)
+        startDate = DateTime.Today;
+        endDate = DateTime.Today;
+        
+        // 4. Copy time slots from source (user can modify)
+        selectedTimes = ParseTimeSlots(source.TimeSlotsJson);
+        
+        // 5. Copy active days but CLEAR guide assignments (user will pick new guide)
+        activeDays.Clear();
+        foreach (var day in daysOfWeek) selectedGuides[day] = "";
+        
+        var srcDays = new Dictionary<string, string>();
+        if (!string.IsNullOrWhiteSpace(source.DayAssignmentsJson))
+        {
+            try { srcDays = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(source.DayAssignmentsJson) ?? new(); } catch {}
+        }
+        foreach (var kvp in srcDays)
+        {
+            activeDays.Add(kvp.Key);
+            // Intentionally NOT copying guide - user must pick newguide for override
+        }
+        
+        // 6. Set Override checkbox
+        isOverride = true;
+        
+        // 7. Switch to main tab
+        activeTab = 0;
+        
+        Console.WriteLine($"[CreateOverride] Created new Override template from '{source.ScheduleName}' - User should now pick date and guide.");
+    }
+    
+    private async Task DeleteScheduleFromAll(DbTourSchedule s)
+    {
+         bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the schedule '{s.ScheduleName}' for {s.TourName}?");
+        if (confirmed)
+        {
+            try
+            {
+                await ToursApi.DeleteTourScheduleAsync(s.Id);
+                await LoadAllSchedules();
+                // If this happened to be the currently selected tour, refresh that list too
+                var canonicalTourId = NormalizeToCanonicalTourId(s.TourId);
+                if (selectedDbTour != null && selectedDbTour.Id == canonicalTourId)
+                {
+                    await LoadExistingSchedules();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting schedule: {ex.Message}");
+            }
+        }
+    }
+
+    private sealed class TourSelectionOption
+    {
+        public int TourId { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public int DuplicateCount { get; set; }
+    }
+
+}

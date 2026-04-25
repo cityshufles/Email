@@ -1,0 +1,1278 @@
+@using Email.Models.Mobile
+@using Email.Models
+@using Email.Models.Reports
+@using Email.Services
+@using System.Globalization
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+@inject ITourEmailsService TourEmailsApiService
+@inject IBookingsInboxService BookingsInboxService
+@inject MessageTemplateService TemplateService
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject NavigationManager Navigation
+
+<!-- Created: 10/7/2025 7:30 PM (local) | 2025-10-07T19:30:00 -->
+
+<div class="card shadow-sm mobile-tour-card" @onclick="ToggleExpanded">
+    <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="flex-grow-1">
+                @if (ShowDate)
+                {
+                    <div class="small text-muted">@Card.DateLabel</div>
+                }
+                <div class="fw-semibold d-flex align-items-center gap-2">
+                    <span>@DisplayTourName</span>
+                    @if (OnAddBookingFromTour.HasDelegate)
+                    {
+                        <button class="btn btn-sm p-0 border-0 bg-transparent text-success"
+                                title="Add booking for this tour/date"
+                                aria-label="Add booking for this tour/date"
+                                @onclick="OpenAddBookingForTourAsync"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    }
+                    @if (HasSubmittedGuideReport)
+                    {
+                        <i class="bi bi-pencil-fill text-info" style="font-size: 1.1rem;" title="Guide report submitted"></i>
+                    }
+                    else if (IsGuideReportPastDue)
+                    {
+                        <button class="btn btn-link btn-sm p-0 text-warning align-baseline"
+                                title="Guide report not submitted. Open guide report for this tour."
+                                aria-label="Open guide report for this tour"
+                                @onclick="OpenGuideReportForCard"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-pencil" style="font-size: 1.1rem;"></i>
+                        </button>
+                    }
+                </div>
+                <div class="small text-muted">
+                    Guests: <strong>@Card.TotalGuests</strong>
+                </div>
+                <div class="mt-1 d-flex gap-1">
+                    <button class="btn btn-sm @(blankQuickSendMode ? "btn-success" : "btn-outline-secondary")"
+                            title="@(blankQuickSendMode ? "Blank quick-send ON: quick SMS/WhatsApp opens with no preset message." : "Blank quick-send OFF: quick SMS/WhatsApp uses selected template.")"
+                            @onclick="ToggleBlankQuickSendMode"
+                            @onclick:stopPropagation="true">
+                        <i class="bi bi-justify-left"></i>
+                    </button>
+                    <select class="form-select form-select-sm" style="font-size: 0.75rem; max-width: 140px;"
+                            value="@(GuideId.HasValue ? GuideId.Value.ToString() : "")"
+                            @onchange="OnGuideSelectChange"
+                            @onclick:stopPropagation="true">
+                        <option value="" hidden></option>
+                        @if (DbGuides != null && DbGuides.Count > 0)
+                        {
+                            foreach (var g in DbGuides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                            {
+                                var label = string.IsNullOrWhiteSpace(g.LastName) ? g.FirstName : ($"{g.FirstName} {g.LastName}");
+                                <option value="@g.Id">@label</option>
+                            }
+                        }
+                    </select>
+                    <select class="form-select form-select-sm" style="font-size: 0.75rem; max-width: 180px;"
+                            value="@SelectedMessageId"
+                            @onchange="OnMessageSelectChange"
+                            @onclick:stopPropagation="true">
+                        <option value="" hidden></option>
+                        @if (MessageTemplates != null && MessageTemplates.Count > 0)
+                        {
+                            foreach (var m in MessageTemplates.OrderBy(x => x.Name))
+                            {
+                                <option value="@m.Id">@m.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="d-flex gap-1 align-items-center">
+                @if (HasSubmittedGuideReport)
+                {
+                    if (HasGuideGalleryInDb && !string.IsNullOrWhiteSpace(TourGalleryUrl))
+                    {
+                        <a class="btn btn-sm btn-success"
+                           href="@TourGalleryUrl"
+                           target="_blank"
+                           rel="noopener"
+                           title="Open report gallery"
+                           @onclick:stopPropagation="true">
+                            <i class="bi bi-images"></i>
+                        </a>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-danger"
+                                title="Report submitted but gallery link is missing in database. Open guide report."
+                                @onclick="OpenGuideReportForCard"
+                                @onclick:stopPropagation="true">
+                            <i class="bi bi-images"></i>
+                        </button>
+                    }
+                }
+                <button class="btn btn-sm btn-outline-warning" @onclick:stopPropagation="true" @onclick="InvokeBulkSend" title="Send bulk WhatsApp to guide">
+                    <i class="bi bi-chat-dots-fill"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick:stopPropagation="true" @onclick="OpenActionSheet">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+                @* 2025-12-18 - Toggle commented out: Red button now always uses web (safe), purple button is for app deep links
+                <div class="form-check form-switch m-0 d-flex align-items-center" title="Quick WhatsApp uses App when enabled">
+                    <input class="form-check-input" type="checkbox" id="waAppQuickToggleCard" @bind="useWhatsAppAppQuickSend" />
+                    <label class="form-check-label small ms-1" for="waAppQuickToggleCard">WA App</label>
+                </div>
+                *@
+            </div>
+        </div>
+    </div>
+
+    @if (expanded)
+    {
+        <div class="list-group list-group-flush">
+            @foreach (var vendor in Card.Vendors)
+            {
+                <div class="list-group-item">
+                    <div class="fw-semibold mb-1">@vendor.VendorName</div>
+                    <div class="d-flex flex-column gap-1">
+                        @foreach (var w in vendor.Walkers)
+                        {
+                            <div class="d-flex align-items-start mobile-walker-row">
+                                <div class="mobile-walker-meta">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span>@w.DisplayName @(!string.IsNullOrWhiteSpace(w.AttendeeDisplay) ? w.AttendeeDisplay : w.Attendees)</span>
+                                        @if (w.NeedsNumber)
+                                        {
+                                            <span class="badge text-bg-warning">needs number</span>
+                                        }
+                                        @* @{
+                                            var sent = w.MessageSent;
+                                            var iconColorClass = sent ? "text-success" : "text-warning";
+                                            var toggleTitle = sent ? "Mark as not sent" : "Mark as sent";
+                                        }
+                                        <button class="btn btn-link btn-sm p-0" title="@toggleTitle" @onclick="() => ToggleMessageSentAsync(w)" @onclick:stopPropagation="true">
+                                            <i class="bi bi-chat-text-fill @iconColorClass"></i>
+                                        </button> *@
+                                    </div>
+                                    <div class="small text-muted d-flex align-items-center gap-2">
+                                        <span>@(string.IsNullOrWhiteSpace(w.Phone) ? "No number" : w.Phone)</span>
+                                        @if (w.IsCheckedIn)
+                                        {
+                                            <i class="bi bi-person-check-fill text-success" style="font-size: 1.1rem;" title="Checked in"></i>
+                                        }
+                                    </div>
+                                </div>
+                <div class="mobile-walker-actions">
+                    @{
+                        var hasPhone = !string.IsNullOrWhiteSpace(w.Phone);
+                        var smsToggleBusy = IsContactStateBusy(w, ContactChannelSms);
+                        var waToggleBusy = IsContactStateBusy(w, ContactChannelWa);
+                        var platformToggleBusy = IsContactStateBusy(w, ContactChannelPlatform);
+                    }
+                    <div class="mobile-walker-utility-actions">
+                        <button class="btn btn-sm btn-outline-danger mobile-walker-action-btn" @onclick="() => ReportDataIssue(w)" title="Report data issue for this booking" @onclick:stopPropagation="true">
+                            <i class="bi bi-exclamation-octagon"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary mobile-walker-action-btn" @onclick="() => OpenConnectCopyPrompt(w)" title="Copy connect message" @onclick:stopPropagation="true">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning mobile-walker-action-btn" @onclick="() => EditWalker(w)" title="Edit Booking details" @onclick:stopPropagation="true">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        @*  <a class="btn btn-sm btn-outline-primary @(hasPhone ? "" : "disabled")"
+                            href="@GetSendWhatsAppWebUrl(w)"
+                            target="_blank"
+                            title="@(hasPhone ? "Send Message (WhatsApp Web - direct link)" : "No phone number")"
+                            onclick="event.stopPropagation();">
+                             <i class="bi bi-chat-text"></i>
+                         </a> *@
+                        @* <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenSmsAppLocal(w)" title="SMS" @onclick:stopPropagation="true">
+                             <i class="bi bi-chat-dots"></i>
+                         </button>*@
+                        <button class="btn btn-sm btn-outline-info mobile-walker-action-btn" @onclick="() => DownloadVcard(w)" title="Download vCard" @onclick:stopPropagation="true">
+                            <i class="bi bi-person-vcard"></i>
+                        </button>
+                        @* <a class="btn btn-sm btn-outline-success @(hasPhone ? "" : "disabled")"
+                            href="@GetWhatsAppChatUrl(w)"
+                            target="_blank"
+                            title="@(hasPhone ? "WhatsApp (chat only - direct link)" : "No phone number")"
+                            onclick="event.stopPropagation();">
+                             <i class="bi bi-whatsapp"></i>
+                         </a>*@
+                    </div>
+                    <div class="mobile-walker-contact-actions">
+                        <div class="mobile-contact-stack">
+                            <a class="btn btn-sm btn-outline-info mobile-walker-action-btn @(hasPhone ? "" : "disabled")"
+                               href="@GetQuickSmsUrl(w)"
+                               title="@(hasPhone ? "Quick SMS (&body=)" : "No phone number")"
+                               @onclick="() => TrackQuickSend(w, ContactChannelSms)"
+                               @onclick:stopPropagation="true">
+                                <i class="bi bi-chat-dots"></i>
+                            </a>
+                            <button class="btn btn-link btn-sm p-0 mobile-contact-dot @(smsToggleBusy ? "disabled" : "")"
+                                    title="@GetContactStateToggleTitle(ContactChannelSmsLabel, w.SmsContactState)"
+                                    disabled="@smsToggleBusy"
+                                    @onclick="() => ToggleContactStateAsync(w, ContactChannelSms)"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-circle-fill @GetContactStateColorClass(w.SmsContactState)"></i>
+                            </button>
+                        </div>
+                        @*   <a class="btn btn-sm text-white @(hasPhone ? "" : "disabled")"
+                            style="background-color: saddlebrown; border-color: saddlebrown;"
+                            href="@GetQuickSmsUrlQuery(w)"
+                            title="@(hasPhone ? "Quick SMS (?body=) - iPad/iPhone variant" : "No phone number")"
+                            onclick="event.stopPropagation();">
+                             <i class="bi bi-chat-dots"></i>
+                         </a> *@
+
+                        <div class="mobile-contact-stack">
+                            <a class="btn btn-sm btn-outline-success mobile-walker-action-btn @(hasPhone ? "" : "disabled")"
+                               href="@GetQuickWhatsAppUrlPlusPhone(w)"
+                               title="@(hasPhone ? "Quick WhatsApp (app, phone=+digits) - iPad/iPhone variant" : "No phone number")"
+                               @onclick="() => TrackQuickSend(w, ContactChannelWa)"
+                               @onclick:stopPropagation="true">
+                                <i class="bi bi-whatsapp"></i>
+                            </a>
+                            <button class="btn btn-link btn-sm p-0 mobile-contact-dot @(waToggleBusy ? "disabled" : "")"
+                                    title="@GetContactStateToggleTitle(ContactChannelWaLabel, w.WaContactState)"
+                                    disabled="@waToggleBusy"
+                                    @onclick="() => ToggleContactStateAsync(w, ContactChannelWa)"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-circle-fill @GetContactStateColorClass(w.WaContactState)"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary mobile-walker-action-btn @(platformToggleBusy ? "disabled" : "")"
+                                title="@GetPlatformContactToggleTitle(w.PlatformContactState)"
+                                disabled="@platformToggleBusy"
+                                @onclick="() => ToggleContactStateAsync(w, ContactChannelPlatform)"
+                                @onclick:stopPropagation="true">
+                            <i class="@GetPlatformContactIconClass(w.PlatformContactState)"></i>
+                        </button>
+
+                        @* <a class="btn btn-sm btn-outline-danger @(hasPhone ? "" : "disabled")"
+                            href="@GetQuickWhatsAppUrl(w)"
+                            target="_blank"
+                            title="@(hasPhone ? "Quick WhatsApp (web - safe, won't close page)" : "No phone number")"
+                            onclick="event.stopPropagation();">
+                             <i class="bi bi-whatsapp"></i>
+                         </a> *@
+                    </div>
+                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Bottom Action Sheet -->
+@if (showSheet)
+{
+    <div class="action-sheet-backdrop" @onclick="CloseActionSheet"></div>
+    <div class="action-sheet">
+        <div class="action-sheet-header">@DisplayTourName</div>
+        <div class="list-group">
+            <button class="list-group-item list-group-item-action" @onclick="CopyWalkers">
+                <i class="bi bi-clipboard me-2"></i> Copy All Walkers
+            </button>
+            <button class="list-group-item list-group-item-action" @onclick="DownloadVcards">
+                <i class="bi bi-person-vcard me-2"></i> Download vCards
+            </button>
+            <button class="list-group-item list-group-item-action" @onclick="ToggleExpanded">
+                <i class="bi bi-people me-2"></i> Show/Hide Walkers
+            </button>
+            <button class="list-group-item list-group-item-action text-danger" @onclick="CloseActionSheet">
+                Cancel
+            </button>
+        </div>
+    </div>
+}
+
+@if (showConnectCopyDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard me-2"></i>@connectCopyDialogTitle
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseConnectCopyDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea class="form-control"
+                              rows="8"
+                              readonly
+                              autofocus
+                              style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem; -webkit-user-select: text; user-select: text;"
+                              @onfocus="SelectConnectCopyTextFromUi"
+                              @onclick="SelectConnectCopyTextFromUi"
+                              @ref="connectCopyTextAreaRef">@connectCopyDialogContent</textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseConnectCopyDialog">Close</button>
+                    <button type="button" class="btn btn-primary" @onclick="TryAutoCopyConnectFromDialog">
+                        <i class="bi bi-clipboard me-1"></i>Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public MobileTourCardModel Card { get; set; } = new();
+    [Parameter] public EventCallback<MobileTourCardModel> OnCopyWalkers { get; set; }
+    [Parameter] public EventCallback<MobileTourCardModel> OnDownloadVcards { get; set; }
+    [Parameter] public EventCallback<MobileWalkerInfoModel> OnEditWalker { get; set; }
+    [Parameter] public EventCallback<MobileWalkerInfoModel> OnDownloadVcard { get; set; }
+    [Parameter] public EventCallback<MobileWalkerInfoModel> OnReportDataIssue { get; set; }
+    [Parameter] public EventCallback<MobileTourCardModel> OnBulkSendToGuide { get; set; }
+    [Parameter] public EventCallback<BookingPrefillRequest> OnAddBookingFromTour { get; set; }
+    [Parameter] public List<InMemoryMessageTemplate>? MessageTemplates { get; set; }
+    // Guide data for template replacements
+    [Parameter] public List<DbGuide>? DbGuides { get; set; }
+    [Parameter] public IReadOnlyList<DbTour>? AvailableTours { get; set; }
+    [Parameter] public IReadOnlyList<TourLink>? AvailableTourLinks { get; set; }
+    [Parameter] public IReadOnlyList<DbVendor>? AvailableVendors { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, HashSet<string>>? ActiveVendorAssignments { get; set; }
+    [Parameter] public int? GuideId { get; set; }
+
+    [Parameter] public bool ShowDate { get; set; } = true;
+    // 2025-12-18 00:00 UTC - DB-powered message selection
+    [Parameter] public string SelectedMessageId { get; set; } = "";
+    [Parameter] public EventCallback<string> OnMessageSelected { get; set; }
+    [Parameter] public EventCallback<int?> OnGuideSelected { get; set; }
+
+    private string DisplayTourName => string.IsNullOrWhiteSpace(Card.TourNameDisplay) ? Card.TourName : Card.TourNameDisplay;
+    private bool HasSubmittedGuideReport => Card?.EnumerateAllWalkers().Any(w => w.HasSubmittedGuideReport) == true;
+    private bool IsGuideReportPastDue => IsGuideReportPastDueForTour(Card?.DateLabel, Card?.TourName);
+    private bool HasGuideGalleryInDb => Card?.EnumerateAllWalkers().Any(w => w.HasGuideGalleryInDb) == true;
+    private string TourGalleryUrl => BuildTourGalleryUrl();
+    private string GuideReportUrl => BuildGuideReportUrl(Card?.DateLabel, Card?.TourName);
+    private static readonly TimeZoneInfo EasternTimeZone = ResolveEasternTimeZone();
+
+    private bool expanded = false;
+    private bool showSheet = false;
+    private bool showConnectCopyDialog = false;
+    private string connectCopyDialogContent = string.Empty;
+    private string connectCopyDialogTitle = string.Empty;
+    private ElementReference connectCopyTextAreaRef;
+    private bool pendingConnectCopyTextSelect = false;
+    private bool blankQuickSendMode = false;
+    private readonly HashSet<string> contactStateBusyKeys = new(StringComparer.OrdinalIgnoreCase);
+    private const string ContactChannelSms = "sms";
+    private const string ContactChannelWa = "wa";
+    private const string ContactChannelPlatform = "platform";
+    private const string ContactChannelSmsLabel = "SMS";
+    private const string ContactChannelWaLabel = "WA";
+    // 2025-12-18 - Toggle commented out: Red button always uses web (safe), purple button is for app deep links
+    // private bool useWhatsAppAppQuickSend = true;
+
+    private async Task InvokeBulkSend()
+    {
+        if (OnBulkSendToGuide.HasDelegate)
+        {
+            await OnBulkSendToGuide.InvokeAsync(Card);
+        }
+    }
+
+    private string BuildTourGalleryUrl()
+    {
+        var publicId = Card?.EnumerateAllWalkers()
+            .Select(w => w.GuideReportPublicId)
+            .FirstOrDefault(id => !string.IsNullOrWhiteSpace(id));
+
+        return BuildGalleryUrlFromPublicId(publicId);
+    }
+
+    private void OpenGuideReportForCard()
+    {
+        Navigation.NavigateTo(GuideReportUrl);
+    }
+
+    private async Task OpenAddBookingForTourAsync()
+    {
+        if (!OnAddBookingFromTour.HasDelegate)
+        {
+            return;
+        }
+
+        var parsedDate = ParseDateFromLabel(Card?.DateLabel);
+        var (tourName, tourTime) = SplitTourNameAndTimeForRoute(Card?.TourName);
+        var effectiveTourName = !string.IsNullOrWhiteSpace(tourName)
+            ? tourName
+            : (Card?.TourName ?? string.Empty).Trim();
+
+        await OnAddBookingFromTour.InvokeAsync(new BookingPrefillRequest
+        {
+            TourName = effectiveTourName,
+            TourDate = parsedDate,
+            TourTime = string.IsNullOrWhiteSpace(tourTime) ? null : tourTime
+        });
+    }
+
+    private string BuildGuideReportUrl(string? dateLabel, string? tourLabel)
+    {
+        var query = new List<string>();
+        var parsedDate = ParseDateFromLabel(dateLabel);
+        if (parsedDate.HasValue)
+        {
+            query.Add($"date={Uri.EscapeDataString(parsedDate.Value.ToString("yyyy-MM-dd"))}");
+        }
+
+        var (tourName, tourTime) = SplitTourNameAndTimeForRoute(tourLabel);
+        var effectiveTourName = !string.IsNullOrWhiteSpace(tourName) ? tourName : (tourLabel ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(effectiveTourName))
+        {
+            query.Add($"tourName={Uri.EscapeDataString(effectiveTourName)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(tourTime))
+        {
+            query.Add($"tourTime={Uri.EscapeDataString(tourTime)}");
+        }
+
+        return query.Count == 0 ? "/guide-report" : $"/guide-report?{string.Join("&", query)}";
+    }
+
+    private static DateTime? ParseDateFromLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        return DateTime.TryParse(label, out var parsedDate) ? parsedDate.Date : null;
+    }
+
+    private static bool IsGuideReportPastDueForTour(string? dateLabel, string? tourLabel)
+    {
+        var parsedDate = ParseDateFromLabel(dateLabel);
+        if (!parsedDate.HasValue)
+        {
+            return false;
+        }
+
+        var (_, tourTime) = SplitTourNameAndTimeForRoute(tourLabel);
+        var nowEastern = GetCurrentEasternTime();
+
+        if (TryParseTourStartTime(tourTime, out var tourStartTime))
+        {
+            var scheduledTourStart = parsedDate.Value.Date.Add(tourStartTime);
+            return scheduledTourStart <= nowEastern;
+        }
+
+        return parsedDate.Value.Date < nowEastern.Date;
+    }
+
+    private static bool TryParseTourStartTime(string? tourTime, out TimeSpan startTime)
+    {
+        startTime = default;
+        if (string.IsNullOrWhiteSpace(tourTime))
+        {
+            return false;
+        }
+
+        var normalized = tourTime.Trim();
+        var styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.NoCurrentDateDefault;
+
+        DateTime parsed;
+        if (DateTime.TryParse(normalized, CultureInfo.InvariantCulture, styles, out parsed) ||
+            DateTime.TryParse(normalized, CultureInfo.CurrentCulture, styles, out parsed))
+        {
+            startTime = parsed.TimeOfDay;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static DateTime GetCurrentEasternTime()
+    {
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, EasternTimeZone);
+    }
+
+    private static TimeZoneInfo ResolveEasternTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+            }
+            catch
+            {
+                return TimeZoneInfo.Utc;
+            }
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+    private static (string name, string time) SplitTourNameAndTimeForRoute(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var normalizedLabel = label.Trim();
+        var separators = new[] { " \u2014 ", " \u2013 ", " - ", " \u00E2\u20AC\u201D ", " \u00E2\u20AC\u201C " };
+        foreach (var separator in separators)
+        {
+            var separatorIndex = normalizedLabel.LastIndexOf(separator, StringComparison.Ordinal);
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var candidateName = normalizedLabel[..separatorIndex].Trim();
+            var candidateTime = normalizedLabel[(separatorIndex + separator.Length)..].Trim();
+            if (!string.IsNullOrWhiteSpace(candidateName) && LooksLikeTourTime(candidateTime))
+            {
+                return (candidateName, candidateTime);
+            }
+        }
+
+        return (normalizedLabel, string.Empty);
+    }
+
+    private static bool LooksLikeTourTime(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        if (!normalized.Any(char.IsDigit))
+        {
+            return false;
+        }
+
+        return normalized.Contains(':') ||
+               normalized.IndexOf("am", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               normalized.IndexOf("pm", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private string ResolveEffectiveGalleryLink(MobileWalkerInfoModel? walker)
+    {
+        var walkerPublicId = walker?.GuideReportPublicId;
+        if (!string.IsNullOrWhiteSpace(walkerPublicId))
+        {
+            return BuildGalleryUrlFromPublicId(walkerPublicId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(TourGalleryUrl))
+        {
+            return TourGalleryUrl;
+        }
+
+        return string.Empty;
+    }
+
+    private string BuildGalleryUrlFromPublicId(string? publicId)
+    {
+        if (string.IsNullOrWhiteSpace(publicId))
+        {
+            return string.Empty;
+        }
+
+        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        return $"{baseUrl}/tour-gallery/{publicId.Trim()}.html";
+    }
+
+    private void ToggleExpanded()
+    {
+        expanded = !expanded;
+    }
+
+    private void OpenActionSheet()
+    {
+        showSheet = true;
+    }
+
+    private void CloseActionSheet()
+    {
+        showSheet = false;
+    }
+
+    // 2025-12-18 00:00 UTC - Handle dropdown selection change
+    private async Task OnMessageSelectChange(ChangeEventArgs e)
+    {
+        var newValue = e.Value?.ToString() ?? "";
+        if (OnMessageSelected.HasDelegate)
+        {
+            await OnMessageSelected.InvokeAsync(newValue);
+        }
+    }
+
+    private async Task OnGuideSelectChange(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        int? newId = null;
+        if (!string.IsNullOrWhiteSpace(val) && val != "none" && int.TryParse(val, out var id))
+        {
+            newId = id;
+        }
+
+        if (OnGuideSelected.HasDelegate)
+        {
+            await OnGuideSelected.InvokeAsync(newId);
+        }
+    }
+
+
+    private async Task CopyWalkers()
+    {
+        await OnCopyWalkers.InvokeAsync(Card);
+        CloseActionSheet();
+    }
+
+    private async Task DownloadVcards()
+    {
+        await OnDownloadVcards.InvokeAsync(Card);
+        CloseActionSheet();
+    }
+
+    private async Task EditWalker(MobileWalkerInfoModel walker)
+    {
+        await OnEditWalker.InvokeAsync(walker);
+    }
+
+    private async Task ReportDataIssue(MobileWalkerInfoModel walker)
+    {
+        if (OnReportDataIssue.HasDelegate)
+        {
+            await OnReportDataIssue.InvokeAsync(walker);
+        }
+    }
+
+    private Task OpenConnectCopyPrompt(MobileWalkerInfoModel walker)
+    {
+        connectCopyDialogTitle = $"Copy Connect - {walker?.DisplayName ?? "Walker"}";
+        connectCopyDialogContent = BuildConnectPromptMessage(walker);
+        showConnectCopyDialog = true;
+        pendingConnectCopyTextSelect = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void CloseConnectCopyDialog()
+    {
+        showConnectCopyDialog = false;
+        connectCopyDialogContent = string.Empty;
+        connectCopyDialogTitle = string.Empty;
+        pendingConnectCopyTextSelect = false;
+    }
+
+    private async Task TryAutoCopyConnectFromDialog()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", connectCopyDialogContent);
+            await ToastService.ShowSuccessAsync("Copied", "Text copied to clipboard!");
+            CloseConnectCopyDialog();
+        }
+        catch
+        {
+            // Silent fail; user can manually copy from the textarea.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showConnectCopyDialog && pendingConnectCopyTextSelect)
+        {
+            pendingConnectCopyTextSelect = false;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("blazorFocusAndSelectTextArea", connectCopyTextAreaRef);
+            }
+            catch
+            {
+                // Best effort for mobile text selection.
+            }
+        }
+    }
+
+    private async Task SelectConnectCopyTextFromUi()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorFocusAndSelectTextArea", connectCopyTextAreaRef);
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    private static string BuildConnectPromptMessage(MobileWalkerInfoModel? walker)
+    {
+        var walkerName = "there";
+        var rawName = walker?.DisplayName?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(rawName))
+        {
+            // Inline first-name parse for connect copy text.
+            var firstToken = rawName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+            firstToken = firstToken.Trim('\"', '\'', ',', '.', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}');
+            if (!string.IsNullOrWhiteSpace(firstToken))
+            {
+                walkerName = firstToken;
+            }
+        }
+
+        var dateText = FormatConnectPromptDate(walker?.DateLabel);
+        return $"Hey {walkerName}, we'd like to connect you with your guide for {dateText}. Would you please text us? We're also on WhatsApp. Thank you :) (917) 938-1170";
+    }
+
+    private static string FormatConnectPromptDate(string? dateLabel)
+    {
+        if (DateTime.TryParse(dateLabel, out var date))
+        {
+            return date.ToString("M/d/yy");
+        }
+
+        return string.IsNullOrWhiteSpace(dateLabel) ? "your tour date" : dateLabel;
+    }
+
+    // NOTE: Send Message is now a direct <a href="https://wa.me/..."> to match TestIosLinks Section 1 (iOS reliability).
+    private void TrackQuickSend(MobileWalkerInfoModel walker, string channel)
+    {
+        _ = MarkMessageSentAsync(walker); // legacy behavior
+        _ = MarkContactStateQuickSendAsync(walker, channel);
+    }
+
+    private async Task ToggleContactStateAsync(MobileWalkerInfoModel walker, string channel)
+    {
+        if (walker == null) return;
+        if (string.IsNullOrWhiteSpace(walker.MessageId) || string.IsNullOrWhiteSpace(walker.BookingCode)) return;
+
+        var normalizedChannel = NormalizeContactChannel(channel);
+        if (normalizedChannel == null) return;
+
+        var busyKey = BuildContactStateBusyKey(walker, normalizedChannel);
+        if (!contactStateBusyKeys.Add(busyKey))
+        {
+            return;
+        }
+
+        try
+        {
+            ContactChannelStateResult? result;
+            if (normalizedChannel == ContactChannelPlatform)
+            {
+                var nextState = walker.PlatformContactState == 1 ? (byte)0 : (byte)1;
+                result = await TourEmailsApiService.SetBookingContactChannelStateAsync(
+                    walker.MessageId,
+                    walker.BookingCode,
+                    normalizedChannel,
+                    nextState,
+                    source: "mobile-dashboard");
+            }
+            else
+            {
+                result = await TourEmailsApiService.CycleBookingContactChannelStateAsync(
+                    walker.MessageId,
+                    walker.BookingCode,
+                    normalizedChannel,
+                    source: "mobile-dashboard");
+            }
+
+            if (result != null)
+            {
+                ApplyContactState(walker, normalizedChannel, result.ContactState);
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // Keep UI non-blocking for quick interactions.
+        }
+        finally
+        {
+            contactStateBusyKeys.Remove(busyKey);
+        }
+    }
+
+    private async Task MarkContactStateQuickSendAsync(MobileWalkerInfoModel walker, string channel)
+    {
+        if (walker == null) return;
+        if (string.IsNullOrWhiteSpace(walker.MessageId) || string.IsNullOrWhiteSpace(walker.BookingCode)) return;
+
+        var normalizedChannel = NormalizeContactChannel(channel);
+        if (normalizedChannel == null) return;
+
+        try
+        {
+            var result = await TourEmailsApiService.MarkBookingContactChannelQuickSendAsync(
+                walker.MessageId,
+                walker.BookingCode,
+                normalizedChannel,
+                source: "mobile-dashboard");
+
+            if (result != null)
+            {
+                ApplyContactState(walker, normalizedChannel, result.ContactState);
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // silent; quick actions should not block
+        }
+    }
+
+    private bool IsContactStateBusy(MobileWalkerInfoModel walker, string channel)
+    {
+        var normalizedChannel = NormalizeContactChannel(channel);
+        if (normalizedChannel == null || walker == null) return false;
+        return contactStateBusyKeys.Contains(BuildContactStateBusyKey(walker, normalizedChannel));
+    }
+
+    private static string BuildContactStateBusyKey(MobileWalkerInfoModel walker, string channel)
+    {
+        return $"{walker.MessageId?.Trim()}||{walker.BookingCode?.Trim()}||{channel}";
+    }
+
+    private void ToggleBlankQuickSendMode()
+    {
+        blankQuickSendMode = !blankQuickSendMode;
+    }
+
+    private static string? NormalizeContactChannel(string? channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel)) return null;
+        var normalized = channel.Trim().ToLowerInvariant();
+        return normalized is ContactChannelSms or ContactChannelWa or ContactChannelPlatform ? normalized : null;
+    }
+
+    private static void ApplyContactState(MobileWalkerInfoModel walker, string channel, byte state)
+    {
+        var normalizedState = state > 3 ? (byte)0 : state;
+        if (channel == ContactChannelSms)
+        {
+            walker.SmsContactState = normalizedState;
+            return;
+        }
+
+        if (channel == ContactChannelWa)
+        {
+            walker.WaContactState = normalizedState;
+            return;
+        }
+
+        if (channel == ContactChannelPlatform)
+        {
+            walker.PlatformContactState = normalizedState;
+        }
+    }
+
+    private static string GetContactStateColorClass(byte state)
+    {
+        return state switch
+        {
+            1 => "text-success",
+            2 => "text-danger",
+            3 => "text-secondary",
+            _ => "text-contact-yellow"
+        };
+    }
+
+    private static string GetContactStateToggleTitle(string channelLabel, byte currentState)
+    {
+        var currentLabel = GetContactStateLabel(currentState);
+        var nextLabel = GetContactStateLabel((byte)((currentState + 1) % 4));
+        return $"{channelLabel}: {currentLabel}. Click to set {nextLabel}.";
+    }
+
+    private static string GetPlatformContactToggleTitle(byte currentState)
+    {
+        return currentState == 1
+            ? "Platform: contacted. Click to uncheck."
+            : "Platform: not contacted. Click to mark contacted.";
+    }
+
+    private static string GetPlatformContactIconClass(byte state)
+    {
+        return state == 1 ? "bi bi-check-square-fill text-success" : "bi bi-square text-secondary";
+    }
+
+    private static string GetContactStateLabel(byte state)
+    {
+        return state switch
+        {
+            1 => "Green (contacted)",
+            2 => "Red (failed)",
+            3 => "Gray (skipped / unknown)",
+            _ => "Yellow (no outcome)"
+        };
+    }
+
+    // 2025-12-07 00:00 UTC - Toggle message sent flag from mobile
+    private async Task ToggleMessageSentAsync(MobileWalkerInfoModel walker)
+    {
+        if (walker == null) return;
+        if (string.IsNullOrWhiteSpace(walker.MessageId) || string.IsNullOrWhiteSpace(walker.BookingCode)) return;
+
+        var newValue = !walker.MessageSent;
+        try
+        {
+            var ok = await TourEmailsApiService.SetBookingMessageSentAsync(walker.MessageId, walker.BookingCode, newValue);
+            if (ok)
+            {
+                await BookingsInboxService.LogMessageEventAsync(new BookingMessageEventWriteModel
+                {
+                    CustomerId = walker.CustomerId > 0 ? walker.CustomerId : null,
+                    CustomerIdentifier = walker.CustomerIdentifier,
+                    BookingCode = walker.BookingCode,
+                    MessageId = walker.MessageId,
+                    TourName = walker.TourName,
+                    VendorName = walker.VendorName,
+                    Stage = "misc",
+                    Channel = string.Empty,
+                    TriggerType = "manual_toggle",
+                    TriggeredBy = "mobile-card",
+                    SentAtUtc = DateTime.UtcNow
+                });
+                // walker.MessageSent = newValue;
+                // StateHasChanged();
+                // await ToastService.ShowSuccessAsync("Updated", newValue ? "Marked as sent" : "Marked as not sent");
+            }
+            else
+            {
+                // await ToastService.ShowWarningAsync("Not updated", "Could not change sent flag.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to update: {ex.Message}");
+        }
+    }
+
+    private async Task DownloadVcard(MobileWalkerInfoModel walker)
+    {
+        await OnDownloadVcard.InvokeAsync(walker);
+    }
+
+    // 2025-12-07 00:00 UTC - Mark as sent helper for quick actions
+    private async Task MarkMessageSentAsync(MobileWalkerInfoModel walker)
+    {
+        if (walker == null) return;
+        if (string.IsNullOrWhiteSpace(walker.MessageId) || string.IsNullOrWhiteSpace(walker.BookingCode)) return;
+
+        try
+        {
+            var ok = await TourEmailsApiService.SetBookingMessageSentAsync(walker.MessageId, walker.BookingCode, true);
+            if (ok)
+            {
+                await BookingsInboxService.LogMessageEventAsync(new BookingMessageEventWriteModel
+                {
+                    CustomerId = walker.CustomerId > 0 ? walker.CustomerId : null,
+                    CustomerIdentifier = walker.CustomerIdentifier,
+                    BookingCode = walker.BookingCode,
+                    MessageId = walker.MessageId,
+                    TourName = walker.TourName,
+                    VendorName = walker.VendorName,
+                    Stage = "misc",
+                    Channel = string.Empty,
+                    TriggerType = "open_channel",
+                    TriggeredBy = "mobile-card",
+                    SentAtUtc = DateTime.UtcNow
+                });
+                walker.MessageSent = true;
+                walker.MessageSentAtUtc = DateTime.UtcNow;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // silent; quick actions should not block
+        }
+    }
+
+    // 2025-12-18 - Red button ALWAYS uses web (https://wa.me/) to prevent closing the page. Never uses whatsapp:// deep links.
+    // Purple button is for app deep links (iPad/iPhone variant).
+    private string GetQuickWhatsAppUrl(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+
+        var cleanPhone = new string(walker.Phone.Where(c => char.IsDigit(c)).ToArray());
+        if (string.IsNullOrWhiteSpace(cleanPhone)) return "";
+
+        var message = ResolveQuickSendMessage(walker);
+
+        // Always use web - never whatsapp:// (which closes the page)
+        return string.IsNullOrEmpty(message)
+            ? $"https://wa.me/{cleanPhone}"
+            : $"https://wa.me/{cleanPhone}?text={Uri.EscapeDataString(NormalizeLineBreaksForUrl(message))}";
+    }
+
+    // 2025-12-18 - iOS variant: whatsapp:// link with phone param INCLUDING leading '+', matching TestIosLinks.razor Section 1
+    private string GetQuickWhatsAppUrlPlusPhone(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+
+        var cleanPhone = new string(walker.Phone.Where(c => char.IsDigit(c)).ToArray());
+        if (string.IsNullOrWhiteSpace(cleanPhone)) return "";
+
+        var phoneWithPlus = "+" + cleanPhone;
+
+        var message = ResolveQuickSendMessage(walker);
+
+        return string.IsNullOrEmpty(message)
+            ? $"whatsapp://send?phone={phoneWithPlus}"
+            : $"whatsapp://send?phone={phoneWithPlus}&text={Uri.EscapeDataString(NormalizeLineBreaksForUrl(message))}";
+    }
+
+    // 2025-12-18 - "Send Message" button is now a direct WA web link (no JSRuntime.open), matching TestIosLinks.razor Section 1.
+    private string GetSendWhatsAppWebUrl(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+
+        var cleanPhone = new string(walker.Phone.Where(c => char.IsDigit(c)).ToArray());
+        if (string.IsNullOrWhiteSpace(cleanPhone)) return "";
+
+        var message = ResolveQuickSendMessage(walker);
+
+        return string.IsNullOrEmpty(message)
+            ? $"https://wa.me/{cleanPhone}"
+            : $"https://wa.me/{cleanPhone}?text={Uri.EscapeDataString(NormalizeLineBreaksForUrl(message))}";
+    }
+
+    private string GetWhatsAppChatUrl(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+        var cleanPhone = new string(walker.Phone.Where(c => char.IsDigit(c)).ToArray());
+        if (string.IsNullOrWhiteSpace(cleanPhone)) return "";
+        return $"https://wa.me/{cleanPhone}";
+    }
+
+    private string GetQuickSmsUrl(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+
+        var message = ResolveQuickSendMessage(walker);
+
+        var e164 = FormatPhoneToE164Local(walker.Phone);
+        return $"sms:{e164}&body={Uri.EscapeDataString(NormalizeLineBreaksForUrl(message))}";
+    }
+
+    // 2025-12-18 - iOS variant: sms: scheme with ?body=, matching TestIosLinks.razor Section 1
+    private string GetQuickSmsUrlQuery(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(walker.Phone)) return "";
+
+        var message = ResolveQuickSendMessage(walker);
+
+        var e164 = FormatPhoneToE164Local(walker.Phone);
+        return $"sms:{e164}?body={Uri.EscapeDataString(NormalizeLineBreaksForUrl(message))}";
+    }
+
+    private string BuildTemplateMessage(MobileWalkerInfoModel walker)
+    {
+        if (walker == null || string.IsNullOrWhiteSpace(SelectedMessageId) || SelectedMessageId == "none")
+        {
+            return string.Empty;
+        }
+
+        var template = MessageTemplates?.FirstOrDefault(t => t.Id == SelectedMessageId);
+        if (template == null)
+        {
+            return string.Empty;
+        }
+
+        DbGuide? guide = null;
+        if (GuideId.HasValue && DbGuides != null)
+        {
+            guide = DbGuides.FirstOrDefault(g => g.Id == GuideId.Value);
+        }
+
+        var tourName = !string.IsNullOrWhiteSpace(walker.TourName) ? walker.TourName : Card.TourName;
+        var vendorName = !string.IsNullOrWhiteSpace(walker.VendorName)
+            ? walker.VendorName
+            : Card.Vendors.FirstOrDefault()?.VendorName;
+        var stageHint = !string.IsNullOrWhiteSpace(template.Type) ? template.Type : template.Name;
+
+        var resolvedLinks = VendorLinkResolver.Resolve(
+            null,
+            tourName,
+            vendorName,
+            stageHint,
+            template.VendorLink,
+            null,
+            null,
+            AvailableTourLinks,
+            AvailableVendors,
+            AvailableTours,
+            ActiveVendorAssignments);
+
+        var resolvedGalleryLink = ResolveEffectiveGalleryLink(walker);
+        return TemplateService.PopulateMessageTemplate(template, walker, guide, resolvedLinks.AllToursLink, resolvedLinks, resolvedGalleryLink);
+    }
+
+    private string ResolveQuickSendMessage(MobileWalkerInfoModel walker)
+    {
+        return blankQuickSendMode ? string.Empty : BuildTemplateMessage(walker);
+    }
+
+    // 2025-12-18 - WhatsApp URL text needs LF line breaks; normalize to avoid single-line messages on WhatsApp Web
+    private static string NormalizeLineBreaksForUrl(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        return text.Replace("\r\n", "\n").Replace("\r", "\n");
+    }
+
+   //todo keep for later - edited 1/7/26
+    private async Task OpenSmsAppLocal(MobileWalkerInfoModel walker)
+    {
+        // Now just used for the SMS Dialog button if needed, but we replaced with anchor in UI
+        await MarkMessageSentAsync(walker);
+    }
+    
+    private static string FormatPhoneToE164Local(string phone)
+    {
+        var cleaned = new string((phone ?? "").Where(c => char.IsDigit(c) || c == '+').ToArray());
+        if (string.IsNullOrEmpty(cleaned)) return "";
+        if (cleaned.StartsWith("+")) return cleaned;
+        if (cleaned.Length == 10) return "+1" + cleaned;
+        if (cleaned.Length == 11 && cleaned.StartsWith("1")) return "+" + cleaned;
+        return cleaned;
+    }
+}
+
+<style>
+    .mobile-tour-card { border-radius: 12px; }
+    .mobile-walker-row {
+        gap: .5rem;
+    }
+    .mobile-walker-meta {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+    .mobile-walker-actions {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: flex-end;
+        gap: .25rem;
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+    .mobile-walker-utility-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: .25rem;
+    }
+    .mobile-walker-contact-actions {
+        display: flex;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        align-items: flex-start;
+        gap: .25rem;
+    }
+    .mobile-walker-action-btn {
+        width: 2.2rem;
+        height: 2.2rem;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+    }
+    .mobile-contact-stack {
+        width: 2.2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        flex: 0 0 auto;
+    }
+    .mobile-contact-dot {
+        margin-top: .2rem !important;
+        width: 1.2rem !important;
+        height: 1.2rem !important;
+        min-height: 1.2rem !important;
+        padding: 0 !important;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .mobile-contact-dot .bi-circle-fill {
+        font-size: .95rem;
+    }
+    @@media (max-width: 767.98px) {
+        .mobile-walker-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .mobile-walker-meta {
+            width: 100%;
+        }
+        .mobile-walker-actions {
+            width: 100%;
+            margin-left: 0;
+            align-items: flex-start;
+        }
+        .mobile-walker-utility-actions,
+        .mobile-walker-contact-actions {
+            justify-content: flex-start;
+        }
+    }
+    .action-sheet-backdrop {
+        position: fixed; 
+        inset: 0; 
+        background: rgba(0,0,0,.5); 
+        z-index: 9998;
+        animation: fadeIn .2s ease-out;
+    }
+    .action-sheet {
+        position: fixed; 
+        left: 0; 
+        right: 0; 
+        bottom: 0; 
+        z-index: 9999;
+       
+        border-top-left-radius: 16px; 
+        border-top-right-radius: 16px;
+        box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+        animation: slideUp .25s ease-out;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+    .action-sheet-header { 
+        padding: .75rem 1rem; 
+        font-weight: 600; 
+        border-bottom: 1px solid #eee;
+        position: sticky;
+        top: 0;
+        
+        z-index: 1;
+    }
+    .action-sheet .list-group-item { padding: .9rem 1rem; min-height: 44px; }
+    @@keyframes slideUp { 
+        from { transform: translateY(100%); opacity: 0; } 
+        to { transform: translateY(0); opacity: 1; } 
+    }
+    @@keyframes fadeIn { 
+        from { opacity: 0; } 
+        to { opacity: 1; } 
+    }
+</style>
+
+
+

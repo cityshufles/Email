@@ -1,0 +1,919 @@
+@page "/vcard-export"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using Email.TourTreeViewShapedData.Enums
+@using Microsoft.JSInterop
+@inject Email.Services.VCardManualExportService VCardManualExportService
+@inject Email.Services.SmtpVCardEmailService SmtpVCardEmailService
+@inject Email.Services.ITourTreeService TourTreeService
+@inject Email.Services.IToastService ToastService
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<PageTitle>vCard Export</PageTitle>
+
+<div class="container-fluid p-4">
+    <h2 class="mb-3">
+        <i class="bi bi-download me-2"></i>vCard Export (Manual)
+    </h2>
+
+    <div class="d-flex gap-2 flex-wrap mb-3">
+        <button type="button" class="btn btn-primary" @onclick="OpenGenerateModal">
+            <i class="bi bi-magic me-1"></i>Generate vCards
+        </button>
+
+        <button type="button" class="btn btn-outline-secondary" @onclick="OpenEmailModal" disabled="@(!HasAnyGenerated)">
+            <i class="bi bi-envelope me-1"></i>Email vCards
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-info">@statusMessage</div>
+    }
+
+    @if (HasAnyGenerated)
+    {
+        <div class="accordion" id="vcardExportAccordion">
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="headingDay">
+                    <button class="accordion-button @(generatedDayItems?.Any() == true ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDay" aria-expanded="true" aria-controls="collapseDay">
+                        Day vCards @if (generatedDayItems?.Any() == true) { <span class="ms-2 badge bg-primary">@generatedDayItems.Count</span> }
+                    </button>
+                </h2>
+                <div id="collapseDay" class="accordion-collapse collapse @(generatedDayItems?.Any() == true ? "show" : "")" aria-labelledby="headingDay" data-bs-parent="#vcardExportAccordion">
+                    <div class="accordion-body">
+                        @if (generatedDayItems?.Any() == true)
+                        {
+                            <div class="text-muted mb-2">
+                                <strong>Date:</strong> @generatedDayDateLabel
+                            </div>
+                            @foreach (var item in generatedDayItems)
+                            {
+                                @RenderVCardEntry(item)
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-muted">No day vCards generated.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="headingTour">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTour" aria-expanded="false" aria-controls="collapseTour">
+                        Tour vCards @if (generatedTourItems?.Any() == true) { <span class="ms-2 badge bg-primary">@generatedTourItems.Count</span> }
+                    </button>
+                </h2>
+                <div id="collapseTour" class="accordion-collapse collapse" aria-labelledby="headingTour" data-bs-parent="#vcardExportAccordion">
+                    <div class="accordion-body">
+                        @if (generatedTourItems?.Any() == true)
+                        {
+                            <div class="text-muted mb-2">
+                                <strong>Tour:</strong> @generatedTourLabel
+                                <span class="mx-2">•</span>
+                                <strong>Date:</strong> @generatedTourDateLabel
+                            </div>
+                            @foreach (var item in generatedTourItems)
+                            {
+                                @RenderVCardEntry(item)
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-muted">No tour vCards generated.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="headingSingle">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSingle" aria-expanded="false" aria-controls="collapseSingle">
+                        Single Walker @if (generatedSingleItem != null) { <span class="ms-2 badge bg-primary">1</span> }
+                    </button>
+                </h2>
+                <div id="collapseSingle" class="accordion-collapse collapse" aria-labelledby="headingSingle" data-bs-parent="#vcardExportAccordion">
+                    <div class="accordion-body">
+                        @if (generatedSingleItem != null)
+                        {
+                            @RenderVCardEntry(generatedSingleItem)
+                        }
+                        else
+                        {
+                            <div class="text-muted">No single walker vCard generated.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-secondary">
+            Click <strong>Generate vCards</strong> to create copy-ready vCard text (no downloads).
+        </div>
+    }
+</div>
+
+@if (showGenerateModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generate vCards</h5>
+                    <button type="button" class="btn-close" @onclick="CloseGenerateModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Mode</strong></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" checked="@(mode == GenerateMode.Day)" @onchange="@(() => mode = GenerateMode.Day)" />
+                            <label class="form-check-label">Day</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" checked="@(mode == GenerateMode.Tour)" @onchange="@(() => mode = GenerateMode.Tour)" />
+                            <label class="form-check-label">Tour</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" checked="@(mode == GenerateMode.SingleWalker)" @onchange="@(() => mode = GenerateMode.SingleWalker)" />
+                            <label class="form-check-label">Single Walker</label>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label"><strong>Date</strong></label>
+                            <InputDate @bind-Value="selectedDate" class="form-control" />
+                            <div class="form-text">Required for Day/Tour generation.</div>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label"><strong>Filter Type</strong></label>
+                            <select class="form-select" @bind="selectedFilterType">
+                                @foreach (var ft in Enum.GetValues<TreeDataFilterType>())
+                                {
+                                    <option value="@ft">@ft</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label"><strong>Vendor (optional)</strong></label>
+                            <input class="form-control" @bind="vendorFilter" placeholder="(leave blank for all)" />
+                        </div>
+
+                        @if (mode == GenerateMode.Tour)
+                        {
+                            <div class="col-12 col-md-6">
+                                <label class="form-label"><strong>Tour</strong></label>
+                                <select class="form-select" @bind="selectedTourLabel">
+                                    <option value="">-- select --</option>
+                                    @foreach (var t in availableTourLabels)
+                                    {
+                                        <option value="@t">@t</option>
+                                    }
+                                </select>
+                                <div class="form-text">Tour list is loaded from the database (active tours).</div>
+                            </div>
+                        }
+
+                        @if (mode == GenerateMode.SingleWalker)
+                        {
+                            <div class="col-12">
+                                <label class="form-label"><strong>MessageId</strong></label>
+                                <input class="form-control" @bind="messageIdInput" placeholder="Paste MessageId" />
+                            </div>
+                        }
+
+                        <div class="col-12">
+                            <label class="form-label"><strong>Email (quick send)</strong></label>
+                            <input class="form-control" @bind="emailToAddress" placeholder="Recipient email" />
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(generateError))
+                    {
+                        <div class="alert alert-danger mt-3">@generateError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseGenerateModal" disabled="@isGenerating">Cancel</button>
+                    <button type="button" class="btn btn-success" @onclick="GenerateAndEmailAsync" disabled="@isGenerating">
+                        @if (isGenerating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        Generate &amp; Email
+                    </button>
+                    <button type="button" class="btn btn-primary" @onclick="GenerateAsync" disabled="@isGenerating">
+                        @if (isGenerating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        Generate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showEmailModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5);">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Email vCards</h5>
+                    <button type="button" class="btn-close" @onclick="CloseEmailModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!SmtpVCardEmailService.ValidateSmtpConfig())
+                    {
+                        <div class="alert alert-danger">
+                            SMTP is not configured. Missing <code>Gmail:Email</code> or <code>Gmail:Password</code>.
+                        </div>
+                    }
+
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label"><strong>To</strong></label>
+                            <input class="form-control" @bind="emailToAddress" placeholder="Recipient email" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label"><strong>Subject</strong></label>
+                            <input class="form-control" @bind="emailSubject" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label"><strong>vCard Preview</strong></label>
+                            <textarea class="form-control font-monospace" rows="10" readonly>@EmailPreviewText</textarea>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(emailError))
+                    {
+                        <div class="alert alert-danger mt-3">@emailError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CloseEmailModal" disabled="@isSending">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SendEmailAsync" disabled="@(isSending || !HasAnyGenerated)">
+                        @if (isSending)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Created: 12/19/2025 5:12 PM (local) | 2025-12-19T17:12:00
+
+    private const string LocalStorageEmailKey = "vcard-export-email-address";
+
+    private enum GenerateMode
+    {
+        Day,
+        Tour,
+        SingleWalker
+    }
+
+    private GenerateMode mode = GenerateMode.Day;
+    private GenerateMode lastGeneratedMode = GenerateMode.Day;
+    private bool hasLastGenerated;
+    private DateTime? lastGeneratedDate;
+
+    private bool showGenerateModal;
+    private bool showEmailModal;
+    private bool isGenerating;
+    private bool isSending;
+
+    private DateTime? selectedDate;
+    private TreeDataFilterType selectedFilterType = TreeDataFilterType.ActiveBookings;
+    private string? vendorFilter;
+    private string? selectedTourLabel;
+    private string? messageIdInput;
+
+    private List<string> availableTourLabels = new();
+
+    private List<Email.Models.VCardDisplayItem>? generatedDayItems;
+    private string generatedDayDateLabel = string.Empty;
+    private List<Email.Models.VCardDisplayItem>? generatedTourItems;
+    private string generatedTourDateLabel = string.Empty;
+    private string generatedTourLabel = string.Empty;
+    private Email.Models.VCardDisplayItem? generatedSingleItem;
+
+    private string statusMessage = string.Empty;
+    private string generateError = string.Empty;
+
+    private string emailToAddress = "jon@cityshuffles.com";
+    private string emailSubject = string.Empty;
+    private string emailError = string.Empty;
+
+    private bool HasAnyGenerated =>
+        (generatedDayItems?.Any() == true) ||
+        (generatedTourItems?.Any() == true) ||
+        (generatedSingleItem != null);
+
+    private string EmailPreviewText
+    {
+        get
+        {
+            var vcards = GetSelectedVCardTexts();
+            if (vcards.Count == 0) return "(No vCards generated)";
+            return string.Join("\r\n\r\n", vcards);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load active tour names for Tour dropdown
+        try
+        {
+            availableTourLabels = await TourTreeService.GetDistinctTourNamesAsync();
+        }
+        catch
+        {
+            availableTourLabels = new List<string>();
+        }
+
+        SetDefaultSubject();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var stored = await JSRuntime.InvokeAsync<string>("localStorage.getItem", LocalStorageEmailKey);
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                emailToAddress = stored;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // ignore localStorage read errors
+        }
+    }
+
+    private void OpenGenerateModal()
+    {
+        generateError = string.Empty;
+        statusMessage = string.Empty;
+        selectedDate ??= DateTime.Today;
+        showGenerateModal = true;
+    }
+
+    private void CloseGenerateModal()
+    {
+        showGenerateModal = false;
+    }
+
+    private void OpenEmailModal()
+    {
+        emailError = string.Empty;
+        SetDefaultSubject();
+        showEmailModal = true;
+    }
+
+    private void CloseEmailModal()
+    {
+        showEmailModal = false;
+    }
+
+    private void SetDefaultSubject()
+    {
+        if (!hasLastGenerated)
+        {
+            emailSubject = "vCard Export";
+            return;
+        }
+
+        // Best-effort subject based on the last generated mode.
+        switch (lastGeneratedMode)
+        {
+            case GenerateMode.SingleWalker:
+                emailSubject = generatedSingleItem != null
+                    ? $"vCard Export - {generatedSingleItem.DisplayName}"
+                    : "vCard Export - Single Walker";
+                break;
+            case GenerateMode.Tour:
+                emailSubject = !string.IsNullOrWhiteSpace(generatedTourLabel) || !string.IsNullOrWhiteSpace(generatedTourDateLabel)
+                    ? $"vCard Export - {generatedTourLabel} - {generatedTourDateLabel}".Trim().TrimEnd('-').Trim()
+                    : "vCard Export - Tour";
+                break;
+            case GenerateMode.Day:
+            default:
+                emailSubject = !string.IsNullOrWhiteSpace(generatedDayDateLabel)
+                    ? $"vCard Export - {generatedDayDateLabel}"
+                    : "vCard Export - Day";
+                break;
+        }
+    }
+
+    private async Task GenerateAsync()
+    {
+        generateError = string.Empty;
+        statusMessage = string.Empty;
+        isGenerating = true;
+
+        try
+        {
+            if (mode == GenerateMode.SingleWalker)
+            {
+                if (string.IsNullOrWhiteSpace(messageIdInput))
+                {
+                    generateError = "Please provide a MessageId.";
+                    return;
+                }
+
+                generatedSingleItem = await VCardManualExportService.GenerateVCardsForWalker(messageIdInput.Trim());
+                await ToastService.ShowSuccessAsync("Generated", "Single walker vCard generated");
+                hasLastGenerated = true;
+                lastGeneratedMode = mode;
+                lastGeneratedDate = null;
+                SetDefaultSubject();
+                showGenerateModal = false;
+                return;
+            }
+
+            if (!selectedDate.HasValue)
+            {
+                generateError = "Please select a valid date.";
+                return;
+            }
+
+            var selectedDay = selectedDate.Value.Date;
+
+            if (mode == GenerateMode.Day)
+            {
+                var items = await VCardManualExportService.GenerateVCardsForDay(selectedDay, selectedFilterType, vendorFilter);
+                generatedDayItems = items;
+                generatedDayDateLabel = items.FirstOrDefault()?.DateLabel ?? selectedDay.ToString("dddd, MMM d, yyyy");
+
+                if (items.Count == 0)
+                {
+                    await ToastService.ShowInfoAsync("No vCards found", "Day");
+                }
+                else
+                {
+                    await ToastService.ShowSuccessAsync($"Generated {items.Count}", "Day vCards");
+                }
+
+                hasLastGenerated = true;
+                lastGeneratedMode = mode;
+                lastGeneratedDate = selectedDay;
+                SetDefaultSubject();
+                showGenerateModal = false;
+                return;
+            }
+
+            if (mode == GenerateMode.Tour)
+            {
+                if (string.IsNullOrWhiteSpace(selectedTourLabel))
+                {
+                    generateError = "Please select a tour.";
+                    return;
+                }
+
+                var items = await VCardManualExportService.GenerateVCardsForTour(selectedDay, selectedTourLabel.Trim(), selectedFilterType, vendorFilter);
+                generatedTourItems = items;
+                generatedTourLabel = selectedTourLabel.Trim();
+                generatedTourDateLabel = items.FirstOrDefault()?.DateLabel ?? selectedDay.ToString("dddd, MMM d, yyyy");
+
+                if (items.Count == 0)
+                {
+                    await ToastService.ShowInfoAsync("No vCards found", "Tour");
+                }
+                else
+                {
+                    await ToastService.ShowSuccessAsync($"Generated {items.Count}", "Tour vCards");
+                }
+
+                hasLastGenerated = true;
+                lastGeneratedMode = mode;
+                lastGeneratedDate = selectedDay;
+                SetDefaultSubject();
+                showGenerateModal = false;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            generateError = ex.Message;
+            try { await ToastService.ShowErrorAsync("Generation failed", ex.Message); } catch { }
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private async Task GenerateAndEmailAsync()
+    {
+        generateError = string.Empty;
+        emailError = string.Empty;
+        statusMessage = string.Empty;
+        isGenerating = true;
+
+        try
+        {
+            // First generate (same logic as GenerateAsync)
+            if (mode == GenerateMode.SingleWalker)
+            {
+                if (string.IsNullOrWhiteSpace(messageIdInput))
+                {
+                    generateError = "Please provide a MessageId.";
+                    return;
+                }
+
+                generatedSingleItem = await VCardManualExportService.GenerateVCardsForWalker(messageIdInput.Trim());
+                hasLastGenerated = true;
+                lastGeneratedMode = mode;
+                lastGeneratedDate = null;
+                SetDefaultSubject();
+            }
+            else
+            {
+                if (!selectedDate.HasValue)
+                {
+                    generateError = "Please select a valid date.";
+                    return;
+                }
+
+                var selectedDay = selectedDate.Value.Date;
+
+                if (mode == GenerateMode.Day)
+                {
+                    var items = await VCardManualExportService.GenerateVCardsForDay(selectedDay, selectedFilterType, vendorFilter);
+                    generatedDayItems = items;
+                    generatedDayDateLabel = items.FirstOrDefault()?.DateLabel ?? selectedDay.ToString("dddd, MMM d, yyyy");
+                    hasLastGenerated = true;
+                    lastGeneratedMode = mode;
+                    lastGeneratedDate = selectedDay;
+                    SetDefaultSubject();
+                }
+                else if (mode == GenerateMode.Tour)
+                {
+                    if (string.IsNullOrWhiteSpace(selectedTourLabel))
+                    {
+                        generateError = "Please select a tour.";
+                        return;
+                    }
+
+                    var items = await VCardManualExportService.GenerateVCardsForTour(selectedDay, selectedTourLabel.Trim(), selectedFilterType, vendorFilter);
+                    generatedTourItems = items;
+                    generatedTourLabel = selectedTourLabel.Trim();
+                    generatedTourDateLabel = items.FirstOrDefault()?.DateLabel ?? selectedDay.ToString("dddd, MMM d, yyyy");
+                    hasLastGenerated = true;
+                    lastGeneratedMode = mode;
+                    lastGeneratedDate = selectedDay;
+                    SetDefaultSubject();
+                }
+            }
+
+            if (!HasAnyGenerated)
+            {
+                await ToastService.ShowInfoAsync("No vCards found", "Nothing to email");
+                return;
+            }
+
+            // Then email the selected set immediately
+            if (!SmtpVCardEmailService.ValidateSmtpConfig())
+            {
+                emailError = "SMTP is not configured (missing Gmail:Email or Gmail:Password).";
+                await ToastService.ShowErrorAsync("Email failed", "SMTP is not configured");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(emailToAddress))
+            {
+                emailError = "Recipient email address is required.";
+                await ToastService.ShowErrorAsync("Email failed", emailError);
+                return;
+            }
+
+            var vcards = GetSelectedVCardRawStrings();
+            if (vcards.Count == 0)
+            {
+                emailError = "No vCards generated.";
+                return;
+            }
+
+            var fileName = GetSelectedAttachmentFileName();
+            var ok = await SmtpVCardEmailService.SendVCardAsync(emailToAddress, vcards, emailSubject, fileName);
+            if (!ok)
+            {
+                emailError = SmtpVCardEmailService.GetLastErrorMessage() ?? "Unable to send email. Check SMTP configuration.";
+                await ToastService.ShowErrorAsync("Email failed", emailError);
+                return;
+            }
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("localStorage.setItem", LocalStorageEmailKey, emailToAddress ?? string.Empty);
+            }
+            catch
+            {
+                // ignore localStorage write errors
+            }
+
+            await ToastService.ShowSuccessAsync("Email sent", "vCards");
+            showGenerateModal = false;
+        }
+        catch (Exception ex)
+        {
+            generateError = ex.Message;
+            try { await ToastService.ShowErrorAsync("Generate & Email failed", ex.Message); } catch { }
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private async Task SendEmailAsync()
+    {
+        emailError = string.Empty;
+        isSending = true;
+
+        try
+        {
+            try { await ToastService.ShowInfoAsync("Sending...", "Email"); } catch { }
+
+            if (!SmtpVCardEmailService.ValidateSmtpConfig())
+            {
+                emailError = "SMTP is not configured (missing Gmail:Email or Gmail:Password).";
+                await ToastService.ShowErrorAsync("Email failed", "SMTP is not configured");
+                return;
+            }
+
+            // IMPORTANT: Use raw vCard strings so the combined VCF matches tree download formatting.
+            var vcards = GetSelectedVCardRawStrings();
+            if (vcards.Count == 0)
+            {
+                emailError = "No vCards generated.";
+                return;
+            }
+
+            var fileName = GetSelectedAttachmentFileName();
+            var ok = await SmtpVCardEmailService.SendVCardAsync(emailToAddress, vcards, emailSubject, fileName);
+            if (!ok)
+            {
+                emailError = SmtpVCardEmailService.GetLastErrorMessage() ?? "Unable to send email. Check SMTP configuration.";
+                await ToastService.ShowErrorAsync("Email failed", emailError);
+                return;
+            }
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("localStorage.setItem", LocalStorageEmailKey, emailToAddress ?? string.Empty);
+            }
+            catch
+            {
+                // ignore localStorage write errors
+            }
+
+            await ToastService.ShowSuccessAsync("Email sent", "vCards");
+            showEmailModal = false;
+        }
+        catch (Exception ex)
+        {
+            emailError = ex.Message;
+            try { await ToastService.ShowErrorAsync("Email failed", ex.Message); } catch { }
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    private List<string> GetAllGeneratedVCardTexts()
+    {
+        var list = new List<string>();
+
+        if (generatedDayItems?.Any() == true)
+        {
+            list.AddRange(generatedDayItems.Select(VCardManualExportService.GetFormattedVCardText).Where(s => !string.IsNullOrWhiteSpace(s)));
+        }
+        else if (generatedTourItems?.Any() == true)
+        {
+            list.AddRange(generatedTourItems.Select(VCardManualExportService.GetFormattedVCardText).Where(s => !string.IsNullOrWhiteSpace(s)));
+        }
+        else if (generatedSingleItem != null)
+        {
+            var s = VCardManualExportService.GetFormattedVCardText(generatedSingleItem);
+            if (!string.IsNullOrWhiteSpace(s)) list.Add(s);
+        }
+
+        return list;
+    }
+
+    private List<string> GetSelectedVCardTexts()
+    {
+        if (!hasLastGenerated)
+        {
+            return new List<string>();
+        }
+
+        switch (lastGeneratedMode)
+        {
+            case GenerateMode.Day:
+                return generatedDayItems?.Any() == true
+                    ? generatedDayItems.Select(VCardManualExportService.GetFormattedVCardText).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                    : new List<string>();
+            case GenerateMode.Tour:
+                return generatedTourItems?.Any() == true
+                    ? generatedTourItems.Select(VCardManualExportService.GetFormattedVCardText).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                    : new List<string>();
+            case GenerateMode.SingleWalker:
+                if (generatedSingleItem == null) return new List<string>();
+                var s = VCardManualExportService.GetFormattedVCardText(generatedSingleItem);
+                return string.IsNullOrWhiteSpace(s) ? new List<string>() : new List<string> { s };
+            default:
+                return new List<string>();
+        }
+    }
+
+    private List<string> GetSelectedVCardRawStrings()
+    {
+        if (!hasLastGenerated)
+        {
+            return new List<string>();
+        }
+
+        switch (lastGeneratedMode)
+        {
+            case GenerateMode.Day:
+                return generatedDayItems?.Any() == true
+                    ? generatedDayItems.Select(i => i.VCardContent).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                    : new List<string>();
+            case GenerateMode.Tour:
+                return generatedTourItems?.Any() == true
+                    ? generatedTourItems.Select(i => i.VCardContent).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                    : new List<string>();
+            case GenerateMode.SingleWalker:
+                return generatedSingleItem != null && !string.IsNullOrWhiteSpace(generatedSingleItem.VCardContent)
+                    ? new List<string> { generatedSingleItem.VCardContent }
+                    : new List<string>();
+            default:
+                return new List<string>();
+        }
+    }
+
+    private string GetSelectedAttachmentFileName()
+    {
+        if (!hasLastGenerated)
+        {
+            return "walkers.vcf";
+        }
+
+        // Match the controller download naming conventions:
+        // - Day: walkers_yyyyMMdd.vcf
+        // - Tour: walkers_{safeTour}_{yyyyMMdd}.vcf
+        // - Single: walker_{safeName}_{yyyyMMdd_HHmmss}.vcf
+        switch (lastGeneratedMode)
+        {
+            case GenerateMode.Day:
+                return lastGeneratedDate.HasValue ? $"walkers_{lastGeneratedDate.Value:yyyyMMdd}_{GetEstTimeSuffix()}.vcf" : $"walkers_{GetEstTimeSuffix()}.vcf";
+
+            case GenerateMode.Tour:
+                if (lastGeneratedDate.HasValue && !string.IsNullOrWhiteSpace(generatedTourLabel))
+                {
+                    var safeTour = SanitizeFileStem(generatedTourLabel);
+                    return $"walkers_{safeTour}_{lastGeneratedDate.Value:yyyyMMdd}_{GetEstTimeSuffix()}.vcf";
+                }
+                return lastGeneratedDate.HasValue ? $"walkers_{lastGeneratedDate.Value:yyyyMMdd}_{GetEstTimeSuffix()}.vcf" : $"walkers_{GetEstTimeSuffix()}.vcf";
+
+            case GenerateMode.SingleWalker:
+                if (generatedSingleItem != null)
+                {
+                    var safeName = SanitizeFileStem(generatedSingleItem.DisplayName);
+                    return $"walker_{safeName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{GetEstTimeSuffix()}.vcf";
+                }
+                return $"walker_export_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{GetEstTimeSuffix()}.vcf";
+
+            default:
+                return $"walkers_{GetEstTimeSuffix()}.vcf";
+        }
+    }
+
+    private static string GetEstTimeSuffix()
+    {
+        try
+        {
+            // Windows timezone id (works on your Win10 environment).
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            var est = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+            return est.ToString("hh_mm_tt", System.Globalization.CultureInfo.InvariantCulture).ToUpperInvariant();
+        }
+        catch
+        {
+            // Fallback: UTC
+            return DateTime.UtcNow.ToString("hh_mm_tt", System.Globalization.CultureInfo.InvariantCulture).ToUpperInvariant();
+        }
+    }
+
+    private static string SanitizeFileStem(string? raw)
+    {
+        // Copied from Email.Controllers.VCardExportController.SanitizeFileStem (keep in sync).
+        var s = (raw ?? string.Empty).Trim();
+        if (s.Length == 0) s = "export";
+
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder();
+        foreach (var ch in s)
+        {
+            sb.Append(invalid.Contains(ch) ? '_' : ch);
+        }
+
+        s = sb.ToString()
+            .Replace(" ", "_")
+            .Replace(",", "")
+            .Replace("\"", "")
+            .Replace("'", "");
+
+        // Keep filenames reasonable.
+        if (s.Length > 80) s = s.Substring(0, 80);
+        return s;
+    }
+
+    private async Task CopyAsync(Email.Models.VCardDisplayItem item)
+    {
+        try
+        {
+            var text = VCardManualExportService.GetFormattedVCardText(item);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                await ToastService.ShowWarningAsync("Nothing to copy", "vCard");
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", text);
+            await ToastService.ShowSuccessAsync("Copied", "vCard copied to clipboard");
+        }
+        catch
+        {
+            try { await ToastService.ShowErrorAsync("Copy Failed", "Unable to copy to clipboard"); } catch { }
+        }
+    }
+
+    private RenderFragment RenderVCardEntry(Email.Models.VCardDisplayItem item) => builder =>
+    {
+        var seq = 0;
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "card mb-3");
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "card-header d-flex justify-content-between align-items-center");
+
+        builder.OpenElement(seq++, "div");
+        builder.AddContent(seq++, $"{item.DisplayName} ");
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "text-muted");
+        builder.AddContent(seq++, string.IsNullOrWhiteSpace(item.Phone) ? "" : $"• {item.Phone}");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "button");
+        builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-primary");
+        builder.AddAttribute(seq++, "type", "button");
+        builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => CopyAsync(item)));
+        builder.AddContent(seq++, "Copy");
+        builder.CloseElement();
+
+        builder.CloseElement(); // header
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "card-body");
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "small text-muted mb-2");
+        builder.AddContent(seq++, $"{item.TourName} • {item.DateLabel}");
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "pre");
+        // Theme-friendly: avoid hardcoded light background.
+        builder.AddAttribute(seq++, "class", "p-2 bg-body-tertiary border rounded font-monospace small");
+        builder.AddContent(seq++, VCardManualExportService.GetFormattedVCardText(item));
+        builder.CloseElement();
+
+        builder.CloseElement(); // body
+
+        builder.CloseElement(); // card
+    };
+}
+
+

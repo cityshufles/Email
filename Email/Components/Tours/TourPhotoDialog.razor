@@ -1,0 +1,55 @@
+@* 2025-12-21 - Bootstrap modal wrapper for TourPhotoComponent *@
+@using Email.Components.Tours
+
+@if (ShowDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-camera-fill me-2 text-info"></i>
+                        Tour Group Photo
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body" style="min-height: 400px;">
+                    <TourPhotoComponent 
+                        TourDate="@TourDate"
+                        TourName="@TourName"
+                        TourTime="@TourTime"
+                        OnPhotoSaved="HandlePhotoSaved" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public bool ShowDialog { get; set; }
+    [Parameter] public string TourDate { get; set; } = string.Empty;
+    [Parameter] public string TourName { get; set; } = string.Empty;
+    [Parameter] public string TourTime { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnPhotoSaved { get; set; }
+
+    private async Task CloseDialog()
+    {
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task HandlePhotoSaved()
+    {
+        if (OnPhotoSaved.HasDelegate)
+        {
+            await OnPhotoSaved.InvokeAsync();
+        }
+    }
+}

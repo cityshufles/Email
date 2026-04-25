@@ -1,0 +1,305 @@
+@* 2025-12-22 - Camera capture component with live preview for mobile devices *@
+@inject IJSRuntime JSRuntime
+
+<div class="camera-capture-modal">
+    @if (isOpen)
+    {
+        <div class="camera-backdrop" @onclick="Close">
+            <div class="camera-container" @onclick:stopPropagation="true">
+                <div class="camera-header">
+                    <h5 class="mb-0"><i class="bi bi-camera-video me-2"></i>Take Photo</h5>
+                    <button class="btn btn-sm btn-outline-light" @onclick="Close">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                
+                <div class="camera-body">
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-warning m-3 mb-2">
+                            <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(capturedImage))
+                    {
+                        @* Preview captured image *@
+                        <div class="captured-preview">
+                            <img src="@capturedImage" alt="Captured photo" />
+                        </div>
+                        <div class="camera-actions">
+                            <button class="btn btn-secondary" @onclick="Retake">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Retake
+                            </button>
+                            <button class="btn btn-success" @onclick="UsePhoto">
+                                <i class="bi bi-check-lg me-1"></i>Use Photo
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        @* Live camera feed *@
+                        <div class="camera-view">
+                            <video id="cameraVideo" autoplay playsinline muted></video>
+                            <canvas id="cameraCanvas" style="display: none;"></canvas>
+                        </div>
+                        <div class="camera-actions">
+                            <button class="btn btn-primary capture-btn" @onclick="CapturePhoto" disabled="@isCapturing">
+                                <i class="bi bi-camera"></i>
+                            </button>
+                        </div>
+                        <div class="camera-switch">
+                            <button class="btn btn-sm btn-outline-light" @onclick="SwitchCamera" title="Switch camera">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool isOpen { get; set; }
+    [Parameter] public EventCallback<bool> isOpenChanged { get; set; }
+    [Parameter] public EventCallback<string> OnPhotoCaptured { get; set; }
+
+    private string? capturedImage;
+    private string? errorMessage;
+    private bool isCapturing;
+    private bool useFrontCamera;
+    private DotNetObjectReference<CameraCapture>? dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+        }
+
+        if (isOpen && string.IsNullOrEmpty(capturedImage))
+        {
+            await StartCamera();
+        }
+    }
+
+    private async Task StartCamera()
+    {
+        try
+        {
+            errorMessage = null;
+            await JSRuntime.InvokeVoidAsync("cameraCapture.startCamera", useFrontCamera);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = GetCameraAccessMessage(ex);
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopCamera()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("cameraCapture.stopCamera");
+        }
+        catch { }
+    }
+
+    private async Task SwitchCamera()
+    {
+        useFrontCamera = !useFrontCamera;
+        await StopCamera();
+        await Task.Delay(100);
+        await StartCamera();
+    }
+
+    private async Task CapturePhoto()
+    {
+        try
+        {
+            isCapturing = true;
+            StateHasChanged();
+
+            capturedImage = await JSRuntime.InvokeAsync<string>("cameraCapture.capturePhoto");
+            await StopCamera();
+        }
+        catch (Exception)
+        {
+            errorMessage = "Unable to capture a photo right now. Please try again.";
+        }
+        finally
+        {
+            isCapturing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Retake()
+    {
+        capturedImage = null;
+        errorMessage = null;
+        StateHasChanged();
+        await Task.Delay(100);
+        await StartCamera();
+    }
+
+    private async Task UsePhoto()
+    {
+        if (!string.IsNullOrEmpty(capturedImage) && OnPhotoCaptured.HasDelegate)
+        {
+            await OnPhotoCaptured.InvokeAsync(capturedImage);
+        }
+        await Close();
+    }
+
+    private async Task Close()
+    {
+        await StopCamera();
+        capturedImage = null;
+        errorMessage = null;
+        await isOpenChanged.InvokeAsync(false);
+    }
+
+    public void Dispose()
+    {
+        dotNetRef?.Dispose();
+    }
+
+    private static string GetCameraAccessMessage(Exception ex)
+    {
+        var message = ex.Message ?? string.Empty;
+        if (message.Contains("NotAllowedError", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Permission denied", StringComparison.OrdinalIgnoreCase))
+        {
+            return "You must allow camera access for this feature.";
+        }
+
+        if (message.Contains("NotFoundError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "No camera was found on this device.";
+        }
+
+        if (message.Contains("NotReadableError", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The camera is in use by another app. Close other camera apps and try again.";
+        }
+
+        return "Unable to access the camera. Please allow camera access and try again.";
+    }
+}
+
+<style>
+    .camera-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .camera-container {
+        width: 100%;
+        max-width: 500px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bs-dark, #1a1a1a);
+        border-radius: 1rem;
+        overflow: hidden;
+    }
+    
+    .camera-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: rgba(0,0,0,0.5);
+        color: white;
+    }
+    
+    .camera-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+    
+    .camera-view {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: black;
+        min-height: 300px;
+    }
+    
+    .camera-view video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .captured-preview {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: black;
+    }
+    
+    .captured-preview img {
+        max-width: 100%;
+        max-height: 60vh;
+        object-fit: contain;
+    }
+    
+    .camera-actions {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        padding: 1.5rem;
+        background: rgba(0,0,0,0.8);
+    }
+    
+    .capture-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 1.25rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.1s;
+    }
+    
+    .capture-btn:hover {
+        transform: scale(1.05);
+    }
+    
+    .capture-btn:active {
+        transform: scale(0.95);
+    }
+    
+    .camera-switch {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+    }
+    
+    /* Mobile fullscreen */
+    @@media (max-width: 576px) {
+        .camera-container {
+            max-width: 100%;
+            max-height: 100%;
+            height: 100%;
+            border-radius: 0;
+        }
+        
+        .camera-view {
+            min-height: 50vh;
+        }
+    }
+</style>

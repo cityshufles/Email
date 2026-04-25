@@ -1,0 +1,301 @@
+@using Email.Services
+@using Email.Models.Reports
+@using System.Linq
+@inject ITourLinkService LinkService
+@inject ITourTreeService TourService
+@inject IJSRuntime JSRuntime
+
+<div class="card border-0">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Tour Links Management</h5>
+        <button class="btn btn-primary btn-sm" @onclick="PrepareAdd">
+            <i class="bi bi-plus-lg me-1"></i>Add New Link
+        </button>
+    </div>
+    <div class="card-body">
+        
+        @if (isLoading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Vendor</th>
+                            <th>Tour Name</th>
+                            <th>Day</th>
+                            <th>Time</th>
+                            <th>Product ID</th>
+                            <th>Notes</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var link in links)
+                        {
+                            <tr>
+                                <td>@link.Vendor</td>
+                                <td>
+                                    <div class="fw-bold">@link.TourName</div>
+                                    @if (!string.IsNullOrWhiteSpace(link.TourLinkUrl))
+                                    {
+                                        <div class="small"><a href="@link.TourLinkUrl" target="_blank" class="text-decoration-none"><i class="bi bi-link-45deg"></i> Link</a></div>
+                                    }
+                                </td>
+                                <td>@FormatTourDay(link.TourDay)</td>
+                                <td>@(string.IsNullOrWhiteSpace(link.TourTime) ? "-" : link.TourTime)</td>
+                                <td>@link.ProductId</td>
+                                <td><small class="text-muted">@link.Notes</small></td>
+                                <td class="text-end">
+                                    <button class="btn btn-outline-primary btn-sm me-1" @onclick="() => PrepareEdit(link)" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDelete(link)" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                        @if (links.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">No tour links found.</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@* Edit/Add Modal *@
+@if (showModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingLink.Id > 0 ? "Edit Link" : "Add New Link")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingLink" OnValidSubmit="SaveLink">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Vendor <span class="text-danger">*</span></label>
+                                <InputText class="form-control" @bind-Value="editingLink.Vendor" placeholder="e.g. Viator" required />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Product ID</label>
+                                <InputText class="form-control" @bind-Value="editingLink.ProductId" placeholder="e.g. 123456" />
+                            </div>
+                            
+                            <div class="col-12">
+                                <label class="form-label">Tour Name <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <InputText class="form-control" @bind-Value="editingLink.TourName" list="tourList" placeholder="Select or type tour name" required />
+                                    <datalist id="tourList">
+                                        @foreach (var t in tourNames)
+                                        {
+                                            <option value="@t" />
+                                        }
+                                    </datalist>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Tour Day</label>
+                                <InputSelect class="form-select" @bind-Value="editingLink.TourDay">
+                                    <option value="">Select day...</option>
+                                    @foreach (var day in DayOptions)
+                                    {
+                                        <option value="@day.Value">@day.Label</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Tour Time</label>
+                                <InputText class="form-control" @bind-Value="editingLink.TourTime" placeholder="e.g. 9:30 AM" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Days/Times <span class="text-muted">(Optional)</span></label>
+                                <InputText class="form-control" @bind-Value="editingLink.DaysTimesAvailable" placeholder="e.g. Mon-Fri 10am" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Tour Link URL</label>
+                                <InputText class="form-control" @bind-Value="editingLink.TourLinkUrl" placeholder="https://..." />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Review Link URL</label>
+                                <InputText class="form-control" @bind-Value="editingLink.ReviewLink" placeholder="https://..." />
+                            </div>
+
+                            <div class="col-12">
+                                <ul class="nav nav-tabs mb-2">
+                                    <li class="nav-item">
+                                        <button type="button" class="nav-link @(activeNotesTab == 0 ? "active" : "")" @onclick="() => activeNotesTab = 0">Notes</button>
+                                    </li>
+                                    <li class="nav-item">
+                                        <button type="button" class="nav-link @(activeNotesTab == 1 ? "active" : "")" @onclick="() => activeNotesTab = 1">Preview</button>
+                                    </li>
+                                </ul>
+
+                                @if (activeNotesTab == 0)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Notes</label>
+                                        <InputTextArea class="form-control" @bind-Value="editingLink.Notes" rows="3" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Gallery Footer Preview</label>
+                                        <div class="p-3 border rounded">
+                                            <p class="mb-2"><strong>@editingLink.TourName</strong></p>
+                                            <p class="text-muted small mb-2">@editingLink.Notes</p>
+                                            @if (!string.IsNullOrWhiteSpace(editingLink.TourLinkUrl))
+                                            {
+                                                <a href="@editingLink.TourLinkUrl" target="_blank" class="btn btn-sm btn-outline-primary">View Tour</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted fst-italic">No link URL provided</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 text-end">
+                             <button type="button" class="btn btn-secondary me-2" @onclick="CloseModal">Cancel</button>
+                             <button type="submit" class="btn btn-primary">Save Changes</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<TourLink> links = new();
+    private List<string> tourNames = new();
+    private bool isLoading = true;
+    private bool showModal = false;
+    private int activeNotesTab = 0;
+    private TourLink editingLink = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        try
+        {
+            tourNames = await TourService.GetDistinctTourNamesAsync();
+        }
+        catch { }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            links = await LinkService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading links: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void PrepareAdd()
+    {
+        editingLink = new TourLink();
+        showModal = true;
+    }
+
+    private void PrepareEdit(TourLink link)
+    {
+        // Clone to avoid editing the list item directly before save
+        editingLink = new TourLink
+        {
+            Id = link.Id,
+            Vendor = link.Vendor,
+            TourName = link.TourName,
+            TourId = link.TourId,
+            DaysTimesAvailable = link.DaysTimesAvailable,
+            TourDay = link.TourDay,
+            TourTime = link.TourTime,
+            ProductId = link.ProductId,
+            ReviewLink = link.ReviewLink,
+            TourLinkUrl = link.TourLinkUrl,
+            Notes = link.Notes
+        };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveLink()
+    {
+        try
+        {
+            // Auto-populate TourId if possible? 
+            // For now, simpler to just save. The service/DB handles it if we passed it, 
+            // but we aren't resolving TourId in UI yet. 
+            // If strictly needed, checking against tourNames list could find ID.
+            
+            await LinkService.SaveAsync(editingLink);
+            showModal = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+             await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmDelete(TourLink link)
+    {
+        bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete the link for '{link.TourName}'?");
+        if (confirmed)
+        {
+            await LinkService.DeleteAsync(link.Id);
+            await LoadData();
+        }
+    }
+
+    private static readonly (int Value, string Label)[] DayOptions = new[]
+    {
+        (0, "Sunday"),
+        (1, "Monday"),
+        (2, "Tuesday"),
+        (3, "Wednesday"),
+        (4, "Thursday"),
+        (5, "Friday"),
+        (6, "Saturday")
+    };
+
+    private static string FormatTourDay(int? day)
+    {
+        if (!day.HasValue) return "-";
+        var match = DayOptions.FirstOrDefault(d => d.Value == day.Value);
+        return string.IsNullOrWhiteSpace(match.Label) ? "-" : match.Label;
+    }
+}

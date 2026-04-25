@@ -1,0 +1,1311 @@
+﻿@using Email.Models
+@using Email.Models.Staff
+@using Email.Services.Staff
+@using System.ComponentModel.DataAnnotations
+@using System.IO
+@using System.Text.Json
+@inject IStaffService StaffService
+@inject IToastService ToastService
+@inject IWebHostEnvironment WebHostEnvironment
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(IsNew ? "Add Staff" : "Edit Staff")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAsync"></button>
+                </div>
+                <div class="modal-body">
+                    <datalist id="countryCodes">
+                        <option value="+1"></option>
+                        <option value="+44"></option>
+                        <option value="+33"></option>
+                        <option value="+34"></option>
+                        <option value="+39"></option>
+                        <option value="+49"></option>
+                        <option value="+52"></option>
+                        <option value="+55"></option>
+                        <option value="+61"></option>
+                        <option value="+81"></option>
+                        <option value="+82"></option>
+                        <option value="+86"></option>
+                        <option value="+91"></option>
+                    </datalist>
+                    @if (IsSimple)
+                    {
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Login Info</div>
+                                    <div class="small text-muted mb-2">Login uses Username + Password. Email Address is stored on the user record.</div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Username (login)</label>
+                                            <input type="text"
+                                                   class="form-control @(usernameInvalid ? "is-invalid" : "")"
+                                                   placeholder="username"
+                                                   @bind="editStaff.Username"
+                                                   @bind:event="oninput"
+                                                   @bind:after="ValidateUsernameAfter" />
+                                            @if (usernameInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@usernameValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Email Address (contact)</label>
+                                            <input type="email"
+                                                   class="form-control @(userEmailInvalid ? "is-invalid" : "")"
+                                                   placeholder="email@domain.com"
+                                                   @bind="editStaff.UserEmail"
+                                                   @bind:event="oninput"
+                                                   @bind:after="ValidateUserEmailAfter" />
+                                            @if (userEmailInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@userEmailValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Password (login) @(IsNew ? "(required)" : "")</label>
+                                            <input type="text" class="form-control" @bind="editStaff.Password" />
+                                            <div class="form-text">Stored password is shown. Edit to change.</div>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">User Phone</label>
+                                            <div class="d-flex flex-wrap gap-2 phone-input-row">
+                                                <input class="form-control phone-cc" type="text" inputmode="numeric" maxlength="4" list="countryCodes"
+                                                       placeholder="+1" @bind="userCountry" @bind:event="oninput" @bind:after="UpdateUserPhoneSegments" />
+                                                <input class="form-control phone-area" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="917" @bind="userArea" @bind:event="oninput" @bind:after="UpdateUserPhoneSegments" />
+                                                <input class="form-control phone-prefix" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="673" @bind="userPrefix" @bind:event="oninput" @bind:after="UpdateUserPhoneSegments" />
+                                                <input class="form-control phone-line" type="text" inputmode="numeric" maxlength="4"
+                                                       placeholder="6864" @bind="userLine" @bind:event="oninput" @bind:after="UpdateUserPhoneSegments" />
+                                            </div>
+                                            @if (userPhoneInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@userPhoneValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Role</label>
+                                            <select class="form-select" @bind="editStaff.Role">
+                                                <option value="Guide">Guide</option>
+                                                <option value="Admin">Admin</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">User Active</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsUserActive" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Is Touring</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsTouring" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Profile Details</div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">First Name</label>
+                                            <input type="text" class="form-control" @bind="editStaff.FirstName" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Last Name</label>
+                                            <input type="text" class="form-control" @bind="editStaff.LastName" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">Guide Phone</label>
+                                            <div class="d-flex flex-wrap gap-2 phone-input-row">
+                                                <input class="form-control phone-cc" type="text" inputmode="numeric" maxlength="4" list="countryCodes"
+                                                       placeholder="+1" @bind="guideCountry" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-area" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="917" @bind="guideArea" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-prefix" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="673" @bind="guidePrefix" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-line" type="text" inputmode="numeric" maxlength="4"
+                                                       placeholder="6864" @bind="guideLine" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                            </div>
+                                            @if (guidePhoneInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@guidePhoneValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Guide Active</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsGuideActive" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Languages</label>
+                                            <select class="form-select" multiple @bind="SelectedLanguages">
+                                                @foreach (var language in languageOptions)
+                                                {
+                                                    <option value="@language">@language</option>
+                                                }
+                                            </select>
+                                            <div class="form-text">Hold Ctrl (Windows) or Command (Mac) to multi-select.</div>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">Description</label>
+                                            <textarea class="form-control" rows="3" @bind="editStaff.Description"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Permissions</div>
+                                    <div class="row g-2">
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Desktop Dashboard</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Mobile Dashboard</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Tours</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Schedule</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Guides</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Vendors</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Messages</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Reports</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Gallery</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Profile Photo</div>
+                                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                                        <div>
+                                            @if (!string.IsNullOrWhiteSpace(editStaff.ImagePath))
+                                            {
+                                                <img src="@editStaff.ImagePath" alt="Guide photo" class="rounded-circle staff-photo-img" />
+                                            }
+                                            else
+                                            {
+                                                <div class="staff-photo-placeholder d-flex align-items-center justify-content-center border rounded-circle">
+                                                    <i class="bi bi-person-circle"></i>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <InputFile OnChange="HandlePhotoUpload" class="form-control" accept=".jpg,.jpeg,.png" disabled="@(isSavingPhoto || !editStaff.GuideId.HasValue)" />
+                                            @if (!editStaff.GuideId.HasValue)
+                                            {
+                                                <div class="small text-muted mt-2">Save staff first to enable photo upload.</div>
+                                            }
+                                            @if (isSavingPhoto)
+                                            {
+                                                <div class="small mt-2">
+                                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                                    Saving photo...
+                                                </div>
+                                            }
+                                            <div class="mt-2">
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="DeletePhoto" disabled="@isSavingPhoto || string.IsNullOrWhiteSpace(editStaff.ImagePath)">
+                                                    <i class="bi bi-trash me-1"></i>Remove Photo
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Login Info</div>
+                                    <div class="small text-muted mb-2">Login uses Username + Password. Email Address is stored on the user record.</div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Username (login)</label>
+                                            <input type="text"
+                                                   class="form-control @(usernameInvalid ? "is-invalid" : "")"
+                                                   placeholder="username"
+                                                   @bind="editStaff.Username"
+                                                   @bind:event="oninput"
+                                                   @bind:after="ValidateUsernameAfter" />
+                                            @if (usernameInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@usernameValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Email Address (contact)</label>
+                                            <input type="email"
+                                                   class="form-control @(userEmailInvalid ? "is-invalid" : "")"
+                                                   placeholder="email@domain.com"
+                                                   @bind="editStaff.UserEmail"
+                                                   @bind:event="oninput"
+                                                   @bind:after="ValidateUserEmailAfter" />
+                                            @if (userEmailInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@userEmailValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Password (login) @(IsNew ? "(required)" : "")</label>
+                                            <input type="text" class="form-control" @bind="editStaff.Password" />
+                                            <div class="form-text">Stored password is shown. Edit to change.</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Role</label>
+                                            <select class="form-select" @bind="editStaff.Role">
+                                                <option value="Guide">Guide</option>
+                                                <option value="Admin">Admin</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">User Active</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsUserActive" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Profile Details</div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">First Name</label>
+                                            <input type="text" class="form-control" @bind="editStaff.FirstName" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Last Name</label>
+                                            <input type="text" class="form-control" @bind="editStaff.LastName" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">Guide Phone</label>
+                                            <div class="d-flex flex-wrap gap-2 phone-input-row">
+                                                <input class="form-control phone-cc" type="text" inputmode="numeric" maxlength="4" list="countryCodes"
+                                                       placeholder="+1" @bind="guideCountry" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-area" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="917" @bind="guideArea" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-prefix" type="text" inputmode="numeric" maxlength="3"
+                                                       placeholder="673" @bind="guidePrefix" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                                <input class="form-control phone-line" type="text" inputmode="numeric" maxlength="4"
+                                                       placeholder="6864" @bind="guideLine" @bind:event="oninput" @bind:after="UpdateGuidePhoneSegmentsAfter" />
+                                            </div>
+                                            @if (guidePhoneInvalid)
+                                            {
+                                                <div class="invalid-feedback d-block">@guidePhoneValidationMessage</div>
+                                            }
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Guide Active</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsGuideActive" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Is Touring</label>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" @bind="editStaff.IsTouring" />
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Languages</label>
+                                            <select class="form-select" multiple @bind="SelectedLanguages">
+                                                @foreach (var language in languageOptions)
+                                                {
+                                                    <option value="@language">@language</option>
+                                                }
+                                            </select>
+                                            <div class="form-text">Hold Ctrl (Windows) or Command (Mac) to multi-select.</div>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label small">Description</label>
+                                            <textarea class="form-control" rows="3" @bind="editStaff.Description"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Permissions</div>
+                                    <div class="row g-2">
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Desktop Dashboard</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Mobile Dashboard</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Tours</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Schedule</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Guides</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Vendors</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Messages</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Reports</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-lg-4">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" disabled />
+                                                <label class="form-check-label">Gallery</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="border rounded p-3">
+                                    <div class="fw-semibold mb-2">Profile Photo</div>
+                                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                                        <div>
+                                            @if (!string.IsNullOrWhiteSpace(editStaff.ImagePath))
+                                            {
+                                                <img src="@editStaff.ImagePath" alt="Guide photo" class="rounded-circle staff-photo-img" />
+                                            }
+                                            else
+                                            {
+                                                <div class="staff-photo-placeholder d-flex align-items-center justify-content-center border rounded-circle">
+                                                    <i class="bi bi-person-circle"></i>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <InputFile OnChange="HandlePhotoUpload" class="form-control" accept=".jpg,.jpeg,.png" disabled="@(isSavingPhoto || !editStaff.GuideId.HasValue)" />
+                                            @if (!editStaff.GuideId.HasValue)
+                                            {
+                                                <div class="small text-muted mt-2">Save staff first to enable photo upload.</div>
+                                            }
+                                            @if (isSavingPhoto)
+                                            {
+                                                <div class="small mt-2">
+                                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                                    Saving photo...
+                                                </div>
+                                            }
+                                            <div class="mt-2">
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="DeletePhoto" disabled="@isSavingPhoto || string.IsNullOrWhiteSpace(editStaff.ImagePath)">
+                                                    <i class="bi bi-trash me-1"></i>Remove Photo
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAsync" disabled="@isSaving">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@isSaving">
+                        @if (isSaving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Save
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(saveStatusLabel))
+                    {
+                        <div class="w-100 text-end small fw-semibold @SaveStatusClass">@saveStatusLabel</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .staff-photo-img,
+    .staff-photo-placeholder {
+        width: 96px;
+        height: 96px;
+    }
+
+    .staff-photo-img {
+        object-fit: cover;
+    }
+
+    .staff-photo-placeholder i {
+        font-size: 2.5rem;
+    }
+
+    .phone-input-row .form-control {
+        width: 72px;
+    }
+
+    .phone-input-row .phone-cc {
+        width: 64px;
+    }
+
+    .phone-input-row .phone-line {
+        width: 88px;
+    }
+</style>
+
+@code {
+    [Parameter] public StaffMember? Staff { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public bool IsSimple { get; set; } = true;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private StaffMember editStaff = new();
+    private bool isSaving = false;
+    private bool isSavingPhoto = false;
+    private string? saveStatusLabel = null;
+    private string? saveStatusKind = null;
+    private string SaveStatusClass => string.Equals(saveStatusKind, "success", StringComparison.OrdinalIgnoreCase)
+        ? "text-success"
+        : (string.Equals(saveStatusKind, "error", StringComparison.OrdinalIgnoreCase) ? "text-danger" : "text-muted");
+    private bool usernameInvalid = false;
+    private string usernameValidationMessage = "Username is required.";
+    private bool userEmailInvalid = false;
+    private string userEmailValidationMessage = "Enter a valid email address.";
+    private bool userPhoneInvalid = false;
+    private string userPhoneValidationMessage = "Enter a full phone number.";
+    private bool guidePhoneInvalid = false;
+    private string guidePhoneValidationMessage = "Enter a full phone number.";
+    private string[] selectedLanguages = Array.Empty<string>();
+    private List<string> languageOptions = new()
+    {
+        "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Portuguese",
+        "Dutch",
+        "Russian",
+        "Mandarin",
+        "Cantonese",
+        "Japanese",
+        "Korean",
+        "Arabic",
+        "Hindi",
+        "Hebrew",
+        "Greek",
+        "Turkish"
+    };
+
+    private string userCountry = "+1";
+    private string userArea = string.Empty;
+    private string userPrefix = string.Empty;
+    private string userLine = string.Empty;
+    
+    private string guideCountry = "+1";
+    private string guideArea = string.Empty;
+    private string guidePrefix = string.Empty;
+    private string guideLine = string.Empty;
+    private bool guidePhoneTouched = false;
+
+    private string[] SelectedLanguages
+    {
+        get => selectedLanguages;
+        set
+        {
+            selectedLanguages = value ?? Array.Empty<string>();
+            editStaff.Languages = selectedLanguages.Length == 0 ? null : string.Join(", ", selectedLanguages);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            if (!IsOpen)
+            {
+                return;
+            }
+
+            saveStatusLabel = null;
+            saveStatusKind = null;
+            editStaff = CloneStaff(Staff, IsNew);
+            ValidateUsername();
+            ValidateUserEmail();
+            LoadSelectedLanguages();
+            LoadPhoneSegments();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] OnParametersSet failed: {ex}");
+#endif
+        }
+    }
+
+    private StaffMember CloneStaff(StaffMember? source, bool isNew)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            if (source == null)
+            {
+                return new StaffMember
+                {
+                    Role = "Guide",
+                    IsUserActive = true,
+                    IsGuideActive = true,
+                    IsTouring = true,
+                    Permissions = new UserPermissions(),
+                    IncludeUserAccount = true,
+                    IncludeGuideProfile = true
+                };
+            }
+
+            return new StaffMember
+            {
+                UserId = source.UserId,
+                Username = source.Username,
+                Password = source.Password,
+                UserEmail = source.UserEmail,
+                Role = source.Role,
+                Permissions = new UserPermissions
+                {
+                    CanViewLogs = source.Permissions?.CanViewLogs ?? false,
+                    CanExportLogs = source.Permissions?.CanExportLogs ?? false,
+                    CanViewCalendar = source.Permissions?.CanViewCalendar ?? false,
+                    CanEditCalendar = source.Permissions?.CanEditCalendar ?? false,
+                    CanViewSettings = source.Permissions?.CanViewSettings ?? false,
+                    CanManageUsers = source.Permissions?.CanManageUsers ?? false
+                },
+                IsUserActive = source.IsUserActive,
+                LastLoginAt = source.LastLoginAt,
+                GuideId = source.GuideId,
+                FirstName = source.FirstName,
+                LastName = source.LastName,
+                Phone = source.Phone,
+                UserPhone = source.UserPhone,
+                GuidePhone = source.GuidePhone,
+                ContactEmail = source.ContactEmail,
+                Description = source.Description,
+                ImagePath = source.ImagePath,
+                Languages = source.Languages,
+                IsTouring = source.IsTouring,
+                IsGuideActive = source.IsGuideActive,
+                IncludeUserAccount = true,
+                IncludeGuideProfile = true
+            };
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] CloneStaff failed: {ex}");
+#endif
+            return new StaffMember();
+        }
+    }
+
+    private void LoadSelectedLanguages()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            var parsed = ParseLanguages(editStaff.Languages);
+            var list = parsed.ToList();
+            foreach (var language in list)
+            {
+                if (!languageOptions.Contains(language))
+                {
+                    languageOptions.Add(language);
+                }
+            }
+            selectedLanguages = list.ToArray();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] LoadSelectedLanguages failed: {ex}");
+#endif
+            selectedLanguages = Array.Empty<string>();
+        }
+    }
+
+    private static IEnumerable<string> ParseLanguages(string? raw)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
+        var trimmed = raw.Trim();
+        if (trimmed.StartsWith("["))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<string>>(trimmed);
+                if (list != null)
+                {
+                    return list.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim());
+                }
+            }
+            catch
+            {
+                // fall back to comma split
+            }
+        }
+
+        return trimmed
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(l => !string.IsNullOrWhiteSpace(l));
+    }
+
+    private void LoadPhoneSegments()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        ParsePhoneSegments(editStaff.UserPhone, out userCountry, out userArea, out userPrefix, out userLine);
+        ParsePhoneSegments(editStaff.GuidePhone, out guideCountry, out guideArea, out guidePrefix, out guideLine);
+
+        var normalizedUser = NormalizePhoneDigits(editStaff.UserPhone);
+        var normalizedGuide = NormalizePhoneDigits(editStaff.GuidePhone);
+        guidePhoneTouched = !string.IsNullOrWhiteSpace(editStaff.GuidePhone) && normalizedGuide != normalizedUser;
+
+        if (string.IsNullOrWhiteSpace(editStaff.GuidePhone) && !string.IsNullOrWhiteSpace(editStaff.UserPhone))
+        {
+            CopyUserToGuideSegments();
+            guidePhoneTouched = false;
+        }
+
+        UpdateUserPhoneSegments();
+        UpdateGuidePhoneSegments(markTouched: false);
+    }
+
+    private void UpdateUserPhoneSegments()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        userCountry = NormalizeCountry(userCountry);
+        userArea = SanitizeDigits(userArea, 3);
+        userPrefix = SanitizeDigits(userPrefix, 3);
+        userLine = SanitizeDigits(userLine, 4);
+
+        editStaff.UserPhone = BuildPhone(userCountry, userArea, userPrefix, userLine);
+
+        if (!guidePhoneTouched)
+        {
+            CopyUserToGuideSegments();
+            UpdateGuidePhoneSegments(markTouched: false);
+        }
+
+        editStaff.Phone = editStaff.GuidePhone ?? editStaff.UserPhone ?? string.Empty;
+    }
+
+    private void UpdateGuidePhoneSegments(bool markTouched = true)
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        guideCountry = NormalizeCountry(guideCountry);
+        guideArea = SanitizeDigits(guideArea, 3);
+        guidePrefix = SanitizeDigits(guidePrefix, 3);
+        guideLine = SanitizeDigits(guideLine, 4);
+
+        editStaff.GuidePhone = BuildPhone(guideCountry, guideArea, guidePrefix, guideLine);
+        editStaff.Phone = editStaff.GuidePhone ?? editStaff.UserPhone ?? string.Empty;
+
+        if (markTouched)
+        {
+            guidePhoneTouched = true;
+        }
+    }
+
+    private void NormalizePhoneInputsForSave()
+    {
+        // 2026-02-20 00:00 UTC - Created.
+        try
+        {
+            NormalizePastedPhone(ref userCountry, ref userArea, ref userPrefix, ref userLine);
+            NormalizePastedPhone(ref guideCountry, ref guideArea, ref guidePrefix, ref guideLine);
+
+            UpdateUserPhoneSegments();
+            UpdateGuidePhoneSegments(markTouched: false);
+
+            if (!IsPhoneComplete(userCountry, userArea, userPrefix, userLine)
+                && IsPhoneComplete(guideCountry, guideArea, guidePrefix, guideLine))
+            {
+                userCountry = guideCountry;
+                userArea = guideArea;
+                userPrefix = guidePrefix;
+                userLine = guideLine;
+                UpdateUserPhoneSegments();
+            }
+
+            if (!IsPhoneComplete(guideCountry, guideArea, guidePrefix, guideLine)
+                && IsPhoneComplete(userCountry, userArea, userPrefix, userLine))
+            {
+                guideCountry = userCountry;
+                guideArea = userArea;
+                guidePrefix = userPrefix;
+                guideLine = userLine;
+                UpdateGuidePhoneSegments(markTouched: false);
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] NormalizePhoneInputsForSave failed: {ex}");
+#endif
+        }
+    }
+
+    private void NormalizePastedPhone(ref string country, ref string area, ref string prefix, ref string line)
+    {
+        // 2026-02-20 00:00 UTC - Created.
+        try
+        {
+            var combined = $"{country}{area}{prefix}{line}";
+            var digits = NormalizePhoneDigits(combined);
+            if (digits.Length < 7)
+            {
+                return;
+            }
+
+            var hasOverflow = (country?.Length ?? 0) > 4
+                || (area?.Length ?? 0) > 3
+                || (prefix?.Length ?? 0) > 3
+                || (line?.Length ?? 0) > 4;
+
+            if (!hasOverflow)
+            {
+                return;
+            }
+
+            ParsePhoneSegments(combined, out country, out area, out prefix, out line);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] NormalizePastedPhone failed: {ex}");
+#endif
+        }
+    }
+
+    private void UpdateGuidePhoneSegmentsAfter()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        UpdateGuidePhoneSegments();
+    }
+
+    private void CopyUserToGuideSegments()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        guideCountry = userCountry;
+        guideArea = userArea;
+        guidePrefix = userPrefix;
+        guideLine = userLine;
+    }
+
+    private static void ParsePhoneSegments(string? phone, out string country, out string area, out string prefix, out string line)
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        country = "+1";
+        area = string.Empty;
+        prefix = string.Empty;
+        line = string.Empty;
+
+        var digits = NormalizePhoneDigits(phone);
+        if (string.IsNullOrWhiteSpace(digits))
+        {
+            return;
+        }
+
+        if (digits.Length >= 11)
+        {
+            if (digits.StartsWith("1"))
+            {
+                country = "+1";
+                digits = digits.Substring(1);
+            }
+            else
+            {
+                var countryLen = Math.Min(3, digits.Length - 10);
+                if (countryLen > 0)
+                {
+                    country = "+" + digits.Substring(0, countryLen);
+                    digits = digits.Substring(countryLen);
+                }
+            }
+        }
+
+        area = TakeDigits(ref digits, 3);
+        prefix = TakeDigits(ref digits, 3);
+        line = TakeDigits(ref digits, 4);
+    }
+
+    private bool ValidateUserPhone()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        if (!IsPhoneComplete(userCountry, userArea, userPrefix, userLine))
+        {
+            userPhoneInvalid = true;
+            return false;
+        }
+
+        userPhoneInvalid = false;
+        return true;
+    }
+
+    private bool ValidateGuidePhone()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        if (!IsPhoneComplete(guideCountry, guideArea, guidePrefix, guideLine))
+        {
+            guidePhoneInvalid = true;
+            return false;
+        }
+
+        guidePhoneInvalid = false;
+        return true;
+    }
+
+    private static bool IsPhoneComplete(string country, string area, string prefix, string line)
+    {
+        var hasDigits = !string.IsNullOrWhiteSpace(area)
+            || !string.IsNullOrWhiteSpace(prefix)
+            || !string.IsNullOrWhiteSpace(line);
+        if (!hasDigits) return false;
+
+        var normalizedCountry = NormalizeCountry(country);
+        if (string.Equals(normalizedCountry, "+1", StringComparison.OrdinalIgnoreCase))
+        {
+            return area.Length == 3 && prefix.Length == 3 && line.Length == 4;
+        }
+
+        var total = area.Length + prefix.Length + line.Length;
+        return total >= 7;
+    }
+
+    private static string NormalizeCountry(string? value)
+    {
+        var digits = NormalizePhoneDigits(value);
+        if (string.IsNullOrWhiteSpace(digits))
+        {
+            return "+1";
+        }
+
+        if (digits.Length > 3)
+        {
+            digits = digits.Substring(0, 3);
+        }
+
+        return "+" + digits;
+    }
+
+    private static string SanitizeDigits(string? value, int maxLen)
+    {
+        var digits = NormalizePhoneDigits(value);
+        if (digits.Length > maxLen)
+        {
+            digits = digits.Substring(0, maxLen);
+        }
+        return digits;
+    }
+
+    private static string NormalizePhoneDigits(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        return new string(value.Where(char.IsDigit).ToArray());
+    }
+
+    private static string TakeDigits(ref string value, int count)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var take = Math.Min(count, value.Length);
+        var part = value.Substring(0, take);
+        value = value.Substring(take);
+        return part;
+    }
+
+    private static string BuildPhone(string country, string area, string prefix, string line)
+    {
+        var countryPart = NormalizeCountry(country);
+        var core = string.Empty;
+        if (!string.IsNullOrWhiteSpace(area))
+        {
+            core = $"({area})";
+        }
+
+        if (!string.IsNullOrWhiteSpace(prefix))
+        {
+            core = string.IsNullOrWhiteSpace(core) ? prefix : $"{core} {prefix}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(line))
+        {
+            core = string.IsNullOrWhiteSpace(core) ? line : $"{core}-{line}";
+        }
+
+        var resultParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(countryPart))
+        {
+            resultParts.Add(countryPart);
+        }
+
+        if (!string.IsNullOrWhiteSpace(core))
+        {
+            resultParts.Add(core);
+        }
+
+        return string.Join(" ", resultParts).Trim();
+    }
+
+    private async Task SaveAsync()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        // 2026-02-20 00:00 UTC - Normalize phone input and surface validation errors inline.
+        try
+        {
+            saveStatusLabel = null;
+            saveStatusKind = null;
+            editStaff.IncludeUserAccount = true;
+            editStaff.IncludeGuideProfile = true;
+
+            NormalizePhoneInputsForSave();
+
+            if (!ValidateUsername())
+            {
+                saveStatusLabel = $"Error: {usernameValidationMessage}";
+                saveStatusKind = "error";
+                StateHasChanged();
+                return;
+            }
+
+            if (!ValidateUserEmail())
+            {
+                saveStatusLabel = $"Error: {userEmailValidationMessage}";
+                saveStatusKind = "error";
+                StateHasChanged();
+                return;
+            }
+
+            if (!ValidateUserPhone() || !ValidateGuidePhone())
+            {
+                var message = userPhoneInvalid ? userPhoneValidationMessage : guidePhoneValidationMessage;
+                saveStatusLabel = $"Error: {message}";
+                saveStatusKind = "error";
+                StateHasChanged();
+                return;
+            }
+
+            if ((IsNew || editStaff.UserId == null) && string.IsNullOrWhiteSpace(editStaff.Password))
+            {
+                await ToastService.ShowErrorAsync("Required", "Password is required for new users.");
+                saveStatusLabel = "Error: Password is required for new users.";
+                saveStatusKind = "error";
+                StateHasChanged();
+                return;
+            }
+
+            if (editStaff.GuideId == null)
+            {
+                if (string.IsNullOrWhiteSpace(editStaff.FirstName) || string.IsNullOrWhiteSpace(editStaff.GuidePhone))
+                {
+                    await ToastService.ShowErrorAsync("Required", "First Name and Phone are required for guides.");
+                    saveStatusLabel = "Error: First Name and Phone are required for guides.";
+                    saveStatusKind = "error";
+                    StateHasChanged();
+                    return;
+                }
+            }
+
+            isSaving = true;
+            StateHasChanged();
+
+            editStaff.ContactEmail = string.IsNullOrWhiteSpace(editStaff.UserEmail)
+                ? editStaff.Username
+                : editStaff.UserEmail;
+
+            await StaffService.SaveStaffMemberAsync(editStaff);
+            await ToastService.ShowSuccessAsync("Saved", "Staff member saved.");
+            saveStatusLabel = "Sent";
+            saveStatusKind = "success";
+            await OnSaved.InvokeAsync();
+            await CloseAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] SaveAsync failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Error", $"Save failed: {ex.Message}");
+            saveStatusLabel = $"Error: {ex.Message}";
+            saveStatusKind = "error";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool ValidateUsername()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        try
+        {
+            var username = editStaff.Username?.Trim() ?? string.Empty;
+            editStaff.Username = username;
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                usernameInvalid = true;
+                usernameValidationMessage = "Username is required.";
+                return false;
+            }
+
+            usernameInvalid = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] ValidateUsername failed: {ex}");
+#endif
+            usernameInvalid = true;
+            usernameValidationMessage = "Invalid username.";
+            return false;
+        }
+    }
+
+    private bool ValidateUserEmail()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        try
+        {
+            var email = editStaff.UserEmail?.Trim() ?? string.Empty;
+            editStaff.UserEmail = email;
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                userEmailInvalid = true;
+                userEmailValidationMessage = "Email address is required.";
+                return false;
+            }
+
+            var validator = new EmailAddressAttribute();
+            if (!validator.IsValid(email))
+            {
+                userEmailInvalid = true;
+                userEmailValidationMessage = "Enter a valid email address.";
+                return false;
+            }
+
+            userEmailInvalid = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] ValidateUserEmail failed: {ex}");
+#endif
+            userEmailInvalid = true;
+            userEmailValidationMessage = "Invalid email address.";
+            return false;
+        }
+    }
+
+    private void ValidateUsernameAfter()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        ValidateUsername();
+    }
+
+    private void ValidateUserEmailAfter()
+    {
+        // 2026-02-14 00:00 UTC - Created.
+        ValidateUserEmail();
+    }
+
+    private async Task HandlePhotoUpload(InputFileChangeEventArgs e)
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            if (!editStaff.GuideId.HasValue)
+            {
+                await ToastService.ShowWarningAsync("Save required", "Save staff first to enable photo upload.");
+                return;
+            }
+
+            var file = e.File;
+            if (file == null) return;
+
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                await ToastService.ShowErrorAsync("Error", "Image payload too large (Max 5MB).");
+                return;
+            }
+
+            isSavingPhoto = true;
+            StateHasChanged();
+
+            var wwwroot = WebHostEnvironment.WebRootPath;
+            var uploadsDir = Path.Combine(wwwroot, "guidephotos");
+            if (!Directory.Exists(uploadsDir))
+            {
+                Directory.CreateDirectory(uploadsDir);
+            }
+
+            var ext = Path.GetExtension(file.Name);
+            var fileName = $"{Guid.NewGuid()}{ext}";
+            var path = Path.Combine(uploadsDir, fileName);
+
+            await using var fs = new FileStream(path, FileMode.Create);
+            await file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).CopyToAsync(fs);
+
+            editStaff.ImagePath = $"guidephotos/{fileName}";
+            await StaffService.SaveStaffMemberAsync(editStaff);
+            await ToastService.ShowSuccessAsync("Saved", "Profile photo updated.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] HandlePhotoUpload failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Upload Failed", ex.Message);
+        }
+        finally
+        {
+            isSavingPhoto = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeletePhoto()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            if (!editStaff.GuideId.HasValue) return;
+
+            isSavingPhoto = true;
+            StateHasChanged();
+
+            if (!string.IsNullOrWhiteSpace(editStaff.ImagePath))
+            {
+                var relativePath = editStaff.ImagePath.TrimStart('/');
+                if (relativePath.StartsWith("guidephotos/", StringComparison.OrdinalIgnoreCase))
+                {
+                    var wwwroot = WebHostEnvironment.WebRootPath;
+                    var fullPath = Path.Combine(wwwroot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                    if (File.Exists(fullPath))
+                    {
+                        File.Delete(fullPath);
+                    }
+                }
+            }
+
+            editStaff.ImagePath = null;
+            await StaffService.SaveStaffMemberAsync(editStaff);
+            await ToastService.ShowSuccessAsync("Saved", "Profile photo removed.");
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] DeletePhoto failed: {ex}");
+#endif
+            await ToastService.ShowErrorAsync("Delete Failed", ex.Message);
+        }
+        finally
+        {
+            isSavingPhoto = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        // 2026-02-09 00:00 UTC - Created.
+        try
+        {
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[StaffEditorDialog] CloseAsync failed: {ex}");
+#endif
+        }
+    }
+}

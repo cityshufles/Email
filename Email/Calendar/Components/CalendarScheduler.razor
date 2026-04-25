@@ -1,0 +1,87 @@
+@page "/calendar"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Calendar.Models
+@using Email.Calendar.Services
+@using Microsoft.AspNetCore.Components.Web
+@using Syncfusion.Blazor.Schedule
+@using Syncfusion.Blazor.DropDowns
+@using Syncfusion.Blazor.Navigations
+
+<PageTitle>Calendar Scheduler Demo</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-6">
+         @*    <h2>Calendar Scheduler Demo</h2> *@
+        </div>
+        <div class="col-md-6 text-end">
+            <!-- Filter Temporarily Disabled -->
+            <!--
+            <div class="d-inline-block" style="width: 300px;">
+                <SfDropDownList TValue="string" TItem="string" Placeholder="Filter by Guide" 
+                                DataSource="@GuideNames" @bind-Value="@SelectedGuideFilter">
+                    <DropDownListEvents TValue="string" TItem="string" ValueChange="OnGuideFilterChange"></DropDownListEvents>
+                </SfDropDownList>
+            </div>
+            -->
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- White container for better visibility validation -->
+        <div class="col-12 p-3 border rounded">
+            <SfTab>
+                <TabItems>
+                    <TabItem>
+                        <ChildContent>
+                            <TabHeader Text="Local Calendar (Read Only)"></TabHeader>
+                        </ChildContent>
+                        <ContentTemplate>
+                            <div class="p-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                   @*  <h5 class="mb-0">SQL Bookings</h5> *@
+                                    <div style="width: 250px;">
+                                        <SfDropDownList TValue="string" TItem="string" Placeholder="Filter by Guide" 
+                                                        DataSource="@GuideNames" @bind-Value="@SelectedGuideFilter" ShowClearButton="true">
+                                            <DropDownListEvents TValue="string" TItem="string" ValueChange="OnGuideFilterChange"></DropDownListEvents>
+                                        </SfDropDownList>
+                                    </div>
+                                </div>
+                                <SfSchedule TValue="CalendarAppointmentModel" Height="calc(100vh - 220px)" Readonly="true">
+                                    <ScheduleEvents TValue="CalendarAppointmentModel"></ScheduleEvents>
+                                    <ScheduleEventSettings DataSource="@Appointments" AllowAdding="false" AllowDeleting ="false" AllowEditing="false" ></ScheduleEventSettings>
+                                    <ScheduleViews>
+                                        <ScheduleView Option="View.Day"></ScheduleView>
+                                        <ScheduleView Option="View.Week"></ScheduleView>                                       
+                                        <ScheduleView Option="View.Month"></ScheduleView>
+                                        <ScheduleView Option="View.Agenda"></ScheduleView>
+                                    </ScheduleViews>
+                                </SfSchedule>
+                            </div>
+                        </ContentTemplate>
+                    </TabItem>
+                    <TabItem>
+                        <ChildContent>
+                            <TabHeader Text="Pending Testing - Google Calendar"></TabHeader>
+                        </ChildContent>
+                        <ContentTemplate>
+                            <div class="p-3">
+                                <SfSchedule TValue="GoogleAppointmentModel" Height="calc(100vh - 220px)">
+                                    <ScheduleEvents TValue="GoogleAppointmentModel"></ScheduleEvents>
+                                    <ScheduleEventSettings DataSource="@GoogleAppointments" AllowAdding="false" AllowDeleting="false"  AllowEditing="false"></ScheduleEventSettings>
+                                    <ScheduleViews>
+                                        <ScheduleView Option="View.Day"></ScheduleView>
+                                        <ScheduleView Option="View.Week"></ScheduleView>
+                                       
+                                        <ScheduleView Option="View.Month"></ScheduleView>
+                                        <ScheduleView Option="View.Agenda"></ScheduleView>
+                                    </ScheduleViews>
+                                </SfSchedule>
+                            </div>
+                        </ContentTemplate>
+                    </TabItem>
+                </TabItems>
+            </SfTab>
+        </div>
+    </div>
+</div>

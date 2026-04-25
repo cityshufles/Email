@@ -1,0 +1,208 @@
+@page "/test-ios-links"
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Logging
+@inject IJSRuntime JSRuntime
+@inject ILogger<TestIosLinks> Logger
+
+<style>
+    .test-section {
+        border: 1px solid #ccc;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+    }
+    .test-group {
+        margin-bottom: 15px;
+    }
+    h3 { margin-top: 0; }
+    h5 { color: #666; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+</style>
+
+<div class="container mt-4">
+    <h1>iOS Deep Link Testing</h1>
+    <div class="alert alert-info">
+        <p>Test these connections on iPhone/iPad devices.</p>
+    </div>
+
+    <!-- Section 1: Standard HTML Links (Baseline) -->
+    <div class="test-section">
+        <h3>1. Standard HTML Links</h3>
+        <p class="text-muted">These should work reliably on iOS as they are direct user actions.</p>
+        
+        <div class="test-group">
+            <h5>SMS</h5>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="sms:+19179381170&body=Hello%20World" class="btn btn-outline-primary">
+                    <i class="bi bi-chat-dots"></i> sms: scheme (&)
+                </a>
+                <a href="sms:+19179381170?body=Hello%20World" class="btn btn-outline-secondary">
+                    <i class="bi bi-chat-dots"></i> sms: scheme (?)
+                </a>
+            </div>
+        </div>
+
+        <div class="test-group">
+            <h5>WhatsApp</h5>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="https://wa.me/19179381170?text=Hello%20World" target="_blank" class="btn btn-success">
+                    <i class="bi bi-whatsapp"></i> https://wa.me (New)
+                </a>
+                <a href="whatsapp://send?phone=+19179381170&text=Hello%20World" class="btn btn-outline-success">
+                    <i class="bi bi-whatsapp"></i> whatsapp:// (Old)
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Native JS Buttons (No Blazor) -->
+    <div class="test-section">
+        <h3>2. Native JS Buttons</h3>
+        <p class="text-muted">Bypassing Blazor's event loop entirely.</p>
+        
+        <div class="d-flex gap-2 flex-wrap">
+            <button onclick="window.location.href = 'sms:+19179381170&body=JS%20Redirect';" class="btn btn-outline-primary">
+                JS Location = SMS
+            </button>
+            <button onclick="window.open('https://wa.me/19179381170?text=JS%20Open', '_blank');" class="btn btn-outline-success">
+                JS Window.Open WhatsApp
+            </button>
+        </div>
+    </div>
+
+    <!-- Section 3: Blazor Click Handlers -->
+    <div class="test-section">
+        <h3>3. Blazor Async Handlers *not working here</h3>
+        <p class="text-muted">Simulates the current app logic (C# Task -> JSRuntime).</p>
+
+        <div class="test-group">
+            <button @onclick="TestSmsBlazor" class="btn btn-primary">
+                Blazor Invoke SMS
+            </button>
+            <button @onclick="TestWhatsAppBlazor" class="btn btn-success">
+                Blazor Invoke WhatsApp
+            </button>
+        </div>
+    </div>
+
+    <!-- Section 4: Dialog Test -->
+    <div class="test-section">
+        <h3>4. Dialog Context *not working</h3>
+        <p>Current Dialog State: <strong>@showDialog</strong></p>
+        <button class="btn btn-warning" @onclick="OpenDialog">Open Test Dialog</button>
+    </div>
+
+</div>
+
+<!-- Simple Bootstrap Modal -->
+@if (showDialog)
+{
+    <div class="modal show" style="display: block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog" style="z-index: 1055;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Link Testing Dialog</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        Tests running inside a Bootstrap Modal context.
+                    </div>
+
+                    <div class="d-grid gap-3">
+                        <div>
+                            <h6>Direct Links (Target _top)</h6>
+                            <a href="sms:+19179381170&body=FromDialog" target="_top" class="btn btn-outline-primary w-100 mb-2">
+                                SMS Link (_top)
+                            </a>
+                            <a href="https://wa.me/19179381170?text=FromDialog" target="_blank" class="btn btn-outline-success w-100">
+                                WhatsApp Link (_blank)
+                            </a>
+                        </div>
+                        
+                        <hr/>
+
+                        <div>
+                            <h6>Blazor Buttons</h6>
+                            <button @onclick="TestSmsBlazor" class="btn btn-primary w-100 mb-2">
+                                Blazor Invoke SMS
+                            </button>
+                            <button @onclick="TestWhatsAppBlazor" class="btn btn-success w-100">
+                                Blazor Invoke WhatsApp
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool showDialog = false;
+
+    protected override void OnInitialized()
+    {
+        Console.WriteLine("[TestIosLinks] OnInitialized - Component is loading");
+        Logger.LogInformation("[TestIosLinks] OnInitialized - Component is loading");
+    }
+
+    private async Task OpenDialog() 
+    {
+        try { _ = JSRuntime.InvokeVoidAsync("console.log", "OpenDialog clicked"); } catch { }
+        Console.WriteLine($"[TestIosLinks] OpenDialog clicked. Current state: {showDialog}");
+        Logger.LogInformation("[TestIosLinks] OpenDialog clicked. Current state: {ShowDialog}", showDialog);
+        showDialog = true;
+        StateHasChanged();
+        Logger.LogInformation("[TestIosLinks] OpenDialog finished. New state: {ShowDialog}", showDialog);
+    }
+    
+    private async Task CloseDialog() 
+    {
+        try { _ = JSRuntime.InvokeVoidAsync("console.log", "CloseDialog clicked"); } catch { }
+        Console.WriteLine("[TestIosLinks] CloseDialog clicked.");
+        Logger.LogInformation("[TestIosLinks] CloseDialog clicked.");
+        showDialog = false;
+        StateHasChanged();
+    }
+
+    private async Task TestSmsBlazor()
+    {
+        try
+        {
+            Console.WriteLine("[TestIosLinks] TestSmsBlazor clicked.");
+            Logger.LogInformation("[TestIosLinks] TestSmsBlazor clicked.");
+            
+            await JSRuntime.InvokeVoidAsync("console.log", "Blazor SMS Button Clicked");
+            var url = "sms:+19179381170&body=Blazor%20Invoke%20Test";
+            await JSRuntime.InvokeVoidAsync("open", url, "_self");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TestIosLinks] TestSmsBlazor Error: {ex.Message}");
+            Logger.LogError(ex, "[TestIosLinks] TestSmsBlazor Error");
+            await JSRuntime.InvokeVoidAsync("console.error", "Blazor SMS Error: " + ex.Message);
+        }
+    }
+
+    private async Task TestWhatsAppBlazor()
+    {
+        try
+        {
+            Console.WriteLine("[TestIosLinks] TestWhatsAppBlazor clicked.");
+            Logger.LogInformation("[TestIosLinks] TestWhatsAppBlazor clicked.");
+
+            await JSRuntime.InvokeVoidAsync("console.log", "Blazor WhatsApp Button Clicked");
+            var url = "https://wa.me/19179381170?text=Blazor%20Invoke%20Test";
+            await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TestIosLinks] TestWhatsAppBlazor Error: {ex.Message}");
+            Logger.LogError(ex, "[TestIosLinks] TestWhatsAppBlazor Error");
+            await JSRuntime.InvokeVoidAsync("console.error", "Blazor WhatsApp Error: " + ex.Message);
+        }
+    }
+}

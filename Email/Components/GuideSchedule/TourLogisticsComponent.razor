@@ -1,0 +1,78 @@
+@using Email.Models
+@using Email.Services
+@inject ITourCatalogService CatalogService
+
+@if (Model != null)
+{
+    <div class="mb-4">
+        @if (!string.IsNullOrEmpty(Title)) 
+        {
+            <h5 class="card-title">@Title</h5>
+        }
+        <p class="text-muted small">Editing global details for this tour schedule.</p>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Meeting Time</label>
+            <select class="form-select" @bind="Model.MeetingTime">
+                @foreach (var t in TimeOptions)
+                {
+                    <option value="@t">@DateTime.Parse(t).ToString("h:mm tt")</option>
+                }
+            </select>
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Meeting Place</label>
+            <input type="text" class="form-control" @bind="Model.MeetingPlace" />
+        </div>
+
+        <div class="col-12">
+            <label class="form-label">Meeting Instructions</label>
+            <textarea class="form-control" rows="3" @bind="Model.MeetingInstructions"></textarea>
+        </div>
+        
+        <div class="col-12">
+            <label class="form-label">Vendor Link</label>
+            <input type="text" class="form-control" @bind="Model.VendorLink" />
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public ITourLogistics? Model { get; set; }
+    [Parameter] public string Title { get; set; } = "Logistics";
+
+    protected override void OnParametersSet()
+    {
+        NormalizeModelTime();
+    }
+
+    private void NormalizeModelTime()
+    {
+        if (Model != null && !string.IsNullOrWhiteSpace(Model.MeetingTime))
+        {
+            var normed = CatalogService.NormalizeTime(Model.MeetingTime);
+            // Only update if different to avoid loops/change tracking noise
+            if (!string.Equals(normed, Model.MeetingTime, StringComparison.Ordinal))
+            {
+                Model.MeetingTime = normed;
+            }
+        }
+    }
+
+    private List<string> TimeOptions
+    {
+        get
+        {
+            var list = new List<string>();
+            var start = TimeOnly.MinValue; // 00:00
+            for (int i = 0; i < 288; i++) // 24 * 12 (5 min intervals)
+            {
+                list.Add(start.AddMinutes(i * 5).ToString("HH:mm"));
+            }
+            return list;
+        }
+    }
+}

@@ -1,0 +1,148 @@
+﻿@inherits LayoutComponentBase
+@inject Email.Services.Auth.IAuthenticationService AuthService
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (!isAuthenticated)
+{
+    <Email.Components.Auth.LoginDialog />
+}
+else
+{
+@using Microsoft.AspNetCore.Components.Routing
+
+<div class="page@(isSidebarShown && !ShouldHideSidebar ? "" : " sidebar-hidden")">
+    @if (!ShouldHideSidebar)
+    {
+    <button class="sidebar-toggle-btn" @onclick="ToggleSidebar" title="Toggle navigation menu">
+        <i class="bi @(isSidebarShown ? "bi-arrow-left" : "bi-menu-button") sidebar-toggle-icon" aria-hidden="true"></i>
+    </button>
+    }
+    <div class="sidebar@(isSidebarShown && !ShouldHideSidebar ? "" : " hidden")">
+        <NavMenu />
+    </div>
+
+    <main>
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<Email.Components.Theme.ThemeSwitcherDialog />
+}
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    // 2025-11-22 00:00 UTC - Gate entire app and persist minimal user info to localStorage
+    private bool isAuthenticated;
+    private Email.Models.User? currentUser;
+    // 2025-01-XX - Collapsible sidebar state management
+    private bool isSidebarShown = true;
+    
+    private bool IsGuideReportPage => Nav.Uri.Contains("/guide-report", StringComparison.OrdinalIgnoreCase);
+    private bool IsGuideLitePage => Nav.Uri.Contains("/guide-lite", StringComparison.OrdinalIgnoreCase);
+    private bool IsGuideAllowedPage => IsGuideReportPage || IsGuideLitePage;
+    private bool IsGuideUser => string.Equals(currentUser?.Role, "Guide", StringComparison.OrdinalIgnoreCase);
+    private bool ShouldHideSidebar => IsGuideAllowedPage && IsGuideUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 2025-11-22 00:00 UTC - Initial auth check
+        isAuthenticated = await AuthService.IsAuthenticatedAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // 2025-11-22 00:00 UTC - Re-check after first render and store user info
+        if (firstRender)
+        {
+            // 2025-11-29 00:00 UTC - Subscribe to navigation changes to refresh auth on redirect (Safari/mobile)
+            Nav.LocationChanged += Nav_LocationChanged;
+
+            isAuthenticated = await AuthService.IsAuthenticatedAsync();
+            if (isAuthenticated)
+            {
+                currentUser = await AuthService.GetCurrentUserAsync();
+                if (currentUser != null)
+                {
+                    await JSRuntime.InvokeVoidAsync("localStorage.setItem", "userInfo",
+                        System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            Username = currentUser.Username,
+                            FirstName = currentUser.FirstName,
+                            LastName = currentUser.LastName,
+                            FullName = currentUser.FullName
+                        }));
+                }
+            }
+
+            if (isAuthenticated && IsGuideUser && !IsGuideAllowedPage)
+            {
+                await InvokeAsync(() => Nav.NavigateTo("/guide-report"));
+                return;
+            }
+
+            // 2025-01-XX - Restore sidebar state from localStorage
+            try
+            {
+                var sidebarState = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "sidebarState");
+                if (!string.IsNullOrEmpty(sidebarState) && bool.TryParse(sidebarState, out var savedState))
+                {
+                    isSidebarShown = savedState;
+                }
+            }
+            catch
+            {
+                // If localStorage is not available or fails, use default (open)
+                isSidebarShown = true;
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    // 2025-01-XX - Toggle sidebar and persist state to localStorage
+    private async Task ToggleSidebar()
+    {
+        isSidebarShown = !isSidebarShown;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "sidebarState", isSidebarShown.ToString().ToLower());
+        }
+        catch
+        {
+            // If localStorage fails, continue without persistence
+        }
+        StateHasChanged();
+    }
+
+    // 2025-11-29 00:00 UTC - Refresh auth when URL changes (e.g., after POST-redirect)
+    private async void Nav_LocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        isAuthenticated = await AuthService.IsAuthenticatedAsync();
+        
+        // 2026-02-08 - Enforce Guide Restrictions continuously
+        if (isAuthenticated && IsGuideUser && !IsGuideAllowedPage)
+        {
+             // Use InvokeAsync to ensure we are on the UI thread for navigation
+             await InvokeAsync(() => Nav.NavigateTo("/guide-report"));
+             return;
+        }
+
+        // Trigger re-render to update sidebar visibility based on URL
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // 2025-11-29 00:00 UTC - Unsubscribe on dispose
+    public void Dispose()
+    {
+        try { Nav.LocationChanged -= Nav_LocationChanged; } catch { }
+    }
+}

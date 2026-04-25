@@ -1,0 +1,39 @@
+/* Created: 2025-11-25 00:00 UTC - Syncfusion Grid visual overrides to inherit app theme */
+
+/* Scope overrides to our grids to avoid collateral changes */
+.cs-grid.e-grid .e-gridheader,
+.cs-grid.e-grid .e-headercontent,
+.cs-grid.e-grid .e-gridcontent,
+.cs-grid.e-grid .e-content,
+.cs-grid.e-grid .e-rowcell,
+.cs-grid.e-grid .e-headercell {
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
+}
+
+.cs-grid.e-grid .e-headercell {
+  border-color: rgba(128,128,128,.35);
+}
+
+.cs-grid.e-grid .e-rowcell {
+  border-color: rgba(128,128,128,.2);
+}
+
+.cs-grid.e-grid .e-row:hover .e-rowcell {
+  background-color: rgba(255,255,255,.04);
+}
+
+.cs-grid.e-grid .e-selectionbackground,
+.cs-grid.e-grid .e-active {
+  background-color: rgba(13,110,253,.25) !important; /* bootstrap primary w/ alpha */
+  color: var(--bs-body-color);
+}
+
+/* Header filter/checkbox icons color fix */
+.cs-grid.e-grid .e-headercelldiv,
+.cs-grid.e-grid .e-headercelldiv .e-icons,
+.cs-grid.e-grid .e-icon-filter {
+  color: var(--bs-body-color);
+}
+
+

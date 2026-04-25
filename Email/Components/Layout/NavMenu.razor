@@ -1,0 +1,205 @@
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Email</a>
+    </div>
+</div>
+
+<div class="nav-scrollable">
+    <nav class="flex-column">
+    
+        @* Home hidden: default landing is Dashboard *@
+        @* <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div> *@
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tour-management-dashboard">
+                <span class="bi bi-diagram-3" aria-hidden="true"></span> Dashboard
+            </NavLink>
+        </div>
+          <div class="nav-item px-3">
+            <NavLink class="nav-link" href="guide-report">
+                <span class="bi bi-clipboard-check" aria-hidden="true"></span> Guide Calendar
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <a class="nav-link" href="/guide-lite">
+                <span class="bi bi-grid-3x3-gap" aria-hidden="true"></span> GuideLite
+            </a>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tour-managment">
+                <span class="bi bi-geo-alt" aria-hidden="true"></span> Tours
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="guide-schedule">
+                <span class="bi bi-calendar-range" aria-hidden="true"></span> Schedule
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="staff">
+                <span class="bi bi-people" aria-hidden="true"></span> Guides
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="vendors">
+                <span class="bi bi-buildings" aria-hidden="true"></span> Vendors
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="messages">
+                <span class="bi bi-chat-text" aria-hidden="true"></span> Messages
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="reports-list">
+                <span class="bi bi-file-earmark-text" aria-hidden="true"></span> Reports
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="reports-bookings">
+                <span class="bi bi-people" aria-hidden="true"></span> Bookings
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tour-photos">
+                <span class="bi bi-camera" aria-hidden="true"></span> Gallery
+            </NavLink>
+        </div>
+        
+      
+
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="vcard-export">
+                <span class="bi bi-download" aria-hidden="true"></span> vCard Export
+            </NavLink>
+        </div>
+
+
+		<div class="nav-item px-3">
+			<NavLink class="nav-link" href="email-pipeline">
+				<span class="bi bi-diagram-3" aria-hidden="true"></span> Email Pipeline (Diagnostics)
+			</NavLink>
+		</div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="signalr-diagnostics">
+                <span class="bi bi-broadcast-pin" aria-hidden="true"></span> SignalR Diagnostics
+            </NavLink>
+        </div>
+          <div class="nav-item px-3">
+            <NavLink class="nav-link" href="master-tours">
+                <span class="bi bi-map" aria-hidden="true"></span> New Tours
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <a class="nav-link" href="#" role="button" onclick="event.preventDefault(); event.stopPropagation(); return window.openThemeDialog && window.openThemeDialog();">
+                <span class="bi bi-palette" aria-hidden="true"></span> Change Theme
+            </a>
+        </div>
+
+        <div class="nav-item px-3">
+            <a class="nav-link" href="#" role="button" onclick="event.preventDefault(); event.stopPropagation(); (function(){var f=document.createElement('form'); f.method='POST'; f.action='/logout'; document.body.appendChild(f); f.submit();})();">
+                <span class="bi bi-box-arrow-right" aria-hidden="true"></span> Logout
+            </a>
+        </div>
+
+     @*    <AuthorizeView Roles="Admin,Manager">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/gallery-settings">
+                    <span class="bi bi-file-earmark-code" aria-hidden="true"></span> Gallery Settings
+                </NavLink>
+            </div>
+        </AuthorizeView> *@
+
+        @* Messages nav item disabled
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="messages">
+                <span class="bi bi-chat-text" aria-hidden="true"></span> Messages
+            </NavLink>
+        </div>
+        *@
+
+     @*    <div class="nav-item px-3">
+            <NavLink class="nav-link" href="vcard-logs">
+                <span class="bi bi-file-earmark-text" aria-hidden="true"></span> vCard Logs
+            </NavLink>
+        </div>
+ *@
+      
+
+    @*     <div class="nav-item px-3">
+            <NavLink class="nav-link" href="test-text">
+                <span class="bi bi-chat-dots" aria-hidden="true"></span> Test Text
+            </NavLink>
+        </div> *@
+
+       @*  <div class="nav-item px-3">
+            <NavLink class="nav-link" href="test-ios-links">
+                <span class="bi bi-phone" aria-hidden="true"></span> iOS Link Test
+            </NavLink>
+        </div>
+ *@
+       @*  <div class="nav-item px-3">
+            <NavLink class="nav-link" href="gmail-collection">
+                <span class="bi bi-inbox" aria-hidden="true"></span> Collect
+            </NavLink>
+        </div> *@
+
+        @* Collect (Auto) disabled per request *@
+      @*   <div class="nav-item px-3">
+            <span class="nav-link text-muted" style="text-decoration: line-through; cursor: not-allowed;" title="Collect (Auto) is disabled">
+                <span class="bi bi-lightning-charge" aria-hidden="true"></span> Collect (Auto)
+            </span>
+        </div>
+ *@
+      @*   <div class="nav-item px-3">
+            <NavLink class="nav-link" href="gmail-processing-v2">
+                <span class="bi bi-gear" aria-hidden="true"></span> Processing V2
+            </NavLink>
+        </div>
+
+       *@
+@* 
+		<div class="nav-item px-3">
+			<NavLink class="nav-link" href="inbox-processing-status">
+				<span class="bi bi-envelope-open" aria-hidden="true"></span> Inbox Processing Status
+			</NavLink>
+		</div> *@
+
+        
+    @*     <div class="nav-item px-3">
+            <NavLink class="nav-link" href="calendar">
+                <span class="bi bi-calendar3" aria-hidden="true"></span> Calendar
+            </NavLink>
+        </div> *@
+
+     @*    <div class="nav-item px-3">
+            <NavLink class="nav-link" href="tour-guide-calendar">
+                <span class="bi bi-person-badge" aria-hidden="true"></span> Guide Calendar
+            </NavLink>
+        </div> *@
+
+     @*    <div class="nav-item px-3">
+            <NavLink class="nav-link" href="guide-view">
+                <span class="bi bi-person-check" aria-hidden="true"></span> Guide View
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="guide-calculator">
+                <span class="bi bi-calculator" aria-hidden="true"></span> Guide Calculator
+            </NavLink>
+        </div> *@
+
+		
+    </nav>
+</div>
+
+

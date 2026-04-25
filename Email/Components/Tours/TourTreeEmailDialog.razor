@@ -1,0 +1,147 @@
+@* Created: 2025-11-19 00:00 UTC - Copied verbatim from CityShufflesWorkStation\Components\TourTreeEmailDialog.razor (namespaces adjusted to Email.*) *@
+@using Email.Models
+
+@if (showDialog)
+{
+    <div class="modal fade show" style="display: block;" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-envelope me-2"></i>
+                        Email Details
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDialog"></button>
+                </div>
+                <div class="modal-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading email content...</p>
+                        </div>
+                    }
+                    else if (emailContent != null)
+                    {
+                        <div class="email-content">
+                            <!-- Email Header -->
+                            <div class="email-header mb-4">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <h6 class="text-primary mb-2">@emailContent.Subject</h6>
+                                        <div class="email-meta">
+                                            <div class="mb-1">
+                                                <strong>From:</strong> 
+                                                @if (!string.IsNullOrEmpty(emailContent.FromName))
+                                                {
+                                                    <span>@emailContent.FromName &lt;@emailContent.FromEmail&gt;</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>@emailContent.FromEmail</span>
+                                                }
+                                            </div>
+                                            <div class="mb-1">
+                                                <strong>To:</strong> @emailContent.ToEmail
+                                            </div>
+                                            <div class="mb-1">
+                                                <strong>Date:</strong> @emailContent.ReceivedDate.ToString("MMM dd, yyyy 'at' h:mm tt")
+                                            </div>
+                                            @if (emailContent.AttachmentCount > 0)
+                                            {
+                                                <div class="mb-1">
+                                                    <strong>Attachments:</strong> @emailContent.AttachmentCount
+                                                    @if (!string.IsNullOrEmpty(emailContent.AttachmentNames))
+                                                    {
+                                                        <small class="text-muted d-block">@emailContent.AttachmentNames</small>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <small class="text-muted">Message ID: @emailContent.MessageId</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Email Body -->
+                            <div class="email-body">
+                                <h6 class="mb-3">Email Content:</h6>
+                                @if (!string.IsNullOrWhiteSpace(emailContent.TextBody))
+                                {
+                                    <div class="email-text-content p-3 rounded" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace;">
+                                        @emailContent.TextBody
+                                    </div>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(emailContent.HtmlBody))
+                                {
+                                    <div class="email-text-content p-3 rounded" style="max-height: 400px; overflow-y: auto;">
+                                        @((MarkupString)emailContent.HtmlBody)
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-warning">No content available for this email.</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-exclamation-triangle text-warning" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2">Email Not Found</h6>
+                            <p class="text-muted">The requested email could not be found or loaded.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public bool showDialog { get; set; }
+    [Parameter] public TourTreeEmailContent? emailContent { get; set; }
+    [Parameter] public bool isLoading { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private async Task CloseDialog()
+    {
+        await OnClose.InvokeAsync();
+    }
+}
+
+<style>
+    .email-content {
+        font-size: 0.9rem;
+    }
+    
+    .email-header {
+        border-bottom: 1px solid var(--bs-border-color);
+        padding-bottom: 1rem;
+    }
+    
+    .email-meta {
+        color: var(--bs-secondary-color);
+    }
+    
+    .email-text-content {
+        border: 1px solid var(--bs-border-color);
+        background-color: var(--bs-secondary-bg);
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    
+    .modal-xl {
+        max-width: 90%;
+    }
+</style>
+

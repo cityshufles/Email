@@ -1,0 +1,407 @@
+@* Created: 2026-02-06 - Simplified photo upload component for multiple photos *@
+@* Modified: 2026-02-06 - Removed Syncfusion ImageEditor, added multi-file support *@
+@using Email.Services
+@using Microsoft.Extensions.Logging
+@using Microsoft.JSInterop
+@using System.Text.Json.Serialization
+@inject ITourPhotoService PhotoService
+@inject IJSRuntime JSRuntime
+@inject ILogger<TourPhotoComponent> Logger
+
+<div class="tour-photo-component">
+    <div class="upload-section">
+        <!-- Tour Info Header -->
+        <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+            <span class="badge bg-info">
+                <i class="bi bi-calendar me-1"></i>@TourDate
+            </span>
+            <span class="badge bg-primary ms-1">
+                <i class="bi bi-signpost me-1"></i>@TourName
+            </span>
+            @if (!string.IsNullOrWhiteSpace(TourTime))
+            {
+                <span class="badge bg-secondary ms-1">
+                    <i class="bi bi-clock me-1"></i>@TourTime
+                </span>
+            }
+        </div>
+
+        <div class="mb-3">
+            <button class="btn btn-primary" type="button" @onclick="OpenAltUploadDialog">
+                <i class="bi bi-cloud-upload me-1"></i>Upload Photos
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3 mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div class="alert alert-success mt-3 mb-0">
+                <i class="bi bi-check-circle me-2"></i>@successMessage
+            </div>
+        }
+
+        <!-- Photo Gallery -->
+        @if (uploadedPhotos.Count > 0)
+        {
+            <div class="photo-gallery">
+                <h6 class="mb-2"><i class="bi bi-images me-1"></i>Uploaded Photos (@uploadedPhotos.Count)</h6>
+                <div class="row g-2">
+                    @foreach (var photo in uploadedPhotos)
+                    {
+                        <div class="col-6 col-md-4 col-lg-3">
+                            <div class="photo-card border rounded p-2 position-relative">
+                                <img src="@photo"
+                                     alt="Tour photo"
+                                     class="img-fluid rounded"
+                                     style="width: 100%; height: 150px; object-fit: cover; image-orientation: from-image;"
+                                     loading="lazy" />
+                                <button class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" 
+                                        @onclick="() => DeletePhoto(photo)"
+                                        title="Delete photo">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // Created: 2026-02-06 18:00 PM
+    [Parameter] public string TourDate { get; set; } = string.Empty;
+    [Parameter] public string TourName { get; set; } = string.Empty;
+    [Parameter] public string TourTime { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnPhotoSaved { get; set; }
+    [Parameter] public EventCallback<bool> OnAltUploadClosed { get; set; }
+
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private List<string> uploadedPhotos = new();
+    private bool showAltUploadDialog = false;
+    private string? altUploadId;
+    private bool altUploadCompleted = false;
+    private bool altUploadCompletedSuccess = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Load existing photos for this tour
+        if (!string.IsNullOrWhiteSpace(TourDate) && !string.IsNullOrWhiteSpace(TourName))
+        {
+            await LoadExistingPhotos();
+        }
+    }
+
+    private async Task LoadExistingPhotos()
+    {
+        try
+        {
+            Logger.LogInformation("LoadExistingPhotos called with TourDate={Date}, TourName={Name}, TourTime={Time}", 
+                TourDate, TourName, TourTime);
+            
+            uploadedPhotos = await PhotoService.GetPhotosForTourAsync(TourDate, TourName, TourTime);
+            
+            Logger.LogInformation("=== LOADED PHOTOS ({Count}) ===", uploadedPhotos.Count);
+            
+            // Write diagnostic log to file
+            await WriteDiagnosticLog($"LOADED PHOTOS for {TourName} on {TourDate} at {TourTime}: {uploadedPhotos.Count} photos");
+            foreach (var photo in uploadedPhotos)
+            {
+                Logger.LogInformation("  - {Photo}", photo);
+                await WriteDiagnosticLog($"  Photo path: {photo}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load existing photos");
+            await WriteDiagnosticLog($"ERROR loading photos: {ex.Message}");
+        }
+    }
+    
+    private Task WriteDiagnosticLog(string message)
+    {
+        Logger.LogInformation("TourPhotoComponent diagnostic: {Message}", message);
+        return Task.CompletedTask;
+    }
+
+    private async Task DeletePhoto(string photoPath)
+    {
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this photo?");
+            if (!confirmed) return;
+
+            var deleted = await PhotoService.DeletePhotoAsync(photoPath);
+            if (deleted)
+            {
+                uploadedPhotos.Remove(photoPath);
+                successMessage = "Photo deleted successfully.";
+                await WriteDiagnosticLog($"DELETE SUCCESS: {photoPath}");
+                
+                if (OnPhotoSaved.HasDelegate)
+                {
+                    await OnPhotoSaved.InvokeAsync();
+                }
+                
+                StateHasChanged();
+            }
+            else
+            {
+                errorMessage = "Failed to delete photo.";
+                await WriteDiagnosticLog($"DELETE FAILED: {photoPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete photo: {Path}", photoPath);
+            await WriteDiagnosticLog($"DELETE ERROR: {photoPath} - {ex.Message}");
+            errorMessage = $"Error deleting photo: {ex.Message}";
+        }
+    }
+
+    private async Task OpenAltUploadDialog()
+    {
+        showAltUploadDialog = true;
+        altUploadCompleted = false;
+        altUploadCompletedSuccess = false;
+        StateHasChanged();
+        await Task.Yield();
+
+        await JSRuntime.InvokeVoidAsync("tourPhotoAlt.init", new
+        {
+            inputId = "altPhotoUploadInput",
+            listId = "altUploadList",
+            statusId = "altUploadStatus",
+            buttonId = "altUploadButton",
+            buttonTextId = "altUploadButtonText",
+            modalId = "altUploadModal",
+            closeButtonId = "altUploadCloseButton",
+            uploadUrl = "/tour-photos/upload-alt",
+            syncUrl = "/tour-photos/sync-report",
+            tourDate = TourDate,
+            tourName = TourName,
+            tourTime = TourTime
+        });
+    }
+
+    public Task OpenUploadDialogAsync()
+    {
+        return OpenAltUploadDialog();
+    }
+
+    // 2026-02-21: Modified to trigger photo refresh on dialog close (deferred from upload completion)
+    private async Task CloseAltUploadDialog()
+    {
+        var clientState = await TryGetAltUploadClientStateAsync();
+        if (clientState?.IsComplete == true)
+        {
+            altUploadCompleted = true;
+            altUploadCompletedSuccess = clientState.IsCompleteSuccess;
+        }
+
+        // Capture whether uploads completed before resetting state
+        var hadCompletedUploads = altUploadCompleted;
+        var hadCompletedSuccess = altUploadCompletedSuccess;
+        
+        showAltUploadDialog = false;
+        altUploadCompleted = false;
+        altUploadCompletedSuccess = false;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("tourPhotoAlt.reset");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "tourPhotoAlt.reset failed (non-fatal)");
+        }
+        
+        // Let parent close upload section / show sync guidance after completed upload.
+        if (hadCompletedUploads && OnAltUploadClosed.HasDelegate)
+        {
+            try
+            {
+                await OnAltUploadClosed.InvokeAsync(hadCompletedSuccess);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "OnAltUploadClosed callback failed after upload dialog close");
+            }
+        }
+
+        // Notify parent to refresh photos only if uploads actually completed.
+        if (hadCompletedUploads && OnPhotoSaved.HasDelegate)
+        {
+            try
+            {
+                await OnPhotoSaved.InvokeAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "OnPhotoSaved callback failed after upload dialog close");
+            }
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task StartAltUpload()
+    {
+        var clientState = await TryGetAltUploadClientStateAsync();
+
+        if (clientState?.IsComplete == true)
+        {
+            altUploadCompleted = true;
+            altUploadCompletedSuccess = clientState.IsCompleteSuccess;
+            await CloseAltUploadDialog();
+            return;
+        }
+
+        if (clientState?.IsUploading == true)
+        {
+            return;
+        }
+
+        altUploadId = Guid.NewGuid().ToString("N")[..12];
+        Logger.LogInformation(
+            "AltUpload START requested UploadId={UploadId} TourDate={TourDate} TourName={TourName} TourTime={TourTime}",
+            altUploadId, TourDate, TourName, TourTime);
+        await JSRuntime.InvokeVoidAsync("tourPhotoAlt.uploadAll");
+    }
+
+    private async Task<AltUploadClientState?> TryGetAltUploadClientStateAsync()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<AltUploadClientState>("tourPhotoAlt.getState");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "tourPhotoAlt.getState failed");
+            return null;
+        }
+    }
+
+    private sealed class AltUploadClientState
+    {
+        [JsonPropertyName("isUploading")]
+        public bool IsUploading { get; set; }
+
+        [JsonPropertyName("isComplete")]
+        public bool IsComplete { get; set; }
+
+        [JsonPropertyName("isCompleteSuccess")]
+        public bool IsCompleteSuccess { get; set; }
+
+        [JsonPropertyName("totalCount")]
+        public int TotalCount { get; set; }
+
+        [JsonPropertyName("successCount")]
+        public int SuccessCount { get; set; }
+
+        [JsonPropertyName("failCount")]
+        public int FailCount { get; set; }
+    }
+}
+
+<style>
+    .tour-photo-component {
+        width: 100%;
+    }
+    
+    .photo-gallery {
+        margin-top: 1rem;
+    }
+    
+    .photo-card {
+        position: relative;
+        transition: transform 0.2s ease;
+    }
+    
+    .photo-card:hover {
+        transform: scale(1.05);
+    }
+
+    .alt-upload-list {
+        position: relative;
+    }
+
+    .alt-upload-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 0.75rem;
+        max-height: 360px;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+
+    .alt-upload-list.is-complete .alt-upload-grid {
+        filter: blur(1px) brightness(0.75);
+        pointer-events: none;
+    }
+
+    .alt-upload-complete-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(var(--bs-body-bg-rgb), 0.85);
+        border-radius: 0.5rem;
+        z-index: 4;
+    }
+
+    .alt-upload-complete-icon {
+        width: 84px;
+        height: 84px;
+        border-radius: 50%;
+        background: var(--bs-success);
+        color: var(--bs-white);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.5rem;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    }
+
+    .alt-upload-list .alt-photo-card img {
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+        image-orientation: from-image;
+    }
+</style>
+
+@if (showAltUploadDialog)
+{
+    <div id="altUploadModal" class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cloud-arrow-up me-2"></i>Upload Images (Alt)</h5>
+                    <button id="altUploadCloseButton" type="button" class="btn-close" @onclick="CloseAltUploadDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <input type="file" id="altPhotoUploadInput" class="form-control" accept="image/*" multiple />
+                    </div>
+                    <div id="altUploadList" class="alt-upload-list"></div>
+                </div>
+                <div class="modal-footer">
+                    <div class="d-flex align-items-center justify-content-between w-100 gap-3">
+                        <div id="altUploadStatus" class="text-muted small"></div>
+                        <button type="button" id="altUploadButton" class="btn btn-primary" @onclick="StartAltUpload">
+                            <i class="bi bi-cloud-upload me-1"></i><span id="altUploadButtonText">Upload</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}

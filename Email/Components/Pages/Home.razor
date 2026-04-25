@@ -1,0 +1,16 @@
+@page "/"
+@inject NavigationManager Navigation
+
+<PageTitle>Mobile Tours</PageTitle>
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo("/mobile-tours", replace: true);
+    }
+}

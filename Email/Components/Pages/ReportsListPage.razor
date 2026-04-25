@@ -1,0 +1,712 @@
+@page "/reports-list"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IGuideReportService ReportService
+@inject IGuidesApiService GuidesService
+@inject ITourPhotoService PhotoService
+@inject IToastService ToastService
+@inject IConfiguration Configuration
+@inject IJSRuntime JSRuntime
+@using Email.Components.Tours
+@using Email.Models
+@using Email.Models.Reports
+@using Microsoft.Extensions.Configuration
+
+<!-- Created: 1/28/2026 10:25 PM - Updated: 10:35 PM with tab view -->
+
+<PageTitle>Tour Reports</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Tour Reports</h4>
+        <a href="/guide-report" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i>New Report
+        </a>
+    </div>
+    
+    @if (SelectedReport == null)
+    {
+        var filteredReports = GetFilteredReports();
+        var reportCount = filteredReports.Count;
+        var totalWalkers = filteredReports.Sum(r => r.TotalAttendees);
+        <!-- Tab 1: Reports List -->
+        <!-- Date Filter -->
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="row align-items-center g-2">
+                    <div class="col-auto">
+                        <label class="form-label mb-0 small fw-semibold">From:</label>
+                    </div>
+                    <div class="col-auto">
+                        <input type="date" class="form-control form-control-sm" 
+                               value="@StartDate?.ToString("yyyy-MM-dd")" 
+                               @onchange="OnStartDateChanged" />
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label mb-0 small fw-semibold">To:</label>
+                    </div>
+                    <div class="col-auto">
+                        <input type="date" class="form-control form-control-sm" 
+                               value="@EndDate?.ToString("yyyy-MM-dd")" 
+                               @onchange="OnEndDateChanged" />
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="ClearFilter">
+                            <i class="bi bi-x me-1"></i>Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center mt-2 gap-2">
+                    <div class="small text-muted">
+                        Reports <span class="fw-semibold">@reportCount</span> / Attendees <span class="fw-semibold">@totalWalkers</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="form-label mb-0 small fw-semibold">Guide:</label>
+                        <select class="form-select form-select-sm" style="width: 220px;" @bind="SelectedGuideId">
+                            <option value="">All</option>
+                            @foreach (var g in Guides)
+                            {
+                                <option value="@g.Id">@g.FirstName @g.LastName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        @if (isLoading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted">Loading reports...</p>
+            </div>
+        }
+        else if (filteredReports.Count == 0)
+        {
+            <div class="card">
+                <div class="card-body text-center py-5 text-muted">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <div class="mt-3">No reports found</div>
+                    <a href="/guide-report" class="btn btn-primary mt-3">Create your first report</a>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span>Tour</span>
+                                        <div class="form-check form-switch m-0">
+                                            <input class="form-check-input" type="checkbox" id="tourNameToggle" @bind="showMobileTourNames" />
+                                            <label class="form-check-label small" for="tourNameToggle">Mobile</label>
+                                        </div>
+                                    </div>
+                                </th>
+                                <th>Time</th>
+                                <th>Guide</th>
+                                <th class="text-center">Attendees</th>
+                                <th>Status</th>
+                                <th class="text-center">Photos</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var report in filteredReports)
+                            {
+                                var displayTime = report.TourTime;
+                                if (TimeSpan.TryParse(report.TourTime, out var ts))
+                                {
+                                    displayTime = DateTime.Today.Add(ts).ToString("h:mm tt");
+                                }
+                                var photoCount = GetPhotoCount(report.ImagePaths);
+                                
+                                <tr>
+                                    <td>
+                                        <strong>@report.TourDate.ToString("MMM d, yyyy")</strong>
+                                        <br /><small class="text-muted">@report.TourDate.DayOfWeek</small>
+                                    </td>
+                                    <td>@GetDisplayTourName(report)</td>
+                                    <td>@displayTime</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(report.GuideName?.Trim()))
+                                        {
+                                            <i class="bi bi-person me-1"></i>@report.GuideName
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">Unassigned</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge border">@report.TotalAttendees</span>
+                                    </td>
+                                    <td>
+                                        @if (report.IsSubmitted)
+                                        {
+                                            <span class="badge bg-success">
+                                                <i class="bi bi-check-circle me-1"></i>Submitted
+                                            </span>
+                                            @if (report.SubmittedAt.HasValue)
+                                            {
+                                                <br /><small class="text-muted">@report.SubmittedAt.Value.ToString("g")</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Draft</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        @if (photoCount > 0)
+                                        {
+                                            <span class="badge border">
+                                                <i class="bi bi-image me-1"></i>@photoCount
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">0</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-outline-primary" 
+                                                @onclick="() => ViewReport(report)"
+                                                title="View Report">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="text-muted small mt-2">
+                Showing @reportCount report(s)
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Tab 2: Report Detail View -->
+        <div class="mb-3">
+            <button class="btn btn-outline-secondary btn-sm" @onclick="BackToList">
+                <i class="bi bi-arrow-left me-1"></i>Back to Reports
+            </button>
+        </div>
+        
+        @if (isLoadingDetail)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted">Loading report details...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger m-3">
+                <i class="bi bi-exclamation-triangle me-2"></i>@errorMessage
+                <button class="btn btn-sm btn-outline-danger ms-3" @onclick="() => ViewReport(SelectedReport!)">Retry</button>
+            </div>
+        }
+        else if (DetailReport != null)
+        {
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>@SelectedReport.TourDate.ToString("dddd, MMMM d, yyyy")</strong>
+                        <span class="badge border ms-2">@DetailReport.Walkers.Sum(w => w.ActualAttendees) attendees</span>
+                    </div>
+                    <div>
+                        @if (SelectedReport.IsSubmitted)
+                        {
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Submitted</span>
+                        }
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Tour Header -->
+                    <div class="d-flex justify-content-between align-items-center mb-3 p-2 border rounded">
+                        <div>
+                            <h5 class="mb-0">@SelectedReport.TourName</h5>
+                            @{
+                                var dt = SelectedReport.TourTime;
+                                if (TimeSpan.TryParse(SelectedReport.TourTime, out var tsp))
+                                {
+                                    dt = DateTime.Today.Add(tsp).ToString("h:mm tt");
+                                }
+                            }
+                            <small class="text-muted"><i class="bi bi-clock me-1"></i>@dt</small>
+                        </div>
+                        <div>
+                            @if (!string.IsNullOrWhiteSpace(SelectedReport.GuideName?.Trim()))
+                            {
+                                <span class="badge border"><i class="bi bi-person me-1"></i>@SelectedReport.GuideName</span>
+                            }
+                        </div>
+                    </div>
+                    
+                    <!-- Gallery Link Copy Section -->
+                    @if (DetailReport != null && !string.IsNullOrEmpty(DetailReport.PublicId))
+                    {
+                        <div class="mb-3">
+                            <div class="input-group">
+                                <input type="text" class="form-control" readonly value="@GetGalleryUrl(DetailReport)" id="reportGalleryLinkInput" />
+                                <button class="btn btn-outline-primary" @onclick="CopyGalleryLink">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    
+                    <!-- Walker Table -->
+                    <div class="mb-3">
+                        <div class="fw-semibold mb-2">
+                            <i class="bi bi-people me-1"></i>Attendees
+                            <span class="badge border ms-1">@DetailReport.Walkers.Count bookings</span>
+                        </div>
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th class="text-center">Checked In</th>
+                                    <th class="text-center">Adults</th>
+                                    <th class="text-center">Children</th>
+                                    <th class="text-center">Review</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var walker in DetailReport.Walkers)
+                                {
+                                    <tr>
+                                        <td>
+                                            @walker.CustomerName
+                                            @if (!string.IsNullOrWhiteSpace(walker.VendorName))
+                                            {
+                                                <br /><small class="text-muted">@walker.VendorName</small>
+                                            }
+                                            @if (walker.DoNotContact)
+                                            {
+                                                <br /><small class="text-warning"><i class="bi bi-slash-circle me-1"></i>Do not contact</small>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(walker.ReviewNotes))
+                                            {
+                                                <br /><small class="text-muted fst-italic">Note: @walker.ReviewNotes</small>
+                                            }
+                                        </td>
+                                        <td class="text-center align-middle">
+                                            @if (walker.IsCheckedIn)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-circle text-muted" style="font-size: 1.2rem;"></i>
+                                            }
+                                        </td>
+                                        <td class="text-center align-middle fw-bold">@walker.ActualAdults</td>
+                                        <td class="text-center align-middle fw-bold">@walker.ActualChildren</td>
+                                        <td class="text-center align-middle">
+                                            <div class="d-flex align-items-center justify-content-center gap-1">
+                                                @{
+                                                    var isPositive = walker.ReviewStatus == "Positive";
+                                                    var isNegative = walker.ReviewStatus == "Negative";
+                                                }
+                                                <button class='@($"btn btn-sm {(isPositive ? "btn-success" : "btn-outline-success")}")' 
+                                                        @onclick='() => ToggleReviewStatus(walker, "Positive")' 
+                                                        title="Thumbs Up"
+                                                        disabled="@isSavingDetail">
+                                                    <i class="bi bi-hand-thumbs-up-fill"></i>
+                                                </button>
+                                                <button class='@($"btn btn-sm {(isNegative ? "btn-danger" : "btn-outline-danger")}")' 
+                                                        @onclick='() => ToggleReviewStatus(walker, "Negative")' 
+                                                        title="Thumbs Down"
+                                                        disabled="@isSavingDetail">
+                                                    <i class="bi bi-hand-thumbs-down-fill"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td class="text-center align-middle">
+                                            <div class="d-flex align-items-center justify-content-center gap-1">
+                                                @if (!string.IsNullOrWhiteSpace(walker.Phone))
+                                                {
+                                                     var cleanPhone = new string(walker.Phone?.Where(char.IsDigit).ToArray() ?? Array.Empty<char>());
+                                                     
+                                                    <button class="btn btn-sm btn-outline-info" @onclick="() => ShowWalkerPhone(walker)" title="Contact Info">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </button>
+                                                    
+                                                    @if (DetailReport != null)
+                                                    {
+                                                        <a href="@GetWhatsAppLink(DetailReport, cleanPhone)" target="_blank" class="btn btn-sm btn-outline-success" title="Send WhatsApp">
+                                                            <i class="bi bi-whatsapp"></i>
+                                                        </a>
+                                                        <a href="@GetSmsLink(DetailReport, walker.Phone)" class="btn btn-sm btn-outline-primary" title="Send SMS">
+                                                            <i class="bi bi-chat-dots"></i>
+                                                        </a>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">—</span>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- General Notes -->
+                    @if (!string.IsNullOrWhiteSpace(DetailReport.GeneralNotes))
+                    {
+                        <div class="mb-3">
+                            <div class="fw-semibold mb-2"><i class="bi bi-chat-left-text me-1"></i>Tour Notes</div>
+                            <div class="p-2 border rounded">@DetailReport.GeneralNotes</div>
+                        </div>
+                    }
+                    
+                    <!-- Photos -->
+                    @{
+                        var pc = GetPhotoCount(SelectedReport.ImagePaths);
+                    }
+                    <div class="mb-3">
+                        <div class="fw-semibold mb-2"><i class="bi bi-image me-1"></i>Photos (@pc)</div>
+                        @if (pc > 0)
+                        {
+                            <TourPhotoGallery 
+                                Photos="@(SelectedReport.ImagePaths?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() ?? new())" 
+                                AllowDelete="true"
+                                OnPhotoDeleted="HandlePhotoDeleted" />
+                        }
+                        else
+                        {
+                            <div class="text-muted small">No photos uploaded for this tour.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@* Phone Info Dialog *@
+@if (showPhoneDialog && selectedPhoneWalker != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person me-2"></i>@selectedPhoneWalker.CustomerName</h5>
+                    <button type="button" class="btn-close" @onclick="() => showPhoneDialog = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-column gap-2">
+                        <a href="tel:@selectedPhoneWalker.Phone" class="btn btn-outline-primary">
+                            <i class="bi bi-telephone me-2"></i>@selectedPhoneWalker.Phone
+                        </a>
+                        @{
+                            var cleanPhone = new string(selectedPhoneWalker.Phone?.Where(char.IsDigit).ToArray() ?? Array.Empty<char>());
+                        }
+                        <a href="https://wa.me/@cleanPhone" target="_blank" class="btn btn-success">
+                            <i class="bi bi-whatsapp me-2"></i>WhatsApp
+                        </a>
+                        <a href="sms:@selectedPhoneWalker.Phone" class="btn btn-primary">
+                            <i class="bi bi-chat-dots me-2"></i>SMS
+                        </a>
+
+                        <!-- Gallery Link Sending -->
+                        @if (DetailReport != null)
+                        {
+                            <hr class="my-2" />
+                            <div class="text-muted small fw-bold mb-1">Send Gallery Link</div>
+                            
+                            <a href="@GetWhatsAppLink(DetailReport, cleanPhone)" target="_blank" class="btn btn-outline-success">
+                                <i class="bi bi-whatsapp me-2"></i>Send Gallery Link
+                            </a>
+                            <a href="@GetSmsLink(DetailReport, selectedPhoneWalker.Phone)" class="btn btn-outline-primary">
+                                <i class="bi bi-chat-dots me-2"></i>Send Gallery Link
+                            </a>
+                            <div class="mt-2 text-muted" style="font-size: 0.75rem;">
+                                Public Link: <a href="@GetGalleryUrl(DetailReport)" target="_blank">@GetGalleryUrl(DetailReport)</a>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Created: 1/28/2026 10:35 PM
+    private List<TourReportSummary> Reports { get; set; } = new();
+    private TourReportSummary? SelectedReport { get; set; }
+    private TourReport? DetailReport { get; set; }
+    private List<DbGuide> Guides { get; set; } = new();
+    private int? SelectedGuideId { get; set; }
+    private bool isLoading = true;
+    private bool isLoadingDetail = false;
+    private bool isSavingDetail = false;
+    private string errorMessage = "";
+    private bool showMobileTourNames = true;
+    
+    // ... (rest of fields)
+
+    private async Task ToggleReviewStatus(GuideReportWalker walker, string status)
+    {
+        if (DetailReport == null) return;
+
+        isSavingDetail = true;
+        StateHasChanged();
+
+        try 
+        {
+            if (walker.ReviewStatus == status)
+            {
+                walker.ReviewStatus = null; // Toggle off
+            }
+            else
+            {
+                walker.ReviewStatus = status; // Set new status
+            }
+
+            // Auto-save changes
+            await ReportService.SaveReportAsync(DetailReport);
+            await ToastService.ShowSuccessAsync("Saved", "Review status updated.");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSavingDetail = false;
+            StateHasChanged();
+        }
+    }
+    private DateTime? StartDate { get; set; }
+    private DateTime? EndDate { get; set; }
+    
+    private bool showPhoneDialog = false;
+    private GuideReportWalker? selectedPhoneWalker;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.Today;
+        StartDate = new DateTime(today.Year, today.Month, 1);
+        EndDate = StartDate.Value.AddMonths(1).AddDays(-1);
+        await LoadGuidesAsync();
+        await LoadReportsAsync();
+    }
+
+    private async Task LoadGuidesAsync()
+    {
+        try
+        {
+            Guides = await GuidesService.GetGuidesAsync();
+        }
+        catch
+        {
+            Guides = new List<DbGuide>();
+        }
+    }
+
+    private async Task LoadReportsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            Reports = await ReportService.GetAllReportsAsync(StartDate, EndDate);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading reports: {ex.Message}");
+            Reports = new();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnStartDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            StartDate = date;
+            await LoadReportsAsync();
+        }
+    }
+
+    private async Task OnEndDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            EndDate = date;
+            await LoadReportsAsync();
+        }
+    }
+
+    private async Task ClearFilter()
+    {
+        StartDate = null;
+        EndDate = null;
+        await LoadReportsAsync();
+    }
+
+    private async Task ViewReport(TourReportSummary report)
+    {
+        SelectedReport = report;
+        isLoadingDetail = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            DetailReport = await ReportService.GetReportAsync(report.TourDate, report.TourName, report.TourTime);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading report detail: {ex.Message}");
+            errorMessage = $"Failed to load report: {ex.Message}";
+            DetailReport = null;
+        }
+        finally
+        {
+            isLoadingDetail = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandlePhotoDeleted()
+    {
+        if (SelectedReport == null || DetailReport == null) return;
+
+        // 1. Refresh photos from disk to get source of truth
+        var photos = await PhotoService.GetPhotosForTourAsync(
+            SelectedReport.TourDate.ToString("yyyy-MM-dd"),
+            SelectedReport.TourName,
+            SelectedReport.TourTime
+        );
+
+        var imagePaths = string.Join(",", photos);
+
+        // 2. Update models
+        SelectedReport.ImagePaths = imagePaths;
+        DetailReport.ImagePaths = imagePaths;
+
+        // 3. Persist to DB
+        await ReportService.SaveReportAsync(DetailReport);
+
+        await ToastService.ShowSuccessAsync("Saved", "Report image listing updated in database.");
+        StateHasChanged();
+    }
+
+    private void BackToList()
+    {
+        SelectedReport = null;
+        DetailReport = null;
+    }
+
+    private int GetPhotoCount(string? imagePaths)
+    {
+        if (string.IsNullOrWhiteSpace(imagePaths)) return 0;
+        // Assume comma-separated or JSON array
+        if (imagePaths.StartsWith("["))
+        {
+            return imagePaths.Split(',').Length;
+        }
+        return imagePaths.Split(',', StringSplitOptions.RemoveEmptyEntries).Length;
+    }
+
+    private string GetDisplayTourName(TourReportSummary report)
+    {
+        if (showMobileTourNames)
+        {
+            if (!string.IsNullOrWhiteSpace(report.MasterTourNameMobile))
+                return report.MasterTourNameMobile!;
+            if (!string.IsNullOrWhiteSpace(report.MasterTourName))
+                return report.MasterTourName!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(report.MasterTourName))
+            return report.MasterTourName!;
+
+        return report.TourName;
+    }
+
+    private List<TourReportSummary> GetFilteredReports()
+    {
+        if (!SelectedGuideId.HasValue)
+        {
+            return Reports;
+        }
+
+        return Reports.Where(r => r.GuideId == SelectedGuideId.Value).ToList();
+    }
+
+    private void ShowWalkerPhone(GuideReportWalker walker)
+    {
+        selectedPhoneWalker = walker;
+        showPhoneDialog = true;
+    }
+
+    private string GetGalleryUrl(TourReport? report)
+    {
+        if (report == null || string.IsNullOrEmpty(report.PublicId)) return "";
+        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        return $"{baseUrl}/tour-gallery/{report.PublicId}.html";
+    }
+
+    private string GetWhatsAppLink(TourReport? report, string phone)
+    {
+        if (report == null) return "";
+        var url = GetGalleryUrl(report);
+        var msg = $"Thanks for taking our {report.TourName} tour! Here are the photos: {url}";
+        return $"https://wa.me/{phone}?text={Uri.EscapeDataString(msg)}";
+    }
+
+    private string GetSmsLink(TourReport? report, string phone)
+    {
+        if (report == null) return "";
+        var url = GetGalleryUrl(report);
+        var msg = $"Thanks for taking our {report.TourName} tour! Here are the photos: {url}";
+        return $"sms:{phone}?body={Uri.EscapeDataString(msg)}";
+    }
+
+    // 2026-02-06: Added copy gallery link function
+    private async Task CopyGalleryLink()
+    {
+        try
+        {
+            var url = GetGalleryUrl(DetailReport);
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            // Fallback for browsers that don't support clipboard API
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('reportGalleryLinkInput').select(); document.execCommand('copy');");
+                await ToastService.ShowSuccessAsync("Copied!", "Gallery link copied to clipboard.");
+            }
+            catch
+            {
+                await ToastService.ShowErrorAsync("Error", "Could not copy link. Please copy manually.");
+            }
+        }
+    }
+}

@@ -1,0 +1,230 @@
+body {
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+}
+
+.guide-lite-shell {
+    max-width: 1400px;
+}
+
+.guide-lite-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.guide-lite-steps {
+    gap: 0.5rem;
+}
+
+.guide-lite-steps .nav-link {
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.guide-lite-steps .nav-link:disabled {
+    opacity: 0.55;
+}
+
+.guide-lite-refresh-btn {
+    height: calc(3.5rem + 2px);
+    font-size: 1.2rem;
+}
+
+.guide-step-panel {
+    min-height: 220px;
+}
+
+.list-group-item .tour-time {
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.list-group-item .tour-date {
+    font-size: 0.85rem;
+}
+
+.list-group-item .tour-name {
+    font-size: 1rem;
+}
+
+.list-group-item .tour-meta {
+    font-size: 0.85rem;
+}
+
+.walker-row-dirty {
+    background-color: #fff7e6 !important;
+}
+
+.walker-actions .btn {
+    margin: 0.1rem;
+    width: 34px;
+    height: 34px;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.walker-actions .btn i {
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.walker-expand-cell {
+    text-align: center;
+}
+
+.row-expand-toggle {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.row-expand-toggle i {
+    transition: transform 0.18s ease-in-out;
+}
+
+.row-expand-toggle[aria-expanded="true"] i {
+    transform: rotate(90deg);
+}
+
+.walker-detail-row > td {
+    padding: 0;
+    border-top: 0;
+    background-color: #f8fbff;
+}
+
+.walker-detail-card {
+    padding: 0.65rem 0.75rem 0.75rem;
+    border-top: 1px solid #dee2e6;
+}
+
+.walker-inline-tabs .nav-link {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.9rem;
+}
+
+.walker-inline-tabs .nav-link i {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.walker-detail-pane {
+    border: 1px solid #dee2e6;
+    border-radius: 0 0.35rem 0.35rem 0.35rem;
+    padding: 0.65rem;
+    background: #fff;
+}
+
+.walker-detail-phone-input {
+    max-width: 340px;
+}
+
+.no-contact-note-required {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 0 0.12rem rgba(255, 193, 7, 0.35);
+}
+
+.row-status-icons {
+    text-align: center;
+    font-size: 1.15rem;
+    min-width: 92px;
+}
+
+.photo-thumb {
+    height: 96px;
+    object-fit: cover;
+    border-radius: 0.4rem;
+    border: 1px solid #dee2e6;
+}
+
+.photo-thumb-btn {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    width: 100%;
+}
+
+.summary-total-card {
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background-color: #fff;
+}
+
+.photo-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+}
+
+.photo-dialog-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.photo-dialog-content {
+    position: relative;
+    z-index: 2;
+    max-width: min(92vw, 900px);
+    max-height: 90vh;
+    margin: 3vh auto;
+    background: #fff;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+}
+
+.photo-dialog-image {
+    width: 100%;
+    height: auto;
+    max-height: calc(90vh - 60px);
+    object-fit: contain;
+    border-radius: 0.5rem;
+}
+
+.notes-dialog-content {
+    max-width: min(92vw, 560px);
+}
+
+@media (max-width: 768px) {
+    .guide-lite-status-row {
+        gap: 0.45rem;
+    }
+
+    .guide-lite-status-row .btn {
+        min-height: 40px;
+        white-space: nowrap;
+    }
+
+    .btn-lg {
+        font-size: 1rem;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+    }
+
+    .guide-lite-steps {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 0.35rem;
+    }
+
+    .guide-lite-steps .nav-item {
+        flex: 0 0 auto;
+    }
+
+    table input,
+    table select,
+    table button {
+        min-height: 44px;
+    }
+
+    .row-status-icons {
+        font-size: 1rem;
+        min-width: 82px;
+    }
+}

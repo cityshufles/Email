@@ -1,0 +1,335 @@
+@* 2025-12-21 - Photo gallery component for displaying tour photos *@
+@using Email.Services
+@inject ITourPhotoService PhotoService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+
+<div class="tour-photo-gallery">
+    @if (isLoading)
+    {
+        <div class="text-center py-4">
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+            <span class="ms-2">Loading photos...</span>
+        </div>
+    }
+    else if (Photos.Count == 0)
+    {
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-images fs-1 d-block mb-2"></i>
+            <p class="mb-0">No photos found</p>
+        </div>
+    }
+    else
+    {
+        <div class="gallery-grid">
+            @foreach (var photo in Photos)
+            {
+                var thumb = BuildThumbnailUrl(photo);
+                <div class="gallery-item" @onclick="() => OpenLightbox(photo)">
+                    <img src="@thumb"
+                         data-full="@photo"
+                         alt="Tour photo"
+                         loading="lazy"
+                         onerror="this.onerror=null;this.src=this.dataset.full;" />
+                    <div class="gallery-overlay">
+                        <div class="gallery-actions">
+                            <button class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" @onclick="() => OpenLightbox(photo)" title="View full size">
+                                <i class="bi bi-zoom-in"></i>
+                            </button>
+                            <a href="@photo" download class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" title="Download">
+                                <i class="bi bi-download"></i>
+                            </a>
+                            @if (AllowDelete)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick:stopPropagation="true" @onclick="() => ConfirmDelete(photo)" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            }
+                        </div>
+                        <small class="gallery-filename">@GetFilename(photo)</small>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@* Lightbox Modal *@
+@if (showLightbox && !string.IsNullOrWhiteSpace(lightboxPhoto))
+{
+    <div class="lightbox-backdrop" @onclick="CloseLightbox">
+        <div class="lightbox-content" @onclick:stopPropagation="true">
+            <button class="lightbox-close" @onclick="CloseLightbox">
+                <i class="bi bi-x-lg"></i>
+            </button>
+            <img src="@lightboxPhoto" alt="Full size photo" />
+            <div class="lightbox-toolbar">
+                <a href="@lightboxPhoto" download class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-download me-1"></i>Download
+                </a>
+                @if (AllowDelete)
+                {
+                    <button class="btn btn-danger btn-sm ms-2" @onclick="() => ConfirmDelete(lightboxPhoto)">
+                        <i class="bi bi-trash me-1"></i>Delete
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* Delete Confirmation Modal *@
+@if (showDeleteConfirm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Delete Photo?</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this photo? This cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger btn-sm" @onclick="ExecuteDelete" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public List<string> Photos { get; set; } = new();
+    [Parameter] public bool AllowDelete { get; set; } = true;
+    [Parameter] public EventCallback OnPhotoDeleted { get; set; }
+    
+    private bool isLoading = false;
+    private bool showLightbox = false;
+    private string? lightboxPhoto;
+    private bool showDeleteConfirm = false;
+    private string? photoToDelete;
+    private bool isDeleting = false;
+
+    private void OpenLightbox(string photo)
+    {
+        lightboxPhoto = photo;
+        showLightbox = true;
+        StateHasChanged();
+    }
+
+    private void CloseLightbox()
+    {
+        showLightbox = false;
+        lightboxPhoto = null;
+        StateHasChanged();
+    }
+
+    private void ConfirmDelete(string photo)
+    {
+        photoToDelete = photo;
+        showDeleteConfirm = true;
+        showLightbox = false;
+        StateHasChanged();
+    }
+
+    private void CancelDelete()
+    {
+        showDeleteConfirm = false;
+        photoToDelete = null;
+        StateHasChanged();
+    }
+
+    private async Task ExecuteDelete()
+    {
+        if (string.IsNullOrWhiteSpace(photoToDelete)) return;
+        
+        try
+        {
+            isDeleting = true;
+            StateHasChanged();
+            
+            var deleted = await PhotoService.DeletePhotoAsync(photoToDelete);
+            
+            if (deleted)
+            {
+                if (OnPhotoDeleted.HasDelegate)
+                {
+                    await OnPhotoDeleted.InvokeAsync();
+                }
+                await ToastService.ShowSuccessAsync("Deleted", "Photo removed successfully.");
+            }
+            else
+            {
+                await ToastService.ShowErrorAsync("Error", "Failed to delete photo.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync("Error", $"Deletion failed: {ex.Message}");
+        }
+        finally
+        {
+            isDeleting = false;
+            showDeleteConfirm = false;
+            photoToDelete = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetFilename(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        var parts = path.Split('/');
+        var filename = parts.Length > 0 ? parts[^1] : path;
+        // Truncate long filenames
+        return filename.Length > 30 ? filename.Substring(0, 27) + "..." : filename;
+    }
+
+    private static string BuildThumbnailUrl(string photoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(photoUrl)) return photoUrl;
+
+        var lastSlash = photoUrl.LastIndexOf('/');
+        var directory = lastSlash >= 0 ? photoUrl[..lastSlash] : string.Empty;
+        var fileName = lastSlash >= 0 ? photoUrl[(lastSlash + 1)..] : photoUrl;
+
+        if (fileName.EndsWith("_thumb.jpg", StringComparison.OrdinalIgnoreCase))
+        {
+            return photoUrl;
+        }
+
+        var dotIndex = fileName.LastIndexOf('.');
+        var baseName = dotIndex > 0 ? fileName[..dotIndex] : fileName;
+        var thumbFile = $"{baseName}_thumb.jpg";
+
+        return string.IsNullOrEmpty(directory)
+            ? thumbFile
+            : $"{directory}/{thumbFile}";
+    }
+}
+
+<style>
+    .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 1rem;
+        padding: 0.5rem 0;
+    }
+    
+    .gallery-item {
+        position: relative;
+        aspect-ratio: 4/3;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .gallery-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+    
+    .gallery-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .gallery-overlay {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 0.75rem;
+    }
+    
+    .gallery-item:hover .gallery-overlay {
+        opacity: 1;
+    }
+    
+    .gallery-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .gallery-filename {
+        color: white;
+        font-size: 0.75rem;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+    
+    /* Lightbox styles */
+    .lightbox-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.9);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+    }
+    
+    .lightbox-content {
+        position: relative;
+        max-width: 90vw;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .lightbox-content img {
+        max-width: 100%;
+        max-height: 80vh;
+        object-fit: contain;
+        border-radius: 0.5rem;
+    }
+    
+    .lightbox-close {
+        position: absolute;
+        top: -2.5rem;
+        right: 0;
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 0.5rem;
+    }
+    
+    .lightbox-close:hover {
+        color: #ccc;
+    }
+    
+    .lightbox-toolbar {
+        margin-top: 1rem;
+    }
+    
+    /* Responsive adjustments */
+    @@media (max-width: 576px) {
+        .gallery-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+        }
+        
+        .gallery-item {
+            aspect-ratio: 1;
+        }
+    }
+</style>

@@ -1,0 +1,832 @@
+@page "/tour-management-dashboard"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@using Microsoft.AspNetCore.Components.Web
+
+@using Email.Models
+@using Email.TourTreeViewShapedData.Enums
+@using Email.Components.TourEmailCollectionUI
+@using Email.Components.Tours
+
+<PageTitle>Tour Management Dashboard</PageTitle>
+
+<div class="container-fluid d-flex flex-column min-vh-100" id="TourManagementDashboard-root">
+    <div class="row flex-grow-0" id="TourManagementDashboard-HeaderRow">
+        <div class="col-12" id="TourManagementDashboard-HeaderCol">
+            <div class="card mb-3" id="TourManagementDashboard-HeaderCard">
+                <div class="card-header d-flex justify-content-between align-items-center" id="TourManagementDashboard-HeaderBar">
+                    <div class="d-flex align-items-center">
+                     @*    <i class="bi bi-diagram-3 me-2"></i> *@
+                       @*  <h5 class="mb-0">Tour Management Dashboard</h5> *@
+                        @if (!string.IsNullOrWhiteSpace(latestSubject))
+                        {
+                            <small class="text-muted ms-3 d-none d-sm-inline" title="@latestSubject">Last Email: @latestSubject</small>
+                        }
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="form-check form-switch m-0 d-flex align-items-center" title="iPhone copy mode shows text dialog">
+                            <input class="form-check-input" type="checkbox" id="iphoneCopyToggleDesktop" @bind="useIPhoneCopyMode" @bind:after="SaveIPhoneCopyModeAsync" />
+                            <label class="form-check-label small ms-1" for="iphoneCopyToggleDesktop">iPhone</label>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm" style="padding:.15rem .4rem; font-size:.8rem;" @onclick="RefreshStatusesAsync" disabled="@isStatusLoading">
+                            @if (isStatusLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            }
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                            Refresh
+                        </button>
+                        <a class="btn btn-outline-info btn-sm" href="/mobile-tours" title="Switch to Mobile Dashboard" aria-label="Switch to Mobile Dashboard">
+                            <i class="bi bi-phone"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row flex-grow-1" style="min-height:0;" id="TourManagementDashboard-BodyRow">
+        <div class="col-12 d-flex flex-column flex-grow-1" style="min-height:0;" id="TourManagementDashboard-BodyCol">
+            <ul class="nav nav-tabs" role="tablist" id="TourManagementDashboard-TabsNav">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "tours" ? "active" : null)" @onclick='() => SetTab("tours")' type="button" role="tab">
+                        <i class="bi bi-diagram-3 me-1"></i> Tours
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "addTour" ? "active" : null)" @onclick='() => SetTab("addTour")' type="button" role="tab">
+                        <i class="bi bi-plus-lg me-1"></i> Add Booking
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "emails" ? "active" : null)" @onclick='() => SetTab("emails")' type="button" role="tab">
+                        <i class="bi bi-envelope me-1"></i> Email Processing
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "bookings" ? "active" : null)" @onclick='() => SetTab("bookings")' type="button" role="tab">
+                        <i class="bi bi-journal-text me-1"></i> Booking Management
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "processing" ? "active" : null)" @onclick='() => SetTab("processing")' type="button" role="tab">
+                        <i class="bi bi-cpu me-1"></i> Processing/Edit
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link @(activeTab == "live" ? "active" : null)" @onclick="ActivateLiveTab" type="button" role="tab">
+                        <i class="bi bi-inbox me-1"></i> Live Inbox
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content p-3 border border-top-0 d-flex flex-column flex-grow-1" style="min-height:0;" id="TourManagementDashboard-TabContent">
+                <div class='@($"tab-pane fade {(activeTab == "tours" ? "show active d-flex flex-column flex-grow-1" : string.Empty)}")' style="min-height:0;" id="Tab-Tours">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3 text-muted">Loading tour data...</p>
+                        </div>
+                    }
+                    else if (filteredTourTreeData?.TreeNodes?.Any() == true)
+                    {
+                        <div class="d-flex flex-column flex-grow-1" style="min-height:0;" id="Tours-ContentContainer">
+                            <div class="flex-grow-1 d-flex flex-column" style="min-height:0;" id="TourTreeDisplay-host">
+                                <TourTreeDisplay
+                                    TourData="@filteredTourTreeData"
+                                    IsLoading="@isLoading"
+                                    Args="@filterArgs"
+                                    OnApply="OnApplyFilters"
+                                    DbGuides="@availableDbGuides"
+                                    InMemoryMessages="@inMemoryMessages"
+                                    OnOpenGuideManagement="OpenGuideManagementDialog"
+                                    OnOpenMessageManagement="OpenMessageManagementDialog"
+                                    OnWalkerSelected="OnWalkerSelected"
+                                    OnVCardDownload="OnVCardDownload"
+                                    OnSmsSend="OnSmsSend"
+                                    OnWhatsAppSend="OnWhatsAppSend"
+                                    OnEmailView="OnEmailView"
+                                    OnDataRefresh="RefreshTreeDataForceFreshAsync"
+                                    OnAddBookingFromTour="HandleAddBookingFromTour"
+                                    UseIPhoneCopyMode="@useIPhoneCopyMode" />
+                            </div>
+                            <div class="d-flex justify-content-end mt-2 gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="ResetFiltersToDefaults">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filters
+                                </button>
+                                <button class="btn btn-primary btn-sm" @onclick="LoadTodayAsync">
+                                    <i class="bi bi-calendar-day me-1"></i>Today
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-5">
+                            <i class="bi bi-calendar-x display-5 text-muted"></i>
+                            <p class="mt-3 text-muted">No upcoming tours found for the selected range.</p>
+                            <div class="d-flex justify-content-center gap-2">
+                                <button class="btn btn-primary" @onclick="RefreshTreeDataForceFreshAsync">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                                </button>
+                                <button class="btn btn-outline-secondary" @onclick="ResetFiltersToDefaults">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filters
+                                </button>
+                                <button class="btn btn-outline-primary" @onclick="LoadTodayAsync">
+                                    <i class="bi bi-calendar-day me-1"></i>Today
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="tab-pane fade @(activeTab == "addTour" ? "show active" : null)" id="Tab-AddTour">
+                    <AddNewTour Prefill="addBookingPrefill" />
+                </div>
+
+                <div class="tab-pane fade @(activeTab == "emails" ? "show active" : null)" id="Tab-EmailProcessing">
+                    <div id="TourEmailCollectionAndProcessing-host">
+                        <TourEmailCollectionAndProcessing
+                            HideCollectionToolbar="true"
+                            OnProcessingCompleted="OnEmailProcessingCompleted" />
+                    </div>
+                </div>
+
+                <div class="tab-pane fade @(activeTab == "bookings" ? "show active" : null)" id="Tab-BookingManagement">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Booking Management tab - To be implemented
+                    </div>
+                </div>
+
+                <div class="tab-pane fade @(activeTab == "processing" ? "show active" : null)" id="Tab-ProcessingEdit">
+                    <div id="TourEmailProcessingPanel-host">
+                        <Email.Components.TourEmailProcessing.TourEmailProcessingPanel />
+                    </div>
+                </div>
+
+                <div class="tab-pane fade @(activeTab == "live" ? "show active" : null)" id="Tab-LiveInbox">
+                    <div id="LiveInboxViewer-host">
+                        <LiveInboxViewer />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Placeholder dialogs removed during revert; will add back in smaller segments *@
+
+@* Version Dialog - TODO: Implement version management *@
+@if (showVersionDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Version Information</h5>
+                    <button type="button" class="btn-close" @onclick="CloseVersionDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>Current Version:</strong> 1.0.0</p>
+                    <p class="text-muted">Email Project - Tour Management Dashboard</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseVersionDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Help Panel - TODO: Implement help content *@
+@if (showHelpPanel)
+{
+    <div class="help-panel @(showHelpPanel ? "show" : "")">
+        <div class="help-panel-overlay" @onclick="ToggleHelpPanel"></div>
+        <div class="help-panel-content">
+            <div class="help-panel-header">
+                <h5 class="mb-0">Help & Documentation</h5>
+                <button type="button" class="btn-close" @onclick="ToggleHelpPanel"></button>
+            </div>
+            <div class="help-panel-body">
+                <h6>Tour Management Dashboard</h6>
+                <p>This dashboard allows you to manage tour bookings, process emails, and view live inbox data.</p>
+                <hr />
+                <h6>Quick Actions</h6>
+                <ul>
+                    <li><strong>Tours Tab:</strong> View and manage tour bookings</li>
+                    <li><strong>Email Processing:</strong> Collect and process tour booking emails</li>
+                    <li><strong>Live Inbox:</strong> Monitor incoming emails in real-time</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Guide Management Dialog (migrated) -->
+@if (showGuideManagementDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-people me-2"></i>
+                        Guide Management
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseGuideManagementDialog"></button>
+                </div>
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <div class="row g-4">
+                        <div class="col-lg-6 col-md-12">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add New Guide</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label">First Name:</label>
+                                            <input type="text" class="form-control" @bind="newGuideFirstName" @oninput="ComposeNewGuideName" placeholder="Enter first name" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Last Name:</label>
+                                            <input type="text" class="form-control" @bind="newGuideLastName" @oninput="ComposeNewGuideName" placeholder="Enter last name" />
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                      @* <label class="form-label">Guide Name:</label>
+                                      <div class="form-control-plaintext">@newGuideName</div> *@
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Phone Number:</label>
+                                            <input type="tel" class="form-control" @bind="newGuidePhone" placeholder="Enter phone number" />
+                                        </div>
+                                        @* Removed per request: Guide Email input *@
+                                        @*<div class="col-md-6">
+                                            <label class="form-label">Email:</label>
+                                            <input type="email" class="form-control" @bind="newGuideEmail" placeholder="Enter email address" />
+                                        </div>*@
+                                    </div>
+                                    <div class="mb-3">
+                                      @* <label class="form-label">Guide Image (URL or path):</label>
+                                        <input type="text" class="form-control" @bind="newGuideImage" placeholder="/images/guides/jon.jpg or https://..." /> *@
+                                    </div>
+                                    @* Where to meet handled by Tours dialog later
+                                    <div class="mb-3">
+                                        <label class="form-label">Where to Meet:</label>
+                                        <input type="text" class="form-control" @bind="newGuideMeetingLocation" placeholder="Enter meeting location" />
+                                    </div>
+                                    *@
+                                    <div class="mb-3">
+                                      @*  <label class="form-label">Description/Info:</label>
+                                        <div class="mb-2">
+                                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{walker}"))" title="Walker name">
+                                                    <i class="bi bi-person me-1"></i>{walker}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{tour}"))" title="Tour name">
+                                                    <i class="bi bi-map me-1"></i>{tour}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{date}"))" title="Tour date">
+                                                    <i class="bi bi-calendar me-1"></i>{date}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{phone}"))" title="Contact phone">
+                                                    <i class="bi bi-telephone me-1"></i>{phone}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guide}"))" title="Guide name">
+                                                    <i class="bi bi-person-badge me-1"></i>{guide Full Name}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guidePhone}"))" title="Guide phone">
+                                                    <i class="bi bi-telephone-plus me-1"></i>{guidePhone}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideEmail}"))" title="Guide email">
+                                                    <i class="bi bi-envelope me-1"></i>{guideEmail}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{meetingLocation}"))" title="Meeting location">
+                                                    <i class="bi bi-geo-alt me-1"></i>{meetingLocation}
+                                                </button>
+                                                @* Guide full field set *@
+                                              @*  <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideFirstName}"))" title="Guide first name">
+                                                    <i class="bi bi-person me-1"></i>{guideFirstName}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideLastName}"))" title="Guide last name">
+                                                    <i class="bi bi-person me-1"></i>{guideLastName}
+                                                </button> *@
+                                              @*  <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideImage}"))" title="Guide image URL">
+                                                    <i class="bi bi-card-image me-1"></i>{guideImage}
+                                                </button> *@
+                                              @*  <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideDescription}"))" title="Guide description">
+                                                    <i class="bi bi-info-circle me-1"></i>{guideDescription}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideDefaultTourName}"))" title="Guide default tour name">
+                                                    <i class="bi bi-map me-1"></i>{guideDefaultTourName}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideDefaultTourId}"))" title="Guide default tour id">
+                                                    <i class="bi bi-hash me-1"></i>{guideDefaultTourId}
+                                                </button> *@
+                                              @*  <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideIsTouring}"))" title="Guide touring flag">
+                                                    <i class="bi bi-toggle-on me-1"></i>{guideIsTouring}
+                                                </button> *@
+                                                @* Removed per request: Availability notes placeholder *@
+                                                @*<button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideAvailabilityNotes}"))" title="Availability notes">
+                                                    <i class="bi bi-journal-text me-1"></i>{guideAvailabilityNotes}
+                                                </button>*@
+                                             @*   <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideAvailabilityUpdatedAt}"))" title="Availability updated at">
+                                                    <i class="bi bi-calendar-event me-1"></i>{guideAvailabilityUpdatedAt}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideIsActive}"))" title="Guide active flag">
+                                                    <i class="bi bi-check-circle me-1"></i>{guideIsActive}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideHireDate}"))" title="Hire date">
+                                                    <i class="bi bi-calendar-plus me-1"></i>{guideHireDate}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideTerminationDate}"))" title="Termination date">
+                                                    <i class="bi bi-calendar-x me-1"></i>{guideTerminationDate}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideLanguages}"))" title="Languages">
+                                                    <i class="bi bi-translate me-1"></i>{guideLanguages}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideSpecialties}"))" title="Specialties">
+                                                    <i class="bi bi-star me-1"></i>{guideSpecialties}
+                                                </button> *@
+                                                @* Removed per request: Notes placeholder *@
+                                                @*<button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideNotes}"))" title="Notes">
+                                                    <i class="bi bi-journal-richtext me-1"></i>{guideNotes}
+                                                </button>*@
+                                           @*     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideCreatedAt}"))" title="Created at">
+                                                    <i class="bi bi-clock-history me-1"></i>{guideCreatedAt}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{guideUpdatedAt}"))" title="Updated at">
+                                                    <i class="bi bi-clock-history me-1"></i>{guideUpdatedAt}
+                                                </button> *@
+                                             @*    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{tourStartTime}"))" title="Tour start time">
+                                                    <i class="bi bi-clock me-1"></i>{tourStartTime}
+                                                </button>
+                                                <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{meetingTime}"))" title="Meeting time">
+                                                    <i class="bi bi-clock-history me-1"></i>{meetingTime}
+                                                </button> *@
+                                              @*  <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{meetingInstructions}"))" title="Meeting instructions">
+                                                    <i class="bi bi-signpost me-1"></i>{meetingInstructions}
+                                                </button> *@
+                                             @*    <button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newGuideDescription", "{vendorName}"))" title="Vendor name">
+                                                    <i class="bi bi-building me-1"></i>{vendorName}
+                                                </button> 
+                                            </div>
+                                        </div>
+                                      <textarea class="form-control" rows="3" @bind="newGuideDescription" id="newGuideDescription" placeholder="Enter additional information, description, notes, etc."></textarea>*@
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                           @*  <label class="form-label">Default Tour Name:</label>
+                                            <select class="form-select" @bind="newGuideDefaultTourName">
+                                                <option value="">-- select tour --</option>
+                                                @foreach (var name in distinctTourNames)
+                                                {
+                                                    <option value="@name">@name</option>
+                                                }
+                                            </select> *@
+                                        </div>
+                                        <div class="col-md-6 d-flex align-items-end">
+                                           @* tody maybe put back if active/non active no longer works <div class="form-check form-switch me-3">
+                                                <input class="form-check-input" type="checkbox" id="guideIsTouring" @bind="newGuideIsTouring" />
+                                                <label class="form-check-label" for="guideIsTouring">Is Touring</label>
+                                            </div> *@
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" id="guideIsActive" @bind="newGuideIsActive" />
+                                                <label class="form-check-label" for="guideIsActive">Is Active</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    @* Commented per request:
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Languages (no commas):</label>
+                                            <input type="text" class="form-control" @bind="newGuideLanguages" placeholder="e.g., English Spanish" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Specialties (no commas):</label>
+                                            <input type="text" class="form-control" @bind="newGuideSpecialties" placeholder="e.g., Food Tours History" />
+                                        </div>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Hire Date:</label>
+                                            <input type="date" class="form-control" @bind="newGuideHireDate" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Termination Date:</label>
+                                            <input type="date" class="form-control" @bind="newGuideTerminationDate" />
+                                        </div>
+                                    </div>
+                                    *@
+                                    @* Removed per request: Notes sections *@
+                                    @*<div class="mb-3 mt-2">
+                                        <label class="form-label">Availability Notes:</label>
+                                        <textarea class="form-control" rows="2" @bind="newGuideAvailabilityNotes" placeholder="e.g., Vacation until 10/20"></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Internal Notes:</label>
+                                        <textarea class="form-control" rows="2" @bind="newGuideNotes" placeholder="Internal notes about the guide"></textarea>
+                                    </div>*@
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-success btn-sm" @onclick="AddGuide" disabled="@string.IsNullOrEmpty(newGuideName)">
+                                            <i class="bi bi-check2-circle me-1"></i>
+                                            @(editingGuideId.HasValue ? "Save Guide" : "Add Guide")
+                                        </button>
+                                        @if (editingGuideId.HasValue)
+                                        {
+                                            <button class="btn btn-secondary btn-sm" @onclick="CancelGuideEdit">
+                                                <i class="bi bi-x-circle me-1"></i>
+                                                Cancel Edit
+                                            </button>
+                                        }
+                                        <button class="btn btn-warning btn-sm" @onclick="ClearGuideForm">
+                                            <i class="bi bi-eraser me-1"></i>
+                                            Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6 col-md-12">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Guides (@inMemoryGuides.Count)</h6>
+                                </div>
+                                <div class="card-body">
+                                    @if (inMemoryGuides.Any())
+                                    {
+                                        <div class="list-group list-group-flush">
+                                            @foreach (var guide in inMemoryGuides)
+                                            {
+                                                <div class="list-group-item d-flex justify-content-between align-items-start border-0 px-0" @onclick="@(() => EditGuide(guide))" style="cursor: pointer;">
+                                                    <div class="flex-grow-1">
+                                                        <strong>@guide.Name</strong><br />
+                                                        <small class="text-muted">
+                                                            @guide.Phone | @guide.Email
+                                                            @if (!string.IsNullOrEmpty(guide.MeetingLocation))
+                                                            {
+                                                                <br /> @guide.MeetingLocation
+                                                            }
+                                                        </small>
+                                                        @if (!string.IsNullOrEmpty(guide.Description))
+                                                        {
+                                                            <br /><small class="text-muted">@guide.Description</small>
+                                                        }
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-primary btn-sm" @onclick="@(() => EditGuide(guide))" @onclick:stopPropagation="true" title="Edit guide">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </button>
+                                                        <button class="btn btn-outline-danger btn-sm" @onclick="@(() => RemoveGuide(guide))" @onclick:stopPropagation="true" title="Remove guide">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="mt-3">
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="ClearAllGuides">
+                                                <i class="bi bi-trash me-1"></i>
+                                                Clear All Guides
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-info mb-0">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            No guides added yet. Add your first guide using the form on the left.
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseGuideManagementDialog">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@* Message Management Dialog (migrated)
+@if (showMessageManagementDialog)
+{
+	<div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+		<div class="modal-dialog modal-xl">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title">
+						<i class="bi bi-chat-text me-2"></i>
+						Message Management
+					</h5>
+					<button type="button" class="btn-close" @onclick="CloseMessageManagementDialog"></button>
+				</div>
+				<div class="modal-body">
+					<div class="row g-4">
+						<div class="col-lg-6 col-md-12">
+							<div class="card h-100">
+								<div class="card-header">
+									<h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add New Message Template</h6>
+								</div>
+								<div class="card-body">
+									@if (!string.IsNullOrWhiteSpace(lastMessageError))
+									{
+										<div class="alert alert-warning" role="alert">
+											<strong>Message save failed:</strong> @lastMessageError
+										</div>
+									}
+									<div class="mb-3">
+										<label class="form-label">Message Name:</label>
+										<input type="text" class="form-control" @bind="newMessageName" placeholder="Enter message name (e.g., Welcome, Reminder)" />
+									</div>
+									<div class="mb-3">
+										<label class="form-label">Message Type:</label>
+										<select class="form-select" @bind="newMessageType">
+											<option value="">Select type...</option>
+											<option value="welcome">Welcome Message</option>
+											<option value="tomorrow">Tomorrow</option>
+											<option value="dayOf">Day of</option>
+											<option value="basedOnDate">Based on date</option>
+											<option value="custom">Custom</option>
+										</select>
+									</div>
+
+									<div class="mb-3">
+										<label class="form-label">Tour (for template context):</label>
+										<select class="form-select"
+												value="@(newMessageTourId?.ToString() ?? (string.Equals(newMessageTourName, "All", StringComparison.OrdinalIgnoreCase) ? "ALL" : string.Empty))"
+												@onchange="@(e => { var val = e.Value?.ToString(); if (string.Equals(val, "ALL", StringComparison.OrdinalIgnoreCase)) { newMessageTourId = null; newMessageTourName = "All"; newMessageTourStartTime = null; messageTimeOptions = new List<string>(); } else { newMessageTourId = int.TryParse(val, out var id) ? id : null; OnMessageTourChanged(); } })">
+											<option value="">-- select tour --</option>
+											<option value="ALL">All tours</option>
+											@foreach (var t in distinctToursForContext)
+											{
+												<option value="@t.Id">@FormatTourLabel(t)</option>
+											}
+										</select>
+									</div>
+
+									<div class="mb-3">
+										<label class="form-label">Guide (optional context):</label>
+										<select class="form-select" @bind="newMessageGuideId">
+											<option value="">-- select guide --</option>
+											@foreach (var g in availableDbGuides)
+											{
+												<option value="@g.Id">@($"{g.FirstName} {g.LastName}")</option>
+											}
+										</select>
+									</div>
+
+									<div class="mb-3">
+										<div class="d-flex justify-content-between align-items-center">
+											<label class="form-label mb-0">Message Content</label>
+											<div class="btn-group btn-group-sm" role="group">
+												<button type="button" class="btn btn-outline-secondary @(messageEditorTab=="edit"?"active":null)" @onclick="SetMessageEditorTabToEdit">Edit</button>
+												<button type="button" class="btn btn-outline-secondary @(messageEditorTab=="preview"?"active":null)" @onclick="SetMessageEditorTabToPreview">Preview</button>
+											</div>
+										</div>
+										<div class="mb-2">
+											<div class="d-flex flex-wrap gap-1 mb-2">
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walker}"))" title="Walker name"><i class="bi bi-person me-1"></i>{walker}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerFirst}"))" title="Walker first name"><i class="bi bi-person me-1"></i>{walkerFirst}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{walkerLast}"))" title="Walker last name"><i class="bi bi-person me-1"></i>{walkerLast}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{phone}"))" title="Contact phone"><i class="bi bi-telephone me-1"></i>{phone}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tour}"))" title="Tour name"><i class="bi bi-map me-1"></i>{tour}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{date}"))" title="Tour date"><i class="bi bi-calendar me-1"></i>{date}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourDayOfWeek}"))" title="Tour day of week"><i class="bi bi-calendar-week me-1"></i>{tourDayOfWeek}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourMonthAndDayOrdinal}"))" title="Tour month + day ordinal"><i class="bi bi-calendar2-day me-1"></i>{tourMonthAndDayOrdinal}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{monthOfTour}"))" title="Month of tour"><i class="bi bi-calendar3 me-1"></i>{monthOfTour}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDate}"))" title="Display date (raw)"><i class="bi bi-calendar-date me-1"></i>{displayDate}</button>
+												<button type="button" class="btn btn-outline-primary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayDayOrdinal}"))" title="Display day ordinal"><i class="bi bi-123 me-1"></i>{displayDayOrdinal}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{displayTime}"))" title="Display time (raw)"><i class="bi bi-clock-history me-1"></i>{displayTime}</button>
+												<button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guide}"))" title="Guide full name"><i class="bi bi-person-badge me-1"></i>{guide}</button>
+												<button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideFirstName}"))" title="Guide first name"><i class="bi bi-person me-1"></i>{guideFirstName}</button>
+												<button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideLastName}"))" title="Guide last name"><i class="bi bi-person me-1"></i>{guideLastName}</button>
+												<button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guidePhone}"))" title="Guide phone"><i class="bi bi-telephone-plus me-1"></i>{guidePhone}</button>
+												<button type="button" class="btn btn-outline-success btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{guideEmail}"))" title="Guide email"><i class="bi bi-envelope me-1"></i>{guideEmail}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tourStartTime}"))" title="Tour start time"><i class="bi bi-clock me-1"></i>{tourStartTime}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingLocation}"))" title="Meeting location"><i class="bi bi-geo-alt me-1"></i>{meetingLocation}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingTime}"))" title="Meeting time"><i class="bi bi-clock-history me-1"></i>{meetingTime}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempMeetingTime}"))" title="Start -10 minutes (fallback from tour start)"><i class="bi bi-clock-history me-1"></i>start -10</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{startMinus10}"))" title="Alias of {tempMeetingTime}"><i class="bi bi-clock-history me-1"></i>{startMinus10}</button>
+												<button type="button" class="btn btn-outline-secondary btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{tempSignature}"))" title="Temp signature link (vendor-based)"><i class="bi bi-link-45deg me-1"></i>{tempSignature}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{meetingInstructions}"))" title="Meeting instructions"><i class="bi bi-signpost me-1"></i>{meetingInstructions}</button>
+												<button type="button" class="btn btn-outline-info btn-sm" @onclick="@(() => InsertTemplateField("newMessageContent", "{vendorName}"))" title="Vendor name"><i class="bi bi-building me-1"></i>{vendorName}</button>
+											</div>
+										</div>
+										@if (messageEditorTab == "edit")
+										{
+											<textarea class="form-control" rows="8" @bind="newMessageContent" @bind:event="oninput" id="newMessageContent" placeholder="Enter message content..."></textarea>
+										}
+										else
+										{
+											<div class="form-control" style="height: auto; min-height: 12rem; white-space: pre-wrap;">
+												@RenderMessagePreview()
+											</div>
+										}
+									</div>
+
+									<div class="row g-2">
+										<div class="col-md-6">
+											<label class="form-label">Signature (optional):</label>
+											<input type="text" class="form-control" @bind="newMessageSignature" @bind:event="oninput" placeholder="Enter signature" />
+										</div>
+										<div class="col-md-6">
+											<label class="form-label">Description (optional):</label>
+											<input type="text" class="form-control" @bind="newMessageDescription" @bind:event="oninput" placeholder="Internal description" />
+										</div>
+									</div>
+
+									<div class="form-check form-switch mt-2">
+										<input class="form-check-input" type="checkbox" id="msgIsActive" @bind="newMessageIsActive" />
+										<label class="form-check-label" for="msgIsActive">Is Active</label>
+									</div>
+
+									<div class="d-flex gap-2 mt-3">
+										<button class="btn btn-success btn-sm" @onclick="AddMessageTemplate" disabled="@string.IsNullOrWhiteSpace(newMessageName)">
+											<i class="bi bi-check2-circle me-1"></i>
+											@(editingMessageId.HasValue ? "Save Message" : "Add Message")
+										</button>
+										@if (editingMessageId.HasValue)
+										{
+											<button class="btn btn-secondary btn-sm" @onclick="CancelMessageEdit">
+												<i class="bi bi-x-circle me-1"></i>
+												Cancel Edit
+											</button>
+										}
+										<button class="btn btn-warning btn-sm" @onclick="ClearMessageForm">
+											<i class="bi bi-eraser me-1"></i>
+											Clear
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="col-lg-6 col-md-12">
+							<div class="card h-100">
+								<div class="card-header">
+									<h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Messages (@inMemoryMessages.Count)</h6>
+								</div>
+								<div class="card-body">
+									@if (inMemoryMessages.Any())
+									{
+										<div class="list-group list-group-flush">
+											@foreach (var message in inMemoryMessages)
+											{
+												<div class="list-group-item d-flex justify-content-between align-items-start border-0 px-0" style="cursor:pointer;" @onclick="@(() => LoadMessageByInMemoryId(message.Id))">
+													<div class="flex-grow-1">
+														<strong>@message.Name</strong>
+														<span class="badge bg-secondary ms-2">@message.Type</span><br/>
+														<small class="text-muted">
+															@if (!string.IsNullOrEmpty(message.Description))
+															{
+																@message.Description<br/>
+															}
+															<div id="messageTemplatePreviewInList" class="mt-2" style="max-height: 120px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px;">
+																<pre style="margin: 0; white-space: pre-wrap; font-size: 0.875rem; color: #6c757d;">@message.Content</pre>
+															</div>
+														</small>
+													</div>
+													<div class="btn-group btn-group-sm">
+														<button class="btn btn-outline-primary btn-sm" @onclick="@(() => EditDbMessageTemplate(dbMessages.First(m => m.Id.ToString() == message.Id)))" @onclick:stopPropagation="true" title="Edit message">
+															<i class="bi bi-pencil-square"></i>
+														</button>
+														<button class="btn btn-outline-danger btn-sm" @onclick="@(() => RemoveDbMessageTemplate(dbMessages.First(m => m.Id.ToString() == message.Id)))" @onclick:stopPropagation="true" title="Remove message">
+															<i class="bi bi-trash"></i>
+														</button>
+													</div>
+												</div>
+											}
+										</div>
+									}
+									else
+									{
+										<div class="alert alert-info mb-0">
+											<i class="bi bi-info-circle me-2"></i>
+											No messages added yet. Add your first message using the form on the left.
+										</div>
+									}
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" @onclick="CloseMessageManagementDialog">Close</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+*@
+
+<style>
+    .help-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: 100%;
+        z-index: 1050;
+    }
+
+    .help-panel-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+    }
+
+    .help-panel-content {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 33.333333%;
+        height: 100%;
+        box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+        overflow-y: auto;
+        pointer-events: auto;
+        transform: translateX(100%);
+        transition: transform 0.3s ease-in-out;
+    }
+
+    .help-panel.show .help-panel-content {
+        transform: translateX(0);
+    }
+
+    .help-panel-header {
+        padding: 1rem;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .help-panel-body {
+        padding: 1rem;
+        height: calc(100vh - 120px);
+        overflow-y: auto;
+    }
+
+    @@media (max-width: 768px) {
+        .help-panel-content {
+            width: 100%;
+        }
+    }
+</style>
+
+<script>
+    // Initialize Bootstrap tooltips for disabled elements
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+</script>
+
+<style>
+    /* Live inbox layout to prevent overlap and ensure consistent wrapping (no media queries) */
+    .live-inbox .e-listview .e-list-item {
+        padding: .5rem .75rem;
+    }
+    .live-inbox-item {
+        display: flex;
+        flex-wrap: wrap;
+        column-gap: .75rem;
+        row-gap: .5rem;
+        align-items: flex-start;
+    }
+    .live-inbox-left {
+        flex: 1 1 300px;
+        min-width: 0; /* allow children to wrap */
+    }
+    .live-inbox-left .from,
+    .live-inbox-left .subject {
+        white-space: normal;
+        word-break: break-word;
+    }
+    .live-inbox-right {
+        flex: 0 0 160px; /* fixed column that wraps to next line when too narrow */
+        text-align: right;
+    }
+    .live-inbox-right .date {
+        white-space: nowrap;
+    }
+</style>

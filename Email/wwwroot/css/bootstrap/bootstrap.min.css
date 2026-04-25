@@ -1,0 +1,5 @@
+/* 2025-11-19 00:00 UTC - Path alignment shim to mirror Workstation
+   Delegates to existing local Bootstrap asset to avoid duplication. */
+@import url("../../../bootstrap/bootstrap.min.css");
+
+

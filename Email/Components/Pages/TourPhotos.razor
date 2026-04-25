@@ -1,0 +1,230 @@
+@* 2025-12-21 - Tour Photos page - standalone photo management *@
+@page "/tour-photos"
+@using Email.Services
+@using Email.Components.Tours
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@inject ITourPhotoService PhotoService
+@inject ITourTreeService TourTreeService
+
+<div class="container-fluid py-3">
+    <div class="row mb-4">
+        <div class="col">
+            <h4 class="mb-0">
+                <i class="bi bi-camera me-2"></i>Tour Photos
+            </h4>
+            <p class="text-muted mb-0">Upload and manage group photos for tours</p>
+        </div>
+    </div>
+
+    @* Action Buttons *@
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-outline-primary" @onclick="() => showUploader = !showUploader">
+                    <i class="bi bi-upload me-1"></i>
+                    @(showUploader ? "Hide Uploader" : "Upload Photo")
+                </button>
+                <button class="btn btn-primary" @onclick="OpenCamera">
+                    <i class="bi bi-camera me-1"></i>Take Photo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* Upload Section *@
+    @if (showUploader)
+    {
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-upload me-2"></i>Upload Photo
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Tour Date</label>
+                                <input type="date" class="form-control" @bind="uploadDate" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Tour Name</label>
+                                <input type="text" class="form-control" list="tourNamesList" @bind="uploadTourName" placeholder="Select or enter tour name..." />
+                                <datalist id="tourNamesList">
+                                    @foreach (var name in tourNames)
+                                    {
+                                        <option value="@name" />
+                                    }
+                                </datalist>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Tour Time</label>
+                                <input type="text" class="form-control" @bind="uploadTourTime" placeholder="e.g., 10:00 AM" />
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(uploadTourName))
+                        {
+                            <TourPhotoComponent 
+                                TourDate='@uploadDate.ToString("yyyy-MM-dd")'
+                                TourName="@uploadTourName"
+                                TourTime="@uploadTourTime"
+                                OnPhotoSaved="OnPhotoSaved" />
+                        }
+                        else
+                        {
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle me-2"></i>Enter a tour name to start uploading.
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Camera Capture Modal *@
+    <CameraCapture @bind-isOpen="showCamera" OnPhotoCaptured="OnPhotoCaptured" />
+
+    @* Photo Gallery *@
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-images me-2"></i>All Photos
+                        @if (allPhotos.Count > 0)
+                        {
+                            <span class="badge bg-primary ms-2">@filteredPhotos.Count</span>
+                        }
+                    </h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select class="form-select form-select-sm" style="width: auto;" @bind="filterFolder" @bind:after="ApplyFilter">
+                            <option value="">All Dates</option>
+                            @foreach (var folder in dateFolders)
+                            {
+                                <option value="@folder">@folder</option>
+                            }
+                        </select>
+                        <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllPhotos" title="Refresh">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border" role="status"></div>
+                            <p class="mt-2">Loading photos...</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <TourPhotoGallery 
+                            Photos="@filteredPhotos.Select(p => p.Path).ToList()" 
+                            AllowDelete="true"
+                            OnPhotoDeleted="LoadAllPhotos" />
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<PhotoInfo> allPhotos = new();
+    private List<PhotoInfo> filteredPhotos = new();
+    private List<string> dateFolders = new();
+    private List<string> tourNames = new();
+    private string filterFolder = "";
+    private bool isLoading = true;
+    private bool showUploader = false;
+    private bool showCamera = false;
+    
+    // Upload form fields
+    private DateTime uploadDate = DateTime.Today;
+    private string uploadTourName = "Quick Photo";
+    private string uploadTourTime = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load tour names for autocomplete
+        try
+        {
+            tourNames = await TourTreeService.GetDistinctTourNamesAsync();
+        }
+        catch { tourNames = new(); }
+        
+        await LoadAllPhotos();
+    }
+
+    private async Task LoadAllPhotos()
+    {
+        isLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            allPhotos = await PhotoService.GetAllPhotosAsync();
+            dateFolders = allPhotos.Select(p => p.DateFolder).Distinct().OrderByDescending(d => d).ToList();
+            ApplyFilter();
+        }
+        catch
+        {
+            allPhotos = new();
+            filteredPhotos = new();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(filterFolder))
+        {
+            filteredPhotos = allPhotos;
+        }
+        else
+        {
+            filteredPhotos = allPhotos.Where(p => p.DateFolder == filterFolder).ToList();
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnPhotoSaved()
+    {
+        await LoadAllPhotos();
+        showUploader = false;
+    }
+
+    private void OpenCamera()
+    {
+        showCamera = true;
+        StateHasChanged();
+    }
+
+    private async Task OnPhotoCaptured(string imageData)
+    {
+        // Save the captured photo directly using today's date and a default tour name
+        // User can edit these later if needed
+        var tourDate = DateTime.Today.ToString("yyyy-MM-dd");
+        var tourName = string.IsNullOrWhiteSpace(uploadTourName) ? "Quick Photo" : uploadTourName;
+        var tourTime = string.IsNullOrWhiteSpace(uploadTourTime) ? DateTime.Now.ToString("h:mm tt") : uploadTourTime;
+
+        var savedPath = await PhotoService.SavePhotoAsync(imageData, tourDate, tourName, tourTime);
+        
+        if (!string.IsNullOrWhiteSpace(savedPath))
+        {
+            await LoadAllPhotos();
+        }
+        
+        showCamera = false;
+        StateHasChanged();
+    }
+}
+

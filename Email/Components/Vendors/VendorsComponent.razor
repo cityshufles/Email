@@ -1,0 +1,221 @@
+@using Email.Models
+
+<div class="card shadow-sm" id="VendorsComponent-root">
+    <div class="card-body">
+        <ul class="nav nav-tabs" role="tablist" id="VendorsComponent-TabsNav">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "create" ? "active" : null)" @onclick='() => SetTab("create")' type="button" role="tab">
+                    <i class="bi bi-plus-circle me-1"></i> Create vendor
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "list" ? "active" : null)" @onclick='() => SetTab("list")' type="button" role="tab">
+                    <i class="bi bi-list-ul me-1"></i> Vendors list
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content p-3 border border-top-0" id="VendorsComponent-TabContent">
+            <div class="tab-pane fade @(activeTab == "create" ? "show active" : null)" id="VendorsComponent-TabCreate">
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (!string.IsNullOrWhiteSpace(lastVendorError))
+                                {
+                                    <div class="alert alert-warning" role="alert">
+                                        <strong>Vendor save failed:</strong> @lastVendorError
+                                    </div>
+                                }
+                                <div class="mb-3">
+                                    <label class="form-label">Vendor Name</label>
+                                    <input class="form-control" @bind="vendorName" placeholder="Enter vendor name (e.g., GuruWalk)" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">All Tours Link (optional)</label>
+                                    <input class="form-control" @bind="vendorAllToursLink" placeholder="https://..." />
+                                </div>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="vendorIsActive" @bind="vendorIsActive" />
+                                    <label class="form-check-label" for="vendorIsActive">Is Active</label>
+                                </div>
+
+                                <div class="d-flex gap-2 mt-3">
+                                    <button class="btn btn-success btn-sm" @onclick="SaveVendorAsync" disabled="@string.IsNullOrWhiteSpace(vendorName)">
+                                        <i class="bi bi-check2-circle me-1"></i>
+                                        @(editingVendorId.HasValue ? "Save Vendor" : "Add Vendor")
+                                    </button>
+                                    @if (editingVendorId.HasValue)
+                                    {
+                                        <button class="btn btn-secondary btn-sm" @onclick="CancelVendorEdit">
+                                            <i class="bi bi-x-circle me-1"></i>
+                                            Cancel Edit
+                                        </button>
+                                    }
+                                    <button class="btn btn-warning btn-sm" @onclick="ClearVendorForm">
+                                        <i class="bi bi-eraser me-1"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (isLoading)
+                                {
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status"></div>
+                                        <div class="mt-2">Loading vendors...</div>
+                                    </div>
+                                }
+                                else if (vendors.Count > 0)
+                                {
+                                    <div class="d-flex flex-column gap-3">
+                                        @foreach (var vendor in vendors)
+                                        {
+                                            <div class="border rounded p-2">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <strong>@vendor.VendorName</strong>
+                                                        <span class="badge @(vendor.IsActive ? "bg-success" : "bg-secondary") ms-2">
+                                                            @(vendor.IsActive ? "Active" : "Inactive")
+                                                        </span>
+                                                        <span class="badge bg-light text-dark ms-2">
+                                                            @GetVendorTourCount(vendor.Id) tours
+                                                        </span>
+                                                    </div>
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-primary btn-sm" @onclick="@(() => EditVendorById(vendor.Id))" title="Edit vendor">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(vendor.AllToursLink))
+                                                {
+                                                    <div class="text-muted small mt-1">@vendor.AllToursLink</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-info mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        No vendors added yet. Add your first vendor using the form on the left.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade @(activeTab == "list" ? "show active" : null)" id="VendorsComponent-TabList">
+                <div class="row g-4">
+                    <div class="col-lg-5">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (isLoading)
+                                {
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status"></div>
+                                        <div class="mt-2">Loading vendors...</div>
+                                    </div>
+                                }
+                                else if (vendors.Count == 0)
+                                {
+                                    <div class="text-muted">No vendors found.</div>
+                                }
+                                else
+                                {
+                                    <div class="list-group">
+                                        @foreach (var vendor in vendors)
+                                        {
+                                            var isSelected = selectedVendorId.HasValue && selectedVendorId.Value == vendor.Id;
+                                            <button type="button"
+                                                    class="list-group-item list-group-item-action @(isSelected ? "active" : "")"
+                                                    @onclick="@(() => SelectVendor(vendor.Id))">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <div class="fw-semibold">@vendor.VendorName</div>
+                                                        @if (!string.IsNullOrWhiteSpace(vendor.AllToursLink))
+                                                        {
+                                                            <div class="small @(isSelected ? "text-white-50" : "text-muted")">@vendor.AllToursLink</div>
+                                                        }
+                                                    </div>
+                                                    <div class="text-end">
+                                                        <div class="small">@GetVendorTourCount(vendor.Id) tours</div>
+                                                        <span class="badge @(vendor.IsActive ? "bg-success" : "bg-secondary")">
+                                                            @(vendor.IsActive ? "Active" : "Inactive")
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                @if (!string.IsNullOrWhiteSpace(lastVendorTourError))
+                                {
+                                    <div class="alert alert-warning" role="alert">
+                                        <strong>Tour assignment failed:</strong> @lastVendorTourError
+                                    </div>
+                                }
+
+                                @if (SelectedVendor == null)
+                                {
+                                    <div class="text-muted">Select a vendor to manage supported tours.</div>
+                                }
+                                else if (masterTourNames.Count == 0)
+                                {
+                                    <div class="text-muted">No active master tours found to assign.</div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <div class="fw-semibold">Tours for @SelectedVendor.VendorName</div>
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="@(() => EditVendorById(SelectedVendor.Id))">
+                                            <i class="bi bi-pencil-square me-1"></i>Edit
+                                        </button>
+                                    </div>
+                                    <div class="vendor-tours-list">
+                                        @foreach (var tourName in masterTourNames)
+                                        {
+                                            var isChecked = IsVendorTourSelected(SelectedVendor.Id, tourName);
+                                            <div class="form-check">
+                                                <input class="form-check-input"
+                                                       type="checkbox"
+                                                       checked="@isChecked"
+                                                       @onchange="@((ChangeEventArgs e) => ToggleVendorTourAsync(SelectedVendor.Id, tourName, e))" />
+                                                <label class="form-check-label">@tourName</label>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="text-muted small mt-2">
+                                        Master tour list is built from distinct active <code>MasterTourName</code> values.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .vendor-tours-list {
+        max-height: 520px;
+        overflow-y: auto;
+        padding-right: 0.25rem;
+    }
+</style>

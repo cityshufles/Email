@@ -1,0 +1,456 @@
+@page "/signalr-diagnostics"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin,Manager")]
+@using Email.Services.SignalRDiagnostics
+@using Microsoft.Extensions.Options
+@inject IWebHostEnvironment HostEnvironment
+@inject IOptions<SignalRDiagnosticsOptions> DiagnosticsOptions
+
+<PageTitle>SignalR Diagnostics</PageTitle>
+
+<div class="container-fluid p-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h3 class="mb-0">
+            <i class="bi bi-broadcast-pin me-2"></i>SignalR Diagnostics
+        </h3>
+        <button class="btn btn-outline-primary btn-sm" @onclick="ReloadAsync" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    @if (!options.Enabled)
+    {
+        <div class="alert alert-warning mb-3">
+            <strong>Diagnostics Disabled:</strong> Set <code>SignalRDiagnostics:Enabled=true</code> in appsettings to capture and view events.
+        </div>
+    }
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-12 col-md-4">
+                    <label class="form-label mb-1 small text-muted">Log File</label>
+                    <select class="form-select form-select-sm" @onchange="OnFileChanged" disabled="@isLoading || !logFiles.Any()">
+                        @if (!logFiles.Any())
+                        {
+                            <option value="">No log files found</option>
+                        }
+                        else
+                        {
+                            @foreach (var file in logFiles)
+                            {
+                                <option value="@file.FileName" selected="@(file.FileName == selectedFileName)">
+                                    @($"{file.FileName} ({FormatFileSize(file.Size)})")
+                                </option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label mb-1 small text-muted">Show Rows</label>
+                    <select class="form-select form-select-sm" @bind="maxRows">
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                        <option value="2000">2000</option>
+                        <option value="5000">5000</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label mb-1 small text-muted">Event Type</label>
+                    <select class="form-select form-select-sm" @bind="eventFilter">
+                        <option value="">All Events</option>
+                        @foreach (var eventName in eventTypeOptions)
+                        {
+                            <option value="@eventName">@eventName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label mb-1 small text-muted">Cause</label>
+                    <select class="form-select form-select-sm" @bind="causeFilter">
+                        <option value="">All Causes</option>
+                        @foreach (var causeName in causeOptions)
+                        {
+                            <option value="@causeName">@causeName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label mb-1 small text-muted">Search (route, method, details, user)</label>
+                    <input class="form-control form-control-sm" @bind="searchText" placeholder="e.g. /guide-report, CircuitConnectionDown, offline" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-2 d-flex flex-wrap gap-2 align-items-center">
+        <span class="badge bg-secondary">Loaded: @entries.Count</span>
+        <span class="badge bg-primary">Filtered: @filteredEntries.Count</span>
+        <span class="badge bg-info text-dark">Path: @activeLogDirectory</span>
+        @if (lastLoadedAtLocal is not null)
+        {
+            <span class="badge bg-light text-dark">Last refresh: @lastLoadedAtLocal.Value.ToString("MM/dd/yyyy hh:mm:ss tt")</span>
+        }
+    </div>
+
+    @if (!entries.Any())
+    {
+        <div class="alert alert-info">
+            No SignalR diagnostics entries found yet. Trigger activity in <code>/mobile-tours</code>, <code>/tour-management-dashboard</code>, or <code>/guide-report</code> and refresh.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm table-striped table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Time (ET)</th>
+                        <th>Event</th>
+                        <th>Cause</th>
+                        <th>Route</th>
+                        <th>Method</th>
+                        <th>Circuit</th>
+                        <th>Connection</th>
+                        <th>User</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in filteredEntries.Take(maxRows))
+                    {
+                        <tr>
+                            <td class="text-nowrap">@entry.TimestampET</td>
+                            <td>
+                                <span class="badge bg-dark">@entry.EventType</span>
+                                @if (!string.Equals(entry.TargetRouteMarker, "(none)", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div><span class="badge bg-warning text-dark mt-1">@entry.TargetRouteMarker</span></div>
+                                }
+                            </td>
+                            <td class="text-nowrap">@entry.Cause</td>
+                            <td class="small text-break">@entry.Route</td>
+                            <td class="small text-break">@entry.Method</td>
+                            <td class="small text-break">@entry.CircuitId</td>
+                            <td class="small text-break">@entry.ConnectionId</td>
+                            <td class="small text-break">@entry.User</td>
+                            <td style="min-width: 260px;">
+                                <details>
+                                    <summary class="small">View</summary>
+                                    <div class="small text-break mt-1">@entry.Details</div>
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private const int TailReadLimit = 10000;
+    private readonly List<DiagnosticsLogFileInfo> logFiles = new();
+    private readonly List<ParsedDiagnosticsEntry> entries = new();
+    private readonly List<string> eventTypeOptions = new();
+    private readonly List<string> causeOptions = new();
+    private SignalRDiagnosticsOptions options = new();
+    private string selectedFileName = string.Empty;
+    private string searchText = string.Empty;
+    private string eventFilter = string.Empty;
+    private string causeFilter = string.Empty;
+    private string activeLogDirectory = "(unknown)";
+    private bool isLoading;
+    private int maxRows = 1000;
+    private DateTime? lastLoadedAtLocal;
+
+    private List<ParsedDiagnosticsEntry> filteredEntries => entries
+        .Where(MatchesEventFilter)
+        .Where(MatchesCauseFilter)
+        .Where(MatchesSearchFilter)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        options = DiagnosticsOptions.Value ?? new SignalRDiagnosticsOptions();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        try
+        {
+            await LoadFileListAsync();
+            await LoadEntriesForSelectedFileAsync();
+            lastLoadedAtLocal = DateTime.Now;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Task LoadFileListAsync()
+    {
+        logFiles.Clear();
+        activeLogDirectory = ResolveLogDirectory(options);
+        if (!Directory.Exists(activeLogDirectory))
+        {
+            selectedFileName = string.Empty;
+            return Task.CompletedTask;
+        }
+
+        var files = Directory.GetFiles(activeLogDirectory, "signalr-diagnostics-*.log")
+            .Select(path =>
+            {
+                var info = new FileInfo(path);
+                return new DiagnosticsLogFileInfo
+                {
+                    FileName = info.Name,
+                    FullPath = info.FullName,
+                    Size = info.Length,
+                    LastWriteTime = info.LastWriteTime
+                };
+            })
+            .OrderByDescending(x => x.LastWriteTime)
+            .ToList();
+
+        logFiles.AddRange(files);
+
+        if (logFiles.Count == 0)
+        {
+            selectedFileName = string.Empty;
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedFileName) || !logFiles.Any(f => f.FileName == selectedFileName))
+        {
+            selectedFileName = logFiles[0].FileName;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnFileChanged(ChangeEventArgs e)
+    {
+        selectedFileName = e.Value?.ToString() ?? string.Empty;
+        return LoadEntriesForSelectedFileAsync();
+    }
+
+    private Task LoadEntriesForSelectedFileAsync()
+    {
+        entries.Clear();
+        eventTypeOptions.Clear();
+        causeOptions.Clear();
+
+        if (string.IsNullOrWhiteSpace(selectedFileName))
+        {
+            return Task.CompletedTask;
+        }
+
+        var selectedFile = logFiles.FirstOrDefault(f => f.FileName == selectedFileName);
+        if (selectedFile is null || !File.Exists(selectedFile.FullPath))
+        {
+            return Task.CompletedTask;
+        }
+
+        var lastLines = ReadLastLines(selectedFile.FullPath, TailReadLimit);
+        foreach (var line in lastLines.Reverse())
+        {
+            var parsed = ParseLine(line);
+            if (parsed is not null)
+            {
+                entries.Add(parsed);
+            }
+        }
+
+        foreach (var value in entries.Select(e => e.EventType).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x))
+        {
+            eventTypeOptions.Add(value);
+        }
+        foreach (var value in entries.Select(e => e.Cause).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x))
+        {
+            causeOptions.Add(value);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static IEnumerable<string> ReadLastLines(string filePath, int maxLines)
+    {
+        var queue = new Queue<string>(Math.Max(32, maxLines));
+        foreach (var line in File.ReadLines(filePath))
+        {
+            if (queue.Count >= maxLines)
+            {
+                queue.Dequeue();
+            }
+            queue.Enqueue(line);
+        }
+
+        return queue;
+    }
+
+    private static ParsedDiagnosticsEntry? ParseLine(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return null;
+        }
+
+        var entry = new ParsedDiagnosticsEntry();
+        var segments = line.Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var segment in segments)
+        {
+            var separatorIndex = segment.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = segment[..separatorIndex].Trim();
+            var value = separatorIndex < segment.Length - 1
+                ? segment[(separatorIndex + 1)..].Trim()
+                : string.Empty;
+
+            switch (key)
+            {
+                case "TimestampET":
+                    entry.TimestampET = value;
+                    break;
+                case "EventType":
+                    entry.EventType = value;
+                    break;
+                case "Cause":
+                    entry.Cause = value;
+                    break;
+                case "TargetRouteMarker":
+                    entry.TargetRouteMarker = value;
+                    break;
+                case "Route":
+                    entry.Route = value;
+                    break;
+                case "Method":
+                    entry.Method = value;
+                    break;
+                case "CircuitId":
+                    entry.CircuitId = value;
+                    break;
+                case "ConnectionId":
+                    entry.ConnectionId = value;
+                    break;
+                case "TabId":
+                    entry.TabId = value;
+                    break;
+                case "User":
+                    entry.User = value;
+                    break;
+                case "Details":
+                    entry.Details = value;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.EventType))
+        {
+            entry.EventType = "(unknown)";
+        }
+
+        return entry;
+    }
+
+    private string ResolveLogDirectory(SignalRDiagnosticsOptions diagnosticsOptions)
+    {
+        var configuredDirectory = diagnosticsOptions.Directory?.Trim();
+        if (string.IsNullOrWhiteSpace(configuredDirectory))
+        {
+            configuredDirectory = Path.Combine("logs", "signalr-diagnostics");
+        }
+
+        if (Path.IsPathRooted(configuredDirectory))
+        {
+            return configuredDirectory;
+        }
+
+        return Path.Combine(HostEnvironment.ContentRootPath, configuredDirectory);
+    }
+
+    private bool MatchesEventFilter(ParsedDiagnosticsEntry entry)
+    {
+        return string.IsNullOrWhiteSpace(eventFilter)
+            || string.Equals(entry.EventType, eventFilter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesCauseFilter(ParsedDiagnosticsEntry entry)
+    {
+        return string.IsNullOrWhiteSpace(causeFilter)
+            || string.Equals(entry.Cause, causeFilter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesSearchFilter(ParsedDiagnosticsEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return ContainsIgnoreCase(entry.Route, searchText)
+            || ContainsIgnoreCase(entry.Method, searchText)
+            || ContainsIgnoreCase(entry.Details, searchText)
+            || ContainsIgnoreCase(entry.User, searchText)
+            || ContainsIgnoreCase(entry.EventType, searchText)
+            || ContainsIgnoreCase(entry.Cause, searchText)
+            || ContainsIgnoreCase(entry.CircuitId, searchText)
+            || ContainsIgnoreCase(entry.ConnectionId, searchText);
+    }
+
+    private static bool ContainsIgnoreCase(string? source, string search)
+    {
+        return !string.IsNullOrWhiteSpace(source)
+            && source.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        var length = (double)bytes;
+        var order = 0;
+        while (length >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            length /= 1024;
+        }
+
+        return $"{length:0.##} {sizes[order]}";
+    }
+
+    private sealed class DiagnosticsLogFileInfo
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public DateTime LastWriteTime { get; set; }
+    }
+
+    private sealed class ParsedDiagnosticsEntry
+    {
+        public string TimestampET { get; set; } = string.Empty;
+        public string EventType { get; set; } = string.Empty;
+        public string Cause { get; set; } = string.Empty;
+        public string TargetRouteMarker { get; set; } = string.Empty;
+        public string Route { get; set; } = string.Empty;
+        public string Method { get; set; } = string.Empty;
+        public string CircuitId { get; set; } = string.Empty;
+        public string ConnectionId { get; set; } = string.Empty;
+        public string TabId { get; set; } = string.Empty;
+        public string User { get; set; } = string.Empty;
+        public string Details { get; set; } = string.Empty;
+    }
+}

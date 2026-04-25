@@ -1,0 +1,13 @@
+/* 2025-11-30 00:00 UTC - plaintext highlighter styles for EmailPipeline (bright yellow underline) */
+.hl-section {
+	border-bottom: 2px dashed #FFD400;
+}
+.hl-field {
+	border-bottom: 2px solid #FFD400;
+}
+.hl-field.hl-code {
+	border-bottom: 2px double #FFD400;
+	font-weight: 600;
+}
+
+

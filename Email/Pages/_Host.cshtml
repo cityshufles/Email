@@ -1,0 +1,85 @@
+@page "/"
+@namespace Email.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <base href="/" />
+  <!-- TEMPORARY TEST: Commented out local Bootstrap CSS to test Bootswatch -->
+  <!-- <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" /> -->
+  <!-- Syncfusion Theme - Load first so Bootswatch can override Bootstrap base styles -->
+  <link id="syncfusion-theme-link" href="_content/Syncfusion.Blazor.Themes/bootstrap5.css" rel="stylesheet" />
+  <!-- Bootswatch Theme via CDN (temporary test) - Spacelab with dark mode enabled -->
+  <!-- Load after Syncfusion so Bootswatch styles take precedence for Bootstrap components -->
+  <link id="bootswatch-theme-link" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5/dist/spacelab/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="app.css" asp-append-version="true" />
+  <link rel="stylesheet" href="Email.styles.css" asp-append-version="true" />
+  <link rel="stylesheet" href="css/tour-dashboard.css" asp-append-version="true" />
+  <!-- Ensure our Syncfusion Grid overrides load last -->
+  <link rel="stylesheet" href="css/sf-grid-overrides.css" />
+  <link rel="stylesheet" href="css/emailModHighlighter.css" />
+</head>
+<body>
+  <component type="typeof(App)" render-mode="Server" />
+  <div id="components-reconnect-modal" role="status" aria-live="assertive" aria-atomic="true">
+    <div class="email-reconnect-card">
+      <div class="spinner-border text-light email-reconnect-spinner" role="status" aria-label="Reconnecting"></div>
+    </div>
+  </div>
+
+  <script>
+    // Fallback interop hook so Blazor calls never fail even if toast.js is cached/late.
+    window.__hasPageUnsavedChanges = false;
+    window.setPageUnsavedChanges = window.setPageUnsavedChanges || function (hasUnsavedChanges) {
+      window.__hasPageUnsavedChanges = !!hasUnsavedChanges;
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="_framework/blazor.server.js" autostart="false"></script>
+  <script src="_content/Syncfusion.Blazor/scripts/syncfusion-blazor.min.js"></script>
+  <script>
+    window.__emailConnectionRecoveryConfig = {
+      enableWebLock: true,
+      maxRetries: 30,
+      retryIntervalMilliseconds: 2000,
+      modalShowDelayMilliseconds: 1200
+    };
+  </script>
+  <script src="js/blazor-connection-recovery.js" asp-append-version="true"></script>
+  <script src="js/signalr-diagnostics.js" asp-append-version="true"></script>
+  <script>
+    // 2025-11-19 00:00 UTC - Simple console logger for Blazor interop
+    window.cslog = function () {
+      try { console.log.apply(console, arguments); } catch (e) { }
+    };
+  </script>
+  <script src="js/toast.js" asp-append-version="true"></script>
+  <script src="js/download.js?v=3"></script>
+  <script src="js/clipboard.js"></script>
+  <script src="js/theme-switcher.js"></script>
+  <script src="js/emailModHighlighter.js"></script>
+  <script src="js/camera-capture.js"></script>
+  <script src="js/tour-photo-alt-upload.js"></script>
+  <script>
+    // 2025-11-22 00:00 UTC - Apply saved theme on load
+    window.addEventListener('DOMContentLoaded', function () {
+      try {
+        var prefs = window.loadThemePreference();
+        if (prefs && prefs.theme) {
+          window.changeBootswatchTheme(prefs.theme);
+        }
+        if (prefs && prefs.colorMode) {
+          window.changeColorMode(prefs.colorMode);
+        }
+      } catch (e) {
+        // no-op
+      }
+    });
+  </script>
+</body>
+</html>
+
+

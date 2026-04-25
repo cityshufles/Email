@@ -1,0 +1,61 @@
+@using Syncfusion.Blazor.Grids
+@using Microsoft.AspNetCore.Components
+@using Email.Services.GmailProcessing.Dtos
+@inherits ComponentBase
+
+@* Created: 2025-11-27 00:00 UTC – Syncfusion grid replacement for theme-aware, virtualized, pageable UI *@
+<SfGrid TValue="UnprocessedEmailRowDto"
+        DataSource="@Items"
+        Height="600"
+        CssClass="cs-grid"
+        EnableVirtualization="true"
+        EnableStickyHeader="true"
+        ShowColumnChooser="true"
+        AllowResizing="true"
+        AllowPaging="true"
+        AllowSorting="true"
+        AllowFiltering="true"
+        AllowSearching="true"
+        AllowSelection="true"
+        Toolbar="@GridToolbar">
+
+    <GridPageSettings PageSize="75" PageSizes="true" />
+    <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.Excel" />
+    <GridSelectionSettings Type="SelectionType.Multiple" CheckboxOnly="true" PersistSelection="true" />
+
+    <GridColumns>
+        <GridColumn Type="ColumnType.CheckBox" Width="50"></GridColumn>
+        <GridColumn Field="Id" HeaderText="Id" IsPrimaryKey="true" Width="100" TextAlign="TextAlign.Right"></GridColumn>
+        <GridColumn Field="MessageId" HeaderText="MessageId" Width="260"></GridColumn>
+        <GridColumn Field="Subject" HeaderText="Subject" Width="300"></GridColumn>
+        <GridColumn Field="FromEmail" HeaderText="From" Width="200"></GridColumn>
+        <GridColumn Field="ReceivedDate" HeaderText="Received" Type="ColumnType.DateTime" Format="yyyy-MM-dd HH:mm" Width="170" TextAlign="TextAlign.Center"></GridColumn>
+    </GridColumns>
+
+    <GridEvents TValue="UnprocessedEmailRowDto" RowSelected="OnRowSelected" RowDeselected="OnRowDeselected" />
+</SfGrid>
+
+@code {
+    [Parameter] public List<UnprocessedEmailRowDto> Items { get; set; } = new();
+    [Parameter] public List<int> SelectedIds { get; set; } = new();
+    [Parameter] public EventCallback<List<int>> SelectedIdsChanged { get; set; }
+
+    // Created: 2025-11-27 00:00 UTC – Toolbar and selection event handlers (no .cs changes)
+    private List<object> GridToolbar { get; } = new() { "Search", "ColumnChooser" };
+
+    private async Task OnRowSelected(RowSelectEventArgs<UnprocessedEmailRowDto> args)
+    {
+        if (args?.Data == null) return;
+        if (!SelectedIds.Contains(args.Data.Id)) SelectedIds.Add(args.Data.Id);
+        await SelectedIdsChanged.InvokeAsync(SelectedIds);
+    }
+
+    private async Task OnRowDeselected(RowDeselectEventArgs<UnprocessedEmailRowDto> args)
+    {
+        if (args?.Data == null) return;
+        SelectedIds.Remove(args.Data.Id);
+        await SelectedIdsChanged.InvokeAsync(SelectedIds);
+    }
+}
+
+

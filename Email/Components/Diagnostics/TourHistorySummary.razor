@@ -1,0 +1,357 @@
+@* Added: 2025-11-30 00:00 UTC
+   Purpose: Render a compact tour history summary for a booking thread:
+   - Original booking row
+   - One row per modification (in chronological order)
+   - Optional cancellation row
+   - Final "current tour" row
+   Data is resolved the same way we would for TourTreeDisplay, without modifying that component.
+*@
+@using Email.Services.GmailProcessing.Dtos
+@using Email.Services.GmailProcessing.Models
+@inject Email.Services.ITourEmailsService TourEmailsService
+
+@code {
+	// Inputs
+	[Parameter] public Email.Models.ProcessedEmail? InitialProcessed { get; set; }
+	[Parameter] public IReadOnlyList<ProcessedEmailDisplayDto> Modifications { get; set; } = Array.Empty<ProcessedEmailDisplayDto>();
+	[Parameter] public ProcessedEmailDisplayDto? LatestCancellation { get; set; }
+	[Parameter] public Email.Services.GmailProcessing.Models.Booking? CurrentBooking { get; set; }
+	[Parameter] public string? BookingCodeForThread { get; set; }
+	[Parameter] public Email.Services.GmailProcessing.Models.Booking? OriginalBooking { get; set; }
+
+	// Internal resolved full processed rows for modifications/cancellation
+	private readonly List<Email.Models.ProcessedEmail> _modFull = new();
+	private Email.Models.ProcessedEmail? _cancelFull;
+
+	protected override async Task OnParametersSetAsync()
+	{
+		await ResolveModificationDetailsAsync();
+		await ResolveCancellationDetailsAsync();
+	}
+
+	private async Task ResolveModificationDetailsAsync()
+	{
+		_modFull.Clear();
+		if (Modifications == null || Modifications.Count == 0) return;
+		var ordered = Modifications
+			.OrderBy(m => m.ProcessingCompletedAt ?? m.ExtractedAt ?? DateTime.MaxValue)
+			.ToList();
+
+		var tasks = new List<Task<Email.Models.ProcessedEmail?>>();
+		foreach (var m in ordered)
+		{
+			if (!string.IsNullOrWhiteSpace(m.MessageId))
+			{
+				tasks.Add(SafeGetProcessedAsync(m.MessageId!));
+			}
+		}
+		var results = await Task.WhenAll(tasks);
+		foreach (var r in results)
+		{
+			if (r != null) _modFull.Add(r);
+		}
+	}
+
+	private async Task ResolveCancellationDetailsAsync()
+	{
+		_cancelFull = null;
+		if (LatestCancellation == null || string.IsNullOrWhiteSpace(LatestCancellation.MessageId)) return;
+		_cancelFull = await SafeGetProcessedAsync(LatestCancellation.MessageId!);
+	}
+
+	private async Task<Email.Models.ProcessedEmail?> SafeGetProcessedAsync(string messageId)
+	{
+		try { return await TourEmailsService.GetProcessedEmailByMessageIdAsync(messageId); }
+		catch { return null; }
+	}
+
+	private static string Fmt(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
+	private static string Dt(DateTime? d) => d.HasValue ? d.Value.ToString("yyyy-MM-dd") : "—";
+	private static string Time(string? t) => string.IsNullOrWhiteSpace(t) ? "—" : t!;
+
+	// Added: 2025-11-30 00:00 UTC - Display 24h with 12h in parentheses, e.g., "18:30 (6:30 PM)"
+	private static string FormatTime24And12(string? time)
+	{
+		var raw = time ?? string.Empty;
+		if (string.IsNullOrWhiteSpace(raw) || raw.Trim() == "—") return "—";
+		// Accept "H:mm" or "HH:mm"
+		if (System.TimeSpan.TryParse(raw, out var ts))
+		{
+			var t24 = ts.ToString(@"hh\:mm");
+			var t12 = System.DateTime.Today.Add(ts).ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+			return $"{t24} ({t12})";
+		}
+		// Fallback: try DateTime parse
+		if (System.DateTime.TryParse(raw, out var dt))
+		{
+			var t24 = dt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+			var t12 = dt.ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+			return $"{t24} ({t12})";
+		}
+		// Unrecognized -> return as-is
+		return raw;
+	}
+
+	private sealed class Row
+	{
+		public string Label { get; set; } = "";
+		public string TourDate { get; set; } = "—";
+		public string Walker { get; set; } = "—";
+		public string TourName { get; set; } = "—";
+		public string TourTime { get; set; } = "—";
+		public string BookingCode { get; set; } = "—";
+		public bool IsCancellation { get; set; }
+	}
+
+		// 2025-12-01 00:00 UTC - Select the booking code to display per event type
+		// Ensures modifications/cancellations show their effective code without depending on repair jobs
+		private static string SelectDisplayBookingCode(Email.Models.ProcessedEmail e)
+		{
+			var type = e.EmailType ?? string.Empty;
+			// Use Additional fields if bound on the model; fall back to BookingCode when missing
+			var newCode = e.NewBookingCode;
+			var prevCode = e.PreviousBookingCode;
+			var extracted = e.ExtractedBookingCode;
+
+			if (string.Equals(type, "Modification", StringComparison.OrdinalIgnoreCase))
+			{
+				return newCode
+				       ?? (!string.IsNullOrWhiteSpace(e.BookingCode) ? e.BookingCode : null)
+				       ?? prevCode
+				       ?? extracted
+				       ?? "—";
+			}
+			if (string.Equals(type, "Cancellation", StringComparison.OrdinalIgnoreCase))
+			{
+				return prevCode
+				       ?? (!string.IsNullOrWhiteSpace(e.BookingCode) ? e.BookingCode : null)
+				       ?? extracted
+				       ?? "—";
+			}
+			// Booking/Confirmation/Other
+			return (!string.IsNullOrWhiteSpace(e.BookingCode) ? e.BookingCode : null)
+			       ?? extracted
+			       ?? "—";
+		}
+
+	private IEnumerable<Row> BuildRows()
+	{
+		// Decide whether a cancellation should be displayed.
+		// Updated: 2025-12-02 00:00 UTC - Require an explicit cancellation email.
+		// Only show a cancellation row when a cancellation message exists in the thread
+		// AND it occurs after the most recent booking/modification event.
+		bool showCancellation = false;
+		if (LatestCancellation != null || _cancelFull != null)
+		{
+			System.DateTime min = System.DateTime.MinValue;
+			var lastActionAt = InitialProcessed?.ProcessingCompletedAt ?? min;
+			if (_modFull.Count > 0)
+			{
+				var maxMod = _modFull.Max(m => m.ProcessingCompletedAt ?? m.ExtractedAt ?? min);
+				if (maxMod > lastActionAt) lastActionAt = maxMod;
+			}
+			var cancelAt = LatestCancellation?.ProcessingCompletedAt
+			               ?? LatestCancellation?.ExtractedAt
+			               ?? _cancelFull?.ProcessingCompletedAt
+			               ?? min;
+			if (cancelAt > lastActionAt)
+			{
+				showCancellation = true;
+			}
+		}
+
+		// 1) Original (prefer Booking to mirror TourTree values; fallback to initial processed)
+		if (OriginalBooking != null)
+		{
+			yield return new Row
+			{
+				Label = "original",
+				TourDate = Dt(OriginalBooking.TourDate),
+				Walker = Fmt(OriginalBooking.CustomerName),
+				TourName = Fmt(OriginalBooking.TourName),
+				TourTime = Time(OriginalBooking.TourTime),
+				BookingCode = Fmt(OriginalBooking.BookingCode)
+			};
+		}
+		else if (InitialProcessed != null)
+		{
+			yield return new Row
+			{
+				Label = "original",
+				TourDate = Dt(InitialProcessed.TourDate),
+				Walker = Fmt(InitialProcessed.CustomerName),
+				TourName = Fmt(InitialProcessed.TourName),
+				TourTime = Time(InitialProcessed.TourTime),
+				BookingCode = Fmt(InitialProcessed.BookingCode)
+			};
+		}
+
+		// 2) Modifications (chronological)
+		if (_modFull.Count > 0)
+		{
+			var modsOrdered = _modFull.OrderBy(m => m.ProcessingCompletedAt ?? m.ExtractedAt ?? DateTime.MaxValue).ToList();
+			for (int i = 0; i < modsOrdered.Count; i++)
+			{
+				var m = modsOrdered[i];
+				yield return new Row
+				{
+					Label = modsOrdered.Count == 1 ? "modification" : $"modification #{i + 1}",
+					TourDate = Dt(m.TourDate),
+					Walker = Fmt(m.CustomerName),
+					TourName = Fmt(m.TourName),
+					TourTime = Time(m.TourTime),
+					BookingCode = Fmt(SelectDisplayBookingCode(m))
+				};
+			}
+		}
+
+		// 3) Cancellation (only when it should apply)
+		if (showCancellation)
+		{
+			var cancelledAt = LatestCancellation?.ProcessingCompletedAt ?? _cancelFull?.ProcessingCompletedAt;
+			yield return new Row
+			{
+				Label = "cancellation",
+				TourDate = Dt(cancelledAt),
+				Walker = Fmt(_cancelFull?.CustomerName),
+				TourName = Fmt(_cancelFull?.TourName),
+				TourTime = "cancelled",
+				BookingCode = Fmt(_cancelFull != null ? SelectDisplayBookingCode(_cancelFull) : (LatestCancellation?.BookingCode ?? "—")),
+				IsCancellation = true
+			};
+		}
+
+		// 4) Current tour (from current booking)
+		if (CurrentBooking != null)
+		{
+			var isCancelled = !CurrentBooking.IsActive || string.Equals(CurrentBooking.BookingStatus ?? "", "Cancelled", StringComparison.OrdinalIgnoreCase);
+			yield return new Row
+			{
+				Label = "current tour",
+				TourDate = Dt(CurrentBooking.TourDate),
+				Walker = Fmt(CurrentBooking.CustomerName),
+				TourName = Fmt(CurrentBooking.TourName),
+				TourTime = isCancelled ? "cancelled" : Time(CurrentBooking.TourTime),
+				BookingCode = Fmt(CurrentBooking.BookingCode),
+				IsCancellation = isCancelled
+			};
+		}
+	}
+}
+
+<div class="card mb-2">
+	<div class="card-header py-2 d-flex align-items-center justify-content-between">
+		<small class="fw-bold">tour history summary</small>
+	</div>
+	<div class="card-body p-2">
+		<table class="table table-sm mb-0">
+			<tbody>
+			@foreach (var row in BuildRows())
+			{
+				<tr>
+					<td style="width: 22%;">
+						@if (row.Label.StartsWith("modification", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">updated tour date:</small>
+						}
+						else if (row.IsCancellation)
+						{
+							<small class="text-muted">cancelled at:</small>
+						}
+						else if (string.Equals(row.Label, "current tour", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">current tour date:</small>
+						}
+						else
+						{
+							<small class="text-muted">original tour date:</small>
+						}
+						<div>@row.TourDate</div>
+					</td>
+					<td style="width: 22%;">
+						@if (row.IsCancellation)
+						{
+							<small class="text-muted">cancelled walker</small>
+						}
+						else if (row.Label.StartsWith("modification", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">updated walker</small>
+						}
+						else if (string.Equals(row.Label, "current tour", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">current walker</small>
+						}
+						else
+						{
+							<small class="text-muted">walker name</small>
+						}
+						<div>@row.Walker</div>
+					</td>
+					<td style="width: 22%;">
+						@if (row.IsCancellation)
+						{
+							<small class="text-muted">cancelled tour name</small>
+						}
+						else if (row.Label.StartsWith("modification", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">updated tour name</small>
+						}
+						else if (string.Equals(row.Label, "current tour", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">current tour name</small>
+						}
+						else
+						{
+							<small class="text-muted">original tour name</small>
+						}
+						<div>@row.TourName</div>
+					</td>
+					<td style="width: 17%;">
+						@if (row.IsCancellation)
+						{
+							<small class="text-muted">status</small>
+							<div><span class="badge bg-danger">cancelled</span></div>
+						}
+						else if (row.Label.StartsWith("modification", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">updated tour time</small>
+							<div>@FormatTime24And12(row.TourTime)</div>
+						}
+						else if (string.Equals(row.Label, "current tour", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">current tour time</small>
+							<div>@FormatTime24And12(row.TourTime)</div>
+						}
+						else
+						{
+							<small class="text-muted">original tour time</small>
+							<div>@FormatTime24And12(row.TourTime)</div>
+						}
+					</td>
+					<td style="width: 17%; text-align: right;">
+						@if (row.IsCancellation)
+						{
+							<small class="text-muted">cancelled booking code</small>
+						}
+						else if (row.Label.StartsWith("modification", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">updated booking code (if any)</small>
+						}
+						else if (string.Equals(row.Label, "current tour", StringComparison.OrdinalIgnoreCase))
+						{
+							<small class="text-muted">current booking code</small>
+						}
+						else
+						{
+							<small class="text-muted">original booking code</small>
+						}
+						<div><code>@row.BookingCode</code></div>
+					</td>
+				</tr>
+			}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+

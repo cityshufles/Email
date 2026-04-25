@@ -1,0 +1,1685 @@
+USE [master]
+GO
+/****** Object:  Database [DB_176118_autogmail]    Script Date: 4/19/2026 6:50:58 PM ******/
+CREATE DATABASE [DB_176118_autogmail]
+ CONTAINMENT = NONE
+ ON  PRIMARY 
+( NAME = N'DB_176118_autogmail_data', FILENAME = N'e:\sqldata\DB_176118_autogmail_data.mdf' , SIZE = 958464KB , MAXSIZE = 1843200KB , FILEGROWTH = 1024KB )
+ LOG ON 
+( NAME = N'DB_176118_autogmail_log', FILENAME = N'f:\sqllog\DB_176118_autogmail_log.ldf' , SIZE = 139264KB , MAXSIZE = 1024000KB , FILEGROWTH = 65536KB )
+ WITH CATALOG_COLLATION = DATABASE_DEFAULT
+GO
+ALTER DATABASE [DB_176118_autogmail] SET COMPATIBILITY_LEVEL = 150
+GO
+IF (1 = FULLTEXTSERVICEPROPERTY('IsFullTextInstalled'))
+begin
+EXEC [DB_176118_autogmail].[dbo].[sp_fulltext_database] @action = 'enable'
+end
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ANSI_NULL_DEFAULT OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ANSI_NULLS OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ANSI_PADDING OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ANSI_WARNINGS OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ARITHABORT OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET AUTO_CLOSE OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET AUTO_SHRINK OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET AUTO_UPDATE_STATISTICS ON 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET CURSOR_CLOSE_ON_COMMIT OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET CURSOR_DEFAULT  GLOBAL 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET CONCAT_NULL_YIELDS_NULL OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET NUMERIC_ROUNDABORT OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET QUOTED_IDENTIFIER OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET RECURSIVE_TRIGGERS OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET  DISABLE_BROKER 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET AUTO_UPDATE_STATISTICS_ASYNC OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET DATE_CORRELATION_OPTIMIZATION OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET TRUSTWORTHY OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ALLOW_SNAPSHOT_ISOLATION OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET PARAMETERIZATION SIMPLE 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET READ_COMMITTED_SNAPSHOT OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET HONOR_BROKER_PRIORITY OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET RECOVERY SIMPLE 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET  MULTI_USER 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET PAGE_VERIFY CHECKSUM  
+GO
+ALTER DATABASE [DB_176118_autogmail] SET DB_CHAINING OFF 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET FILESTREAM( NON_TRANSACTED_ACCESS = OFF ) 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET TARGET_RECOVERY_TIME = 60 SECONDS 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET DELAYED_DURABILITY = DISABLED 
+GO
+ALTER DATABASE [DB_176118_autogmail] SET ACCELERATED_DATABASE_RECOVERY = OFF  
+GO
+ALTER DATABASE [DB_176118_autogmail] SET QUERY_STORE = ON
+GO
+ALTER DATABASE [DB_176118_autogmail] SET QUERY_STORE (OPERATION_MODE = READ_ONLY, CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 3), DATA_FLUSH_INTERVAL_SECONDS = 900, INTERVAL_LENGTH_MINUTES = 30, MAX_STORAGE_SIZE_MB = 100, QUERY_CAPTURE_MODE = AUTO, SIZE_BASED_CLEANUP_MODE = AUTO, MAX_PLANS_PER_QUERY = 200, WAIT_STATS_CAPTURE_MODE = ON)
+GO
+USE [DB_176118_autogmail]
+GO
+/****** Object:  Table [dbo].[AutomaticGmail_EmailClassificationRules]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AutomaticGmail_EmailClassificationRules](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[VendorName] [nvarchar](100) NOT NULL,
+	[Domain] [nvarchar](255) NOT NULL,
+	[SubjectPhrase] [nvarchar](500) NOT NULL,
+	[EmailType] [nvarchar](50) NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[Priority] [int] NOT NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[AutomaticGmail_InboxEmails]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AutomaticGmail_InboxEmails](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[Uid] [bigint] NOT NULL,
+	[MessageId] [nvarchar](512) NOT NULL,
+	[Subject] [nvarchar](max) NULL,
+	[FromEmail] [nvarchar](320) NOT NULL,
+	[FromName] [nvarchar](256) NULL,
+	[ToEmail] [nvarchar](max) NULL,
+	[ReceivedDate] [datetime2](0) NOT NULL,
+	[TextBody] [nvarchar](max) NULL,
+	[HtmlBody] [nvarchar](max) NULL,
+	[TextBodyPreview] [nvarchar](512) NULL,
+	[AttachmentCount] [int] NOT NULL,
+	[AttachmentNames] [nvarchar](max) NOT NULL,
+	[CollectedAt] [datetime2](0) NOT NULL,
+	[CollectionBatchId] [nvarchar](128) NOT NULL,
+	[IsRead] [bit] NOT NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+	[ProcessingStatus] [smallint] NOT NULL,
+	[OriginalBookingId] [int] NULL,
+	[OriginalBookingCode] [nvarchar](64) NULL,
+	[OriginalBookingMessageId] [nvarchar](255) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[AutomaticGmail_InboxWatermark]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AutomaticGmail_InboxWatermark](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[Mailbox] [nvarchar](128) NOT NULL,
+	[UidValidity] [bigint] NOT NULL,
+	[LastSeenUid] [bigint] NOT NULL,
+	[LastScanStartedAt] [datetime2](0) NULL,
+	[LastScanCompletedAt] [datetime2](0) NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[AutomaticGmail_ProcessedEmails]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AutomaticGmail_ProcessedEmails](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[InboxEmailId] [int] NOT NULL,
+	[MessageId] [nvarchar](255) NOT NULL,
+	[VendorName] [nvarchar](255) NOT NULL,
+	[EmailType] [nvarchar](255) NOT NULL,
+	[IsTourBookingEmail] [bit] NOT NULL,
+	[ClassificationRuleId] [int] NULL,
+	[ProcessingStatus] [nvarchar](50) NOT NULL,
+	[ProcessingStartedAt] [datetime2](7) NULL,
+	[ProcessingCompletedAt] [datetime2](7) NULL,
+	[ProcessingError] [nvarchar](max) NULL,
+	[ProcessingAttempts] [int] NOT NULL,
+	[NextProcessingAttempt] [datetime2](7) NULL,
+	[RateLimitResetAt] [datetime2](7) NULL,
+	[CustomerName] [nvarchar](255) NULL,
+	[BookingCode] [nvarchar](100) NULL,
+	[CustomerPhone] [nvarchar](50) NULL,
+	[CustomerEmail] [nvarchar](255) NULL,
+	[NumberOfAttendees] [int] NULL,
+	[Language] [nvarchar](50) NULL,
+	[TourDate] [nvarchar](50) NULL,
+	[TourTime] [nvarchar](50) NULL,
+	[TourName] [nvarchar](255) NULL,
+	[TourLocation] [nvarchar](255) NULL,
+	[ActionRequired] [nvarchar](255) NULL,
+	[ExtractedAt] [datetime2](7) NULL,
+	[CustomerIdentifier] [nvarchar](255) NULL,
+	[RelatedEmailIds] [nvarchar](max) NULL,
+	[IsLatestAction] [bit] NOT NULL,
+	[HasBeenClassified] [bit] NOT NULL,
+	[HasAIBeenRun] [bit] NOT NULL,
+	[IsAISuccess] [bit] NOT NULL,
+	[HasCalendarExport] [bit] NOT NULL,
+	[IsCalendarExportSuccess] [bit] NOT NULL,
+	[CalendarExportAt] [nvarchar](100) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+	[ManualParsingCompleted] [bit] NOT NULL,
+	[ManualParsingConfidence] [int] NOT NULL,
+	[ManualParsingNotes] [nvarchar](max) NULL,
+	[ManualParsingTimestamp] [datetime2](7) NULL,
+	[PlainTextContent] [nvarchar](max) NULL,
+	[IsCancellation] [bit] NOT NULL,
+	[IsModification] [bit] NOT NULL,
+	[IsBooking] [bit] NOT NULL,
+	[AssociatedBookingIds] [nvarchar](max) NOT NULL,
+	[BookingAlterationNotes] [nvarchar](max) NOT NULL,
+	[HtmlContent] [nvarchar](max) NOT NULL,
+	[ExtractedBookingCode] [nvarchar](100) NOT NULL,
+	[NewBookingCode] [nvarchar](100) NOT NULL,
+	[PreviousBookingCode] [nvarchar](100) NOT NULL,
+	[NumberOfAdults] [int] NULL,
+	[NumberOfChildren] [int] NULL,
+	[VendorManuallyOverridden] [bit] NOT NULL,
+	[VendorOverrideAt] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[MessageId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[AutomaticGmail_TourDataErrorReports]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[AutomaticGmail_TourDataErrorReports](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[ProcessedEmailId] [int] NOT NULL,
+	[MessageId] [nvarchar](255) NOT NULL,
+	[VendorName] [nvarchar](200) NULL,
+	[BookingCode] [nvarchar](200) NULL,
+	[CustomerIdentifier] [nvarchar](200) NULL,
+	[ErrorNotes] [nvarchar](max) NULL,
+	[OriginalSnapshotJson] [nvarchar](max) NOT NULL,
+	[CorrectedSnapshotJson] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[BookingContactChannelState]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[BookingContactChannelState](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[MessageId] [nvarchar](255) NOT NULL,
+	[BookingCode] [nvarchar](100) NOT NULL,
+	[BookingId] [int] NULL,
+	[Channel] [nvarchar](20) NOT NULL,
+	[ContactState] [tinyint] NOT NULL,
+	[LegacyMessageSent] [bit] NOT NULL,
+	[LegacyMessageSentAtUtc] [datetime2](7) NULL,
+	[UpdatedBy] [nvarchar](100) NULL,
+	[UpdatedSource] [nvarchar](30) NULL,
+	[CreatedAtUtc] [datetime2](7) NOT NULL,
+	[UpdatedAtUtc] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_BookingContactChannelState] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[BookingMessageEvents]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[BookingMessageEvents](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[CustomerId] [int] NULL,
+	[CustomerIdentifier] [nvarchar](400) NULL,
+	[BookingId] [int] NULL,
+	[BookingCode] [nvarchar](100) NULL,
+	[MessageId] [nvarchar](255) NULL,
+	[TourName] [nvarchar](200) NULL,
+	[TourDate] [datetime2](7) NULL,
+	[TourTime] [nvarchar](20) NULL,
+	[VendorName] [nvarchar](100) NULL,
+	[Stage] [nvarchar](50) NOT NULL,
+	[Channel] [nvarchar](20) NULL,
+	[TemplateId] [int] NULL,
+	[TemplateType] [nvarchar](100) NULL,
+	[TemplateName] [nvarchar](200) NULL,
+	[TriggerType] [nvarchar](50) NOT NULL,
+	[TriggeredBy] [nvarchar](100) NULL,
+	[SentAtUtc] [datetime2](7) NOT NULL,
+	[CreatedAtUtc] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_BookingMessageEvents] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[BookingMessageStatus]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[BookingMessageStatus](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[BookingId] [int] NULL,
+	[MessageId] [nvarchar](255) NOT NULL,
+	[BookingCode] [nvarchar](100) NULL,
+	[VendorName] [nvarchar](100) NULL,
+	[Stage] [nvarchar](50) NOT NULL,
+	[Channel] [nvarchar](20) NULL,
+	[TemplateId] [int] NULL,
+	[SentFlag] [bit] NOT NULL,
+	[SentAtUtc] [datetime2](7) NULL,
+	[SentBy] [nvarchar](200) NULL,
+	[Notes] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Bookings]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Bookings](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[CustomerId] [int] NOT NULL,
+	[CustomerIdentifier] [nvarchar](400) NOT NULL,
+	[ProcessedEmailId] [int] NOT NULL,
+	[MessageId] [nvarchar](255) NOT NULL,
+	[BookingCode] [nvarchar](100) NOT NULL,
+	[VendorName] [nvarchar](100) NOT NULL,
+	[EmailType] [nvarchar](50) NOT NULL,
+	[IsCancellation] [bit] NOT NULL,
+	[IsModification] [bit] NOT NULL,
+	[IsConfirmation] [bit] NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[TourName] [nvarchar](200) NULL,
+	[TourDate] [datetime2](7) NULL,
+	[TourDayOfWeek] [nvarchar](20) NULL,
+	[TourTime] [nvarchar](20) NULL,
+	[TourLocation] [nvarchar](200) NULL,
+	[TourTimeZone] [nvarchar](50) NULL,
+	[DisplayDate] [nvarchar](20) NULL,
+	[DisplayTime] [nvarchar](20) NULL,
+	[CustomerName] [nvarchar](200) NOT NULL,
+	[CustomerEmail] [nvarchar](320) NULL,
+	[CustomerPhone] [nvarchar](50) NULL,
+	[NumberOfAttendees] [int] NULL,
+	[NumberOfAdults] [int] NULL,
+	[NumberOfChildren] [int] NULL,
+	[NumberOfInfants] [int] NOT NULL,
+	[Language] [nvarchar](50) NULL,
+	[CountryOfOrigin] [nvarchar](100) NULL,
+	[BookingStatus] [nvarchar](50) NULL,
+	[BookingAmount] [decimal](10, 2) NULL,
+	[Currency] [nvarchar](10) NOT NULL,
+	[SpecialRequests] [nvarchar](max) NULL,
+	[GuideAssigned] [nvarchar](200) NULL,
+	[CalendarEventId] [nvarchar](200) NULL,
+	[IsCalendarExportSuccess] [bit] NOT NULL,
+	[IsSheetExportSuccess] [bit] NOT NULL,
+	[ProcessingNotes] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+	[MessageSent] [bit] NOT NULL,
+	[MessageSentAtUtc] [datetime2](7) NULL,
+	[GuideReviewStatus] [nvarchar](50) NULL,
+	[GuideReviewNotes] [nvarchar](max) NULL,
+	[ActualAttendees] [int] NULL,
+	[IsCheckedIn] [bit] NOT NULL,
+	[DoNotContact] [bit] NOT NULL,
+	[ActualAdults] [int] NULL,
+	[ActualChildren] [int] NULL,
+	[VendorManuallyOverridden] [bit] NOT NULL,
+	[VendorOverrideAt] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[CheckfrontV4Bookings]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[CheckfrontV4Bookings](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[CheckfrontBookingId] [nvarchar](50) NOT NULL,
+	[BookingCode] [nvarchar](100) NOT NULL,
+	[CreatedAtLocal] [datetimeoffset](7) NULL,
+	[StartAtLocal] [datetimeoffset](7) NULL,
+	[EndAtLocal] [datetimeoffset](7) NULL,
+	[CheckInAtLocal] [datetimeoffset](7) NULL,
+	[CheckOutAtLocal] [datetimeoffset](7) NULL,
+	[CustomerId] [int] NULL,
+	[CustomerCode] [nvarchar](100) NULL,
+	[CustomerFirstName] [nvarchar](150) NULL,
+	[CustomerLastName] [nvarchar](150) NULL,
+	[CustomerEmail] [nvarchar](320) NULL,
+	[CustomerPhone] [nvarchar](50) NULL,
+	[Language] [nvarchar](20) NULL,
+	[SubTotal] [decimal](18, 2) NULL,
+	[InclusiveTaxTotal] [decimal](18, 2) NULL,
+	[TaxTotal] [decimal](18, 2) NULL,
+	[Total] [decimal](18, 2) NULL,
+	[PaidTotal] [decimal](18, 2) NULL,
+	[StatusId] [nvarchar](50) NULL,
+	[StatusName] [nvarchar](150) NULL,
+	[ItemSummary] [nvarchar](1000) NULL,
+	[DiscountCode] [nvarchar](100) NULL,
+	[AccountId] [int] NULL,
+	[PartnerId] [nvarchar](100) NULL,
+	[Cfx] [nvarchar](256) NULL,
+	[Gcfx] [nvarchar](256) NULL,
+	[FieldsJson] [nvarchar](max) NULL,
+	[StatusJson] [nvarchar](max) NULL,
+	[CustomerJson] [nvarchar](max) NULL,
+	[NotesJson] [nvarchar](max) NULL,
+	[SnapshotJson] [nvarchar](max) NOT NULL,
+	[SourceEndpoint] [nvarchar](500) NULL,
+	[PulledAtUtc] [datetime2](7) NOT NULL,
+	[UpdatedAtUtc] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[CustomerContactLabels]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[CustomerContactLabels](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[CustomerId] [int] NOT NULL,
+	[LabelKey] [nvarchar](50) NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[UpdatedBy] [nvarchar](100) NULL,
+	[Notes] [nvarchar](max) NULL,
+	[CreatedAtUtc] [datetime2](7) NOT NULL,
+	[UpdatedAtUtc] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_CustomerContactLabels] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Customers]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Customers](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[FullName] [nvarchar](200) NOT NULL,
+	[FirstName] [nvarchar](100) NULL,
+	[LastName] [nvarchar](100) NULL,
+	[PhoneNumber] [nvarchar](50) NULL,
+	[Email] [nvarchar](320) NULL,
+	[CustomerIdentifier] [nvarchar](400) NOT NULL,
+	[BookingIds] [nvarchar](max) NULL,
+	[TotalBookings] [int] NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[GallerySettings]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[GallerySettings](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[HeaderText] [nvarchar](max) NULL,
+	[FooterLinksJson] [nvarchar](max) NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_GallerySettings] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Guides]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Guides](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[FirstName] [nvarchar](100) NOT NULL,
+	[LastName] [nvarchar](100) NULL,
+	[Phone] [nvarchar](50) NOT NULL,
+	[Email] [nvarchar](200) NULL,
+	[GuideImage] [nvarchar](500) NULL,
+	[Description] [nvarchar](max) NULL,
+	[DefaultTourName] [nvarchar](200) NULL,
+	[DefaultTourId] [int] NULL,
+	[IsTouring] [bit] NOT NULL,
+	[AvailabilityNotes] [nvarchar](max) NULL,
+	[AvailabilityUpdatedAt] [datetime2](7) NULL,
+	[IsActive] [bit] NOT NULL,
+	[HireDate] [date] NULL,
+	[TerminationDate] [date] NULL,
+	[Languages] [nvarchar](200) NULL,
+	[Specialties] [nvarchar](200) NULL,
+	[Notes] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](7) NULL,
+	[UpdatedAt] [datetime2](7) NULL,
+ CONSTRAINT [PK_Guides] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[SchoolTourOneOffIntakeTemp]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[SchoolTourOneOffIntakeTemp](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[RecordName] [nvarchar](200) NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[Notes] [nvarchar](max) NULL,
+	[UpdatedBy] [nvarchar](100) NULL,
+	[TextLabel01] [nvarchar](200) NULL,
+	[TextValue01] [nvarchar](max) NULL,
+	[TextLabel02] [nvarchar](200) NULL,
+	[TextValue02] [nvarchar](max) NULL,
+	[TextLabel03] [nvarchar](200) NULL,
+	[TextValue03] [nvarchar](max) NULL,
+	[TextLabel04] [nvarchar](200) NULL,
+	[TextValue04] [nvarchar](max) NULL,
+	[TextLabel05] [nvarchar](200) NULL,
+	[TextValue05] [nvarchar](max) NULL,
+	[TextLabel06] [nvarchar](200) NULL,
+	[TextValue06] [nvarchar](max) NULL,
+	[TextLabel07] [nvarchar](200) NULL,
+	[TextValue07] [nvarchar](max) NULL,
+	[TextLabel08] [nvarchar](200) NULL,
+	[TextValue08] [nvarchar](max) NULL,
+	[TextLabel09] [nvarchar](200) NULL,
+	[TextValue09] [nvarchar](max) NULL,
+	[TextLabel10] [nvarchar](200) NULL,
+	[TextValue10] [nvarchar](max) NULL,
+	[TextLabel11] [nvarchar](200) NULL,
+	[TextValue11] [nvarchar](max) NULL,
+	[TextLabel12] [nvarchar](200) NULL,
+	[TextValue12] [nvarchar](max) NULL,
+	[TextLabel13] [nvarchar](200) NULL,
+	[TextValue13] [nvarchar](max) NULL,
+	[TextLabel14] [nvarchar](200) NULL,
+	[TextValue14] [nvarchar](max) NULL,
+	[TextLabel15] [nvarchar](200) NULL,
+	[TextValue15] [nvarchar](max) NULL,
+	[TextLabel16] [nvarchar](200) NULL,
+	[TextValue16] [nvarchar](max) NULL,
+	[TextLabel17] [nvarchar](200) NULL,
+	[TextValue17] [nvarchar](max) NULL,
+	[TextLabel18] [nvarchar](200) NULL,
+	[TextValue18] [nvarchar](max) NULL,
+	[TextLabel19] [nvarchar](200) NULL,
+	[TextValue19] [nvarchar](max) NULL,
+	[TextLabel20] [nvarchar](200) NULL,
+	[TextValue20] [nvarchar](max) NULL,
+	[DropdownLabel01] [nvarchar](200) NULL,
+	[DropdownOptions01] [nvarchar](max) NULL,
+	[DropdownValue01] [nvarchar](200) NULL,
+	[DropdownLabel02] [nvarchar](200) NULL,
+	[DropdownOptions02] [nvarchar](max) NULL,
+	[DropdownValue02] [nvarchar](200) NULL,
+	[DropdownLabel03] [nvarchar](200) NULL,
+	[DropdownOptions03] [nvarchar](max) NULL,
+	[DropdownValue03] [nvarchar](200) NULL,
+	[DropdownLabel04] [nvarchar](200) NULL,
+	[DropdownOptions04] [nvarchar](max) NULL,
+	[DropdownValue04] [nvarchar](200) NULL,
+	[DropdownLabel05] [nvarchar](200) NULL,
+	[DropdownOptions05] [nvarchar](max) NULL,
+	[DropdownValue05] [nvarchar](200) NULL,
+	[DropdownLabel06] [nvarchar](200) NULL,
+	[DropdownOptions06] [nvarchar](max) NULL,
+	[DropdownValue06] [nvarchar](200) NULL,
+	[DropdownLabel07] [nvarchar](200) NULL,
+	[DropdownOptions07] [nvarchar](max) NULL,
+	[DropdownValue07] [nvarchar](200) NULL,
+	[DropdownLabel08] [nvarchar](200) NULL,
+	[DropdownOptions08] [nvarchar](max) NULL,
+	[DropdownValue08] [nvarchar](200) NULL,
+	[DropdownLabel09] [nvarchar](200) NULL,
+	[DropdownOptions09] [nvarchar](max) NULL,
+	[DropdownValue09] [nvarchar](200) NULL,
+	[DropdownLabel10] [nvarchar](200) NULL,
+	[DropdownOptions10] [nvarchar](max) NULL,
+	[DropdownValue10] [nvarchar](200) NULL,
+	[DateRangeLabel01] [nvarchar](200) NULL,
+	[DateRangeStart01] [date] NULL,
+	[DateRangeEnd01] [date] NULL,
+	[DateRangeLabel02] [nvarchar](200) NULL,
+	[DateRangeStart02] [date] NULL,
+	[DateRangeEnd02] [date] NULL,
+	[DateRangeLabel03] [nvarchar](200) NULL,
+	[DateRangeStart03] [date] NULL,
+	[DateRangeEnd03] [date] NULL,
+	[DateLabel01] [nvarchar](200) NULL,
+	[DateValue01] [date] NULL,
+	[DateLabel02] [nvarchar](200) NULL,
+	[DateValue02] [date] NULL,
+	[DateLabel03] [nvarchar](200) NULL,
+	[DateValue03] [date] NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_SchoolTourOneOffIntakeTemp] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourGuideAssignment]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourGuideAssignment](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourDate] [date] NOT NULL,
+	[TourName] [nvarchar](255) NOT NULL,
+	[TourTime] [nvarchar](50) NOT NULL,
+	[GuideId] [int] NULL,
+	[CreatedAt] [datetime2](7) NULL,
+	[UpdatedAt] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+ CONSTRAINT [UQ_TourGuideAssignment_DateNameTime] UNIQUE NONCLUSTERED 
+(
+	[TourDate] ASC,
+	[TourName] ASC,
+	[TourTime] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourGuideAssignments]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourGuideAssignments](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourDate] [date] NOT NULL,
+	[TourName] [nvarchar](255) NOT NULL,
+	[TourTime] [nvarchar](50) NULL,
+	[GuideId] [int] NOT NULL,
+	[CreatedAt] [datetime] NOT NULL,
+	[UpdatedAt] [datetime] NOT NULL,
+	[MeetingPlace] [nvarchar](255) NULL,
+	[MeetingTime] [nvarchar](50) NULL,
+	[MeetingInstructions] [nvarchar](max) NULL,
+ CONSTRAINT [PK_TourGuideAssignments] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourGuideDefaults]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourGuideDefaults](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourId] [int] NOT NULL,
+	[DayOfWeek] [int] NOT NULL,
+	[StartTime] [nvarchar](50) NOT NULL,
+	[GuideId] [int] NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NULL,
+	[UpdatedAt] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourLinks]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourLinks](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[Vendor] [nvarchar](100) NOT NULL,
+	[TourName] [nvarchar](500) NOT NULL,
+	[DaysTimesAvailable] [nvarchar](1000) NULL,
+	[ProductId] [nvarchar](100) NULL,
+	[ReviewLink] [nvarchar](1000) NULL,
+	[TourLink] [nvarchar](1000) NULL,
+	[Notes] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+	[TourId] [int] NULL,
+	[TourDay] [int] NULL,
+	[TourTime] [nvarchar](50) NULL,
+ CONSTRAINT [PK_TourLinks] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourMessages]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourMessages](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[MessageName] [nvarchar](200) NOT NULL,
+	[MessageType] [nvarchar](50) NOT NULL,
+	[TourName] [nvarchar](200) NOT NULL,
+	[TourId] [int] NULL,
+	[TourStartTime] [nvarchar](50) NULL,
+	[GuideId] [int] NULL,
+	[MeetingPlaceId] [int] NULL,
+	[MeetingPlace] [nvarchar](200) NULL,
+	[MeetingTime] [nvarchar](50) NULL,
+	[MessageContent] [nvarchar](max) NOT NULL,
+	[Signature] [nvarchar](500) NULL,
+	[Description] [nvarchar](500) NULL,
+	[VendorLink] [nvarchar](500) NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NULL,
+	[UpdatedAt] [datetime2](7) NULL,
+ CONSTRAINT [PK_TourMessages] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourNameMappings]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourNameMappings](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourId] [int] NOT NULL,
+	[IncomingTourName] [nvarchar](500) NOT NULL,
+	[VendorName] [nvarchar](100) NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_TourNameMappings] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourProductionGroupOverrides]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourProductionGroupOverrides](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[SourceTypeKey] [nvarchar](30) NOT NULL,
+	[VendorNameKey] [nvarchar](255) NOT NULL,
+	[RawTourNameKey] [nvarchar](500) NOT NULL,
+	[OverrideGroupKey] [nvarchar](200) NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_TourProductionGroupOverrides] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourReports]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourReports](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourDate] [date] NOT NULL,
+	[TourName] [nvarchar](255) NOT NULL,
+	[TourTime] [nvarchar](50) NOT NULL,
+	[GuideId] [int] NULL,
+	[GeneralNotes] [nvarchar](max) NULL,
+	[ImagePaths] [nvarchar](max) NULL,
+	[IsSubmitted] [bit] NOT NULL,
+	[SubmittedAt] [datetime2](7) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+	[PublicId] [nvarchar](50) NOT NULL,
+ CONSTRAINT [PK_TourReports] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Tours]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Tours](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourName] [nvarchar](200) NOT NULL,
+	[TourNameAlias] [nvarchar](200) NULL,
+	[VendorNames] [nvarchar](500) NULL,
+	[MeetingPlace] [nvarchar](200) NOT NULL,
+	[MeetingTime] [nvarchar](50) NULL,
+	[MeetingInstructions] [nvarchar](max) NULL,
+	[DefaultGuideId] [int] NULL,
+	[Duration] [nvarchar](50) NULL,
+	[MaxCapacity] [int] NULL,
+	[IsActive] [bit] NOT NULL,
+	[Notes] [nvarchar](max) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+	[TourStartTime] [nvarchar](50) NULL,
+	[VendorLink] [nvarchar](500) NULL,
+	[MasterTourName] [nvarchar](200) NOT NULL,
+	[MasterTourNameDesktop] [nvarchar](100) NULL,
+	[MasterTourNameMobile] [nvarchar](50) NULL,
+	[VendorTourId] [nvarchar](100) NULL,
+	[VendorScheduleLink] [nvarchar](1000) NULL,
+	[ReviewLink] [nvarchar](1000) NULL,
+ CONSTRAINT [PK_Tours] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourSchedules]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourSchedules](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[TourId] [int] NOT NULL,
+	[ScheduleName] [nvarchar](255) NOT NULL,
+	[StartDate] [date] NOT NULL,
+	[EndDate] [date] NOT NULL,
+	[MeetingPlace] [nvarchar](500) NULL,
+	[MeetingTime] [nvarchar](50) NULL,
+	[MeetingInstructions] [nvarchar](max) NULL,
+	[VendorLink] [nvarchar](500) NULL,
+	[DayAssignmentsJson] [nvarchar](max) NULL,
+	[TimeSlotsJson] [nvarchar](max) NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime] NOT NULL,
+	[UpdatedAt] [datetime] NOT NULL,
+	[IsOverride] [bit] NOT NULL,
+ CONSTRAINT [PK_TourSchedules] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourSetupQaManagerListInput]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourSetupQaManagerListInput](
+	[Id] [bigint] IDENTITY(1,1) NOT NULL,
+	[BatchId] [uniqueidentifier] NOT NULL,
+	[CanonicalTourName] [nvarchar](255) NOT NULL,
+	[MeetingPlaceExpected] [nvarchar](255) NULL,
+	[MeetingTimeExpected] [nvarchar](50) NULL,
+	[Notes] [nvarchar](1000) NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+ CONSTRAINT [PK_TourSetupQaManagerListInput] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourSetupQaPipeListInput]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourSetupQaPipeListInput](
+	[Id] [bigint] IDENTITY(1,1) NOT NULL,
+	[BatchId] [uniqueidentifier] NOT NULL,
+	[VendorName] [nvarchar](100) NULL,
+	[RawTourName] [nvarchar](255) NOT NULL,
+	[RecordCount] [int] NOT NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+ CONSTRAINT [PK_TourSetupQaPipeListInput] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[TourSetupQaStaging]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[TourSetupQaStaging](
+	[Id] [bigint] IDENTITY(1,1) NOT NULL,
+	[BatchId] [uniqueidentifier] NOT NULL,
+	[SourceType] [nvarchar](30) NOT NULL,
+	[VendorName] [nvarchar](100) NULL,
+	[VendorKey] [nvarchar](50) NULL,
+	[RawTourName] [nvarchar](255) NOT NULL,
+	[NormalizedTourKey] [nvarchar](255) NOT NULL,
+	[RecordCount] [int] NOT NULL,
+	[TourDate] [date] NULL,
+	[ProposedTourId] [int] NULL,
+	[ProposedMasterTourName] [nvarchar](255) NULL,
+	[MeetingPlaceExpected] [nvarchar](255) NULL,
+	[MeetingTimeExpected] [nvarchar](50) NULL,
+	[MeetingPlaceProposed] [nvarchar](255) NULL,
+	[MeetingTimeProposed] [nvarchar](50) NULL,
+	[GapTypeComputed] [nvarchar](40) NOT NULL,
+	[GapTypeFinal] [nvarchar](40) NULL,
+	[Notes] [nvarchar](2000) NULL,
+	[ReviewedBy] [nvarchar](128) NULL,
+	[ReviewedAt] [datetime2](0) NULL,
+	[AppliedAt] [datetime2](0) NULL,
+	[CreatedAt] [datetime2](0) NOT NULL,
+	[UpdatedAt] [datetime2](0) NOT NULL,
+	[FamilyKey] [nvarchar](255) NULL,
+	[DecisionStatus] [nvarchar](30) NULL,
+	[DecisionType] [nvarchar](30) NULL,
+	[SelectedTourId] [int] NULL,
+	[SelectedMasterTourName] [nvarchar](255) NULL,
+	[SelectedMasterTourNameMobile] [nvarchar](50) NULL,
+	[SelectedTourStartTime] [nvarchar](50) NULL,
+	[SelectedMeetingTime] [nvarchar](50) NULL,
+	[SelectedMeetingPlace] [nvarchar](255) NULL,
+	[VendorLinkStatus] [nvarchar](20) NULL,
+	[VendorScheduleLinkStatus] [nvarchar](20) NULL,
+	[ReviewLinkStatus] [nvarchar](20) NULL,
+	[SelectedVendorLink] [nvarchar](1000) NULL,
+	[SelectedVendorScheduleLink] [nvarchar](1000) NULL,
+	[SelectedReviewLink] [nvarchar](1000) NULL,
+	[IsAliasSelected] [bit] NULL,
+	[SelectedTourDuration] [nvarchar](50) NULL,
+ CONSTRAINT [PK_TourSetupQaStaging] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Users]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Users](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[Username] [nvarchar](256) NOT NULL,
+	[Password] [nvarchar](256) NOT NULL,
+	[Role] [nvarchar](64) NOT NULL,
+	[Permissions] [nvarchar](max) NULL,
+	[FirstName] [nvarchar](128) NULL,
+	[LastName] [nvarchar](128) NULL,
+	[IsActive] [bit] NOT NULL,
+	[LastLoginAt] [datetime2](7) NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[PhoneNumber] [nvarchar](50) NULL,
+	[Email] [nvarchar](256) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[Username] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[Vendors]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Vendors](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[VendorName] [nvarchar](200) NOT NULL,
+	[AllToursLink] [nvarchar](500) NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_Vendors] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[VendorTours]    Script Date: 4/19/2026 6:50:59 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[VendorTours](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[VendorId] [int] NOT NULL,
+	[MasterTourName] [nvarchar](200) NOT NULL,
+	[IsActive] [bit] NOT NULL,
+	[CreatedAt] [datetime2](7) NOT NULL,
+	[UpdatedAt] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_VendorTours] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_AutomaticGmail_InboxEmails_ReceivedDate]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_AutomaticGmail_InboxEmails_ReceivedDate] ON [dbo].[AutomaticGmail_InboxEmails]
+(
+	[ReceivedDate] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_AutomaticGmail_InboxEmails_Uid]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_AutomaticGmail_InboxEmails_Uid] ON [dbo].[AutomaticGmail_InboxEmails]
+(
+	[Uid] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_Inbox_OriginalBookingCode]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_Inbox_OriginalBookingCode] ON [dbo].[AutomaticGmail_InboxEmails]
+(
+	[OriginalBookingCode] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_Inbox_OriginalBookingId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_Inbox_OriginalBookingId] ON [dbo].[AutomaticGmail_InboxEmails]
+(
+	[OriginalBookingId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_AutomaticGmail_InboxEmails_MessageId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_AutomaticGmail_InboxEmails_MessageId] ON [dbo].[AutomaticGmail_InboxEmails]
+(
+	[MessageId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_AutomaticGmail_InboxWatermark_Mailbox]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_AutomaticGmail_InboxWatermark_Mailbox] ON [dbo].[AutomaticGmail_InboxWatermark]
+(
+	[Mailbox] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_Processed_Code_CompletedAt]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_Processed_Code_CompletedAt] ON [dbo].[AutomaticGmail_ProcessedEmails]
+(
+	[BookingCode] ASC,
+	[ProcessingCompletedAt] ASC,
+	[Id] ASC
+)
+INCLUDE([EmailType],[PreviousBookingCode],[NewBookingCode],[ExtractedAt],[MessageId]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_Processed_NewCode_CompletedAt]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_Processed_NewCode_CompletedAt] ON [dbo].[AutomaticGmail_ProcessedEmails]
+(
+	[NewBookingCode] ASC,
+	[ProcessingCompletedAt] ASC,
+	[Id] ASC
+)
+INCLUDE([BookingCode],[EmailType],[PreviousBookingCode],[ExtractedAt],[MessageId]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourDataErrorReports_MessageId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourDataErrorReports_MessageId] ON [dbo].[AutomaticGmail_TourDataErrorReports]
+(
+	[MessageId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_TourDataErrorReports_ProcessedEmailId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourDataErrorReports_ProcessedEmailId] ON [dbo].[AutomaticGmail_TourDataErrorReports]
+(
+	[ProcessedEmailId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_BookingContactChannelState_BookingId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingContactChannelState_BookingId] ON [dbo].[BookingContactChannelState]
+(
+	[BookingId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_BookingContactChannelState_MessageBooking]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingContactChannelState_MessageBooking] ON [dbo].[BookingContactChannelState]
+(
+	[MessageId] ASC,
+	[BookingCode] ASC
+)
+INCLUDE([Channel],[ContactState],[LegacyMessageSent],[LegacyMessageSentAtUtc],[UpdatedAtUtc]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_BookingContactChannelState_MessageBookingChannel]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_BookingContactChannelState_MessageBookingChannel] ON [dbo].[BookingContactChannelState]
+(
+	[MessageId] ASC,
+	[BookingCode] ASC,
+	[Channel] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_BookingMessageEvents_BookingId_SentAtUtc]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingMessageEvents_BookingId_SentAtUtc] ON [dbo].[BookingMessageEvents]
+(
+	[BookingId] ASC,
+	[SentAtUtc] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_BookingMessageEvents_CustomerId_SentAtUtc]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingMessageEvents_CustomerId_SentAtUtc] ON [dbo].[BookingMessageEvents]
+(
+	[CustomerId] ASC,
+	[SentAtUtc] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_BookingMessageEvents_MessageId_SentAtUtc]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingMessageEvents_MessageId_SentAtUtc] ON [dbo].[BookingMessageEvents]
+(
+	[MessageId] ASC,
+	[SentAtUtc] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_BookingMessageStatus_BookingCode]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingMessageStatus_BookingCode] ON [dbo].[BookingMessageStatus]
+(
+	[BookingCode] ASC
+)
+INCLUDE([MessageId],[Stage],[SentFlag],[SentAtUtc]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_BookingMessageStatus_BookingId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_BookingMessageStatus_BookingId] ON [dbo].[BookingMessageStatus]
+(
+	[BookingId] ASC
+)
+INCLUDE([MessageId],[Stage],[SentFlag],[SentAtUtc]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_BookingMessageStatus_MessageStageChannel]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_BookingMessageStatus_MessageStageChannel] ON [dbo].[BookingMessageStatus]
+(
+	[MessageId] ASC,
+	[Stage] ASC,
+	[Channel] ASC
+)
+INCLUDE([SentFlag],[SentAtUtc],[BookingCode],[VendorName],[TemplateId]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_CustomerContactLabels_CustomerId_LabelKey_IsActive]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_CustomerContactLabels_CustomerId_LabelKey_IsActive] ON [dbo].[CustomerContactLabels]
+(
+	[CustomerId] ASC,
+	[LabelKey] ASC,
+	[IsActive] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ_CustomerContactLabels_Customer_Label]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UQ_CustomerContactLabels_Customer_Label] ON [dbo].[CustomerContactLabels]
+(
+	[CustomerId] ASC,
+	[LabelKey] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_SchoolTourOneOffIntakeTemp_UpdatedAt]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_SchoolTourOneOffIntakeTemp_UpdatedAt] ON [dbo].[SchoolTourOneOffIntakeTemp]
+(
+	[UpdatedAt] DESC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourGuideAssignments_Lookups]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourGuideAssignments_Lookups] ON [dbo].[TourGuideAssignments]
+(
+	[TourDate] ASC,
+	[TourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_TourGuideDefaults_Tour_DOW_Start]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_TourGuideDefaults_Tour_DOW_Start] ON [dbo].[TourGuideDefaults]
+(
+	[TourId] ASC,
+	[DayOfWeek] ASC,
+	[StartTime] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourNameMappings_IncomingName]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourNameMappings_IncomingName] ON [dbo].[TourNameMappings]
+(
+	[IncomingTourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_TourNameMappings_TourId]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourNameMappings_TourId] ON [dbo].[TourNameMappings]
+(
+	[TourId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourNameMappings_Unique]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [IX_TourNameMappings_Unique] ON [dbo].[TourNameMappings]
+(
+	[IncomingTourName] ASC,
+	[VendorName] ASC
+)
+WHERE ([IsActive]=(1))
+WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_TourProductionGroupOverrides_Row]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_TourProductionGroupOverrides_Row] ON [dbo].[TourProductionGroupOverrides]
+(
+	[SourceTypeKey] ASC,
+	[VendorNameKey] ASC,
+	[RawTourNameKey] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ_TourReports_Instance]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UQ_TourReports_Instance] ON [dbo].[TourReports]
+(
+	[TourDate] ASC,
+	[TourName] ASC,
+	[TourTime] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_Tours_ActiveMasterTourName]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_Tours_ActiveMasterTourName] ON [dbo].[Tours]
+(
+	[MasterTourName] ASC
+)
+WHERE ([IsActive]=(1) AND [MasterTourName]<>N'')
+WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourSetupQaManagerListInput_Batch]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourSetupQaManagerListInput_Batch] ON [dbo].[TourSetupQaManagerListInput]
+(
+	[BatchId] ASC,
+	[CanonicalTourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourSetupQaPipeListInput_Batch]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourSetupQaPipeListInput_Batch] ON [dbo].[TourSetupQaPipeListInput]
+(
+	[BatchId] ASC,
+	[VendorName] ASC,
+	[RawTourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourSetupQaStaging_Batch]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourSetupQaStaging_Batch] ON [dbo].[TourSetupQaStaging]
+(
+	[BatchId] ASC,
+	[SourceType] ASC,
+	[GapTypeComputed] ASC,
+	[ReviewedAt] ASC,
+	[AppliedAt] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourSetupQaStaging_BatchNormalized]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourSetupQaStaging_BatchNormalized] ON [dbo].[TourSetupQaStaging]
+(
+	[BatchId] ASC,
+	[NormalizedTourKey] ASC,
+	[VendorKey] ASC,
+	[TourDate] ASC
+)
+INCLUDE([RawTourName],[RecordCount],[ProposedTourId],[GapTypeComputed],[GapTypeFinal]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_TourSetupQaStaging_RunFamilyDecision]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_TourSetupQaStaging_RunFamilyDecision] ON [dbo].[TourSetupQaStaging]
+(
+	[BatchId] ASC,
+	[FamilyKey] ASC,
+	[DecisionStatus] ASC,
+	[UpdatedAt] ASC
+)
+INCLUDE([RawTourName],[VendorName],[RecordCount],[SelectedTourId],[SelectedMasterTourName],[SelectedTourStartTime],[SelectedMeetingTime],[SelectedMeetingPlace]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_Vendors_VendorName]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_Vendors_VendorName] ON [dbo].[Vendors]
+(
+	[VendorName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [IX_VendorTours_MasterTourName]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE NONCLUSTERED INDEX [IX_VendorTours_MasterTourName] ON [dbo].[VendorTours]
+(
+	[MasterTourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UX_VendorTours_Vendor_MasterTourName]    Script Date: 4/19/2026 6:50:59 PM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UX_VendorTours_Vendor_MasterTourName] ON [dbo].[VendorTours]
+(
+	[VendorId] ASC,
+	[MasterTourName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_EmailClassificationRules] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_EmailClassificationRules] ADD  DEFAULT ((0)) FOR [Priority]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_EmailClassificationRules] ADD  DEFAULT (sysdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_EmailClassificationRules] ADD  DEFAULT (sysdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT ((0)) FOR [Uid]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT ((0)) FOR [AttachmentCount]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT (N'[]') FOR [AttachmentNames]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT (getutcdate()) FOR [CollectedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT ((0)) FOR [IsRead]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT (getutcdate()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT (getutcdate()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxEmails] ADD  DEFAULT ((3)) FOR [ProcessingStatus]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxWatermark] ADD  DEFAULT (N'INBOX') FOR [Mailbox]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_InboxWatermark] ADD  DEFAULT (getutcdate()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_VendorName]  DEFAULT (N'') FOR [VendorName]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_EmailType]  DEFAULT (N'') FOR [EmailType]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsTourBookingEmail]  DEFAULT ((0)) FOR [IsTourBookingEmail]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_ProcessingStatus]  DEFAULT (N'pending') FOR [ProcessingStatus]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_ProcessingAttempts]  DEFAULT ((0)) FOR [ProcessingAttempts]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsLatestAction]  DEFAULT ((1)) FOR [IsLatestAction]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_HasBeenClassified]  DEFAULT ((0)) FOR [HasBeenClassified]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_HasAIBeenRun]  DEFAULT ((0)) FOR [HasAIBeenRun]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsAISuccess]  DEFAULT ((0)) FOR [IsAISuccess]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_HasCalendarExport]  DEFAULT ((0)) FOR [HasCalendarExport]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsCalendarExportSuccess]  DEFAULT ((0)) FOR [IsCalendarExportSuccess]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_CreatedAt]  DEFAULT (sysdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_UpdatedAt]  DEFAULT (sysdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_ManualParsingCompleted]  DEFAULT ((0)) FOR [ManualParsingCompleted]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_ManualParsingConfidence]  DEFAULT ((0)) FOR [ManualParsingConfidence]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsCancellation]  DEFAULT ((0)) FOR [IsCancellation]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsModification]  DEFAULT ((0)) FOR [IsModification]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_IsBooking]  DEFAULT ((0)) FOR [IsBooking]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_AssociatedBookingIds]  DEFAULT (N'[]') FOR [AssociatedBookingIds]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_BookingAlterationNotes]  DEFAULT (N'') FOR [BookingAlterationNotes]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_HtmlContent]  DEFAULT (N'') FOR [HtmlContent]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_ExtractedBookingCode]  DEFAULT (N'') FOR [ExtractedBookingCode]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_NewBookingCode]  DEFAULT (N'') FOR [NewBookingCode]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_PreviousBookingCode]  DEFAULT (N'') FOR [PreviousBookingCode]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] ADD  CONSTRAINT [DF_AutomaticGmail_ProcessedEmails_VendorManuallyOverridden]  DEFAULT ((0)) FOR [VendorManuallyOverridden]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_TourDataErrorReports] ADD  CONSTRAINT [DF_TourDataErrorReports_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] ADD  CONSTRAINT [DF_BookingContactChannelState_LegacyMessageSent]  DEFAULT ((0)) FOR [LegacyMessageSent]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] ADD  CONSTRAINT [DF_BookingContactChannelState_CreatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [CreatedAtUtc]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] ADD  CONSTRAINT [DF_BookingContactChannelState_UpdatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [UpdatedAtUtc]
+GO
+ALTER TABLE [dbo].[BookingMessageEvents] ADD  CONSTRAINT [DF_BookingMessageEvents_SentAtUtc]  DEFAULT (sysutcdatetime()) FOR [SentAtUtc]
+GO
+ALTER TABLE [dbo].[BookingMessageEvents] ADD  CONSTRAINT [DF_BookingMessageEvents_CreatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [CreatedAtUtc]
+GO
+ALTER TABLE [dbo].[BookingMessageStatus] ADD  CONSTRAINT [DF_BookingMessageStatus_SentFlag]  DEFAULT ((0)) FOR [SentFlag]
+GO
+ALTER TABLE [dbo].[BookingMessageStatus] ADD  CONSTRAINT [DF_BookingMessageStatus_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[BookingMessageStatus] ADD  CONSTRAINT [DF_BookingMessageStatus_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsCancellation]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsModification]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsConfirmation]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ('UTC') FOR [TourTimeZone]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [NumberOfInfants]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ('USD') FOR [Currency]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsCalendarExportSuccess]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsSheetExportSuccess]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  CONSTRAINT [DF_Bookings_MessageSent]  DEFAULT ((0)) FOR [MessageSent]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [IsCheckedIn]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  DEFAULT ((0)) FOR [DoNotContact]
+GO
+ALTER TABLE [dbo].[Bookings] ADD  CONSTRAINT [DF_Bookings_VendorManuallyOverridden]  DEFAULT ((0)) FOR [VendorManuallyOverridden]
+GO
+ALTER TABLE [dbo].[CheckfrontV4Bookings] ADD  CONSTRAINT [DF_CheckfrontV4Bookings_PulledAtUtc]  DEFAULT (sysutcdatetime()) FOR [PulledAtUtc]
+GO
+ALTER TABLE [dbo].[CheckfrontV4Bookings] ADD  CONSTRAINT [DF_CheckfrontV4Bookings_UpdatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [UpdatedAtUtc]
+GO
+ALTER TABLE [dbo].[CustomerContactLabels] ADD  CONSTRAINT [DF_CustomerContactLabels_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[CustomerContactLabels] ADD  CONSTRAINT [DF_CustomerContactLabels_CreatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [CreatedAtUtc]
+GO
+ALTER TABLE [dbo].[CustomerContactLabels] ADD  CONSTRAINT [DF_CustomerContactLabels_UpdatedAtUtc]  DEFAULT (sysutcdatetime()) FOR [UpdatedAtUtc]
+GO
+ALTER TABLE [dbo].[Customers] ADD  DEFAULT ((0)) FOR [TotalBookings]
+GO
+ALTER TABLE [dbo].[Customers] ADD  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[Customers] ADD  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[GallerySettings] ADD  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[Guides] ADD  DEFAULT ((1)) FOR [IsTouring]
+GO
+ALTER TABLE [dbo].[Guides] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[SchoolTourOneOffIntakeTemp] ADD  CONSTRAINT [DF_SchoolTourOneOffIntakeTemp_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[SchoolTourOneOffIntakeTemp] ADD  CONSTRAINT [DF_SchoolTourOneOffIntakeTemp_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[SchoolTourOneOffIntakeTemp] ADD  CONSTRAINT [DF_SchoolTourOneOffIntakeTemp_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourGuideAssignment] ADD  DEFAULT (getutcdate()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourGuideAssignments] ADD  DEFAULT (getutcdate()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourGuideAssignments] ADD  DEFAULT (getutcdate()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourGuideDefaults] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[TourLinks] ADD  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourLinks] ADD  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourMessages] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[TourNameMappings] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[TourNameMappings] ADD  DEFAULT (sysdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourNameMappings] ADD  DEFAULT (sysdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourProductionGroupOverrides] ADD  CONSTRAINT [DF_TourProductionGroupOverrides_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[TourProductionGroupOverrides] ADD  CONSTRAINT [DF_TourProductionGroupOverrides_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourProductionGroupOverrides] ADD  CONSTRAINT [DF_TourProductionGroupOverrides_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourReports] ADD  DEFAULT ((0)) FOR [IsSubmitted]
+GO
+ALTER TABLE [dbo].[TourReports] ADD  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourReports] ADD  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[Tours] ADD  CONSTRAINT [DF_Tours_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[Tours] ADD  CONSTRAINT [DF_Tours_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[Tours] ADD  CONSTRAINT [DF_Tours_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourSchedules] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[TourSchedules] ADD  DEFAULT (getutcdate()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourSchedules] ADD  DEFAULT (getutcdate()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourSchedules] ADD  DEFAULT ((0)) FOR [IsOverride]
+GO
+ALTER TABLE [dbo].[TourSetupQaManagerListInput] ADD  CONSTRAINT [DF_TourSetupQaManagerListInput_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourSetupQaManagerListInput] ADD  CONSTRAINT [DF_TourSetupQaManagerListInput_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourSetupQaPipeListInput] ADD  CONSTRAINT [DF_TourSetupQaPipeListInput_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourSetupQaPipeListInput] ADD  CONSTRAINT [DF_TourSetupQaPipeListInput_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] ADD  CONSTRAINT [DF_TourSetupQaStaging_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] ADD  CONSTRAINT [DF_TourSetupQaStaging_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[Users] ADD  DEFAULT ('Guide') FOR [Role]
+GO
+ALTER TABLE [dbo].[Users] ADD  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[Users] ADD  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[Vendors] ADD  CONSTRAINT [DF_Vendors_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[Vendors] ADD  CONSTRAINT [DF_Vendors_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[Vendors] ADD  CONSTRAINT [DF_Vendors_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[VendorTours] ADD  CONSTRAINT [DF_VendorTours_IsActive]  DEFAULT ((1)) FOR [IsActive]
+GO
+ALTER TABLE [dbo].[VendorTours] ADD  CONSTRAINT [DF_VendorTours_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+ALTER TABLE [dbo].[VendorTours] ADD  CONSTRAINT [DF_VendorTours_UpdatedAt]  DEFAULT (sysutcdatetime()) FOR [UpdatedAt]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails]  WITH CHECK ADD  CONSTRAINT [FK_AutomaticGmail_ProcessedEmails_ClassificationRule] FOREIGN KEY([ClassificationRuleId])
+REFERENCES [dbo].[AutomaticGmail_EmailClassificationRules] ([Id])
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] CHECK CONSTRAINT [FK_AutomaticGmail_ProcessedEmails_ClassificationRule]
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails]  WITH CHECK ADD  CONSTRAINT [FK_AutomaticGmail_ProcessedEmails_InboxEmail] FOREIGN KEY([InboxEmailId])
+REFERENCES [dbo].[AutomaticGmail_InboxEmails] ([Id])
+GO
+ALTER TABLE [dbo].[AutomaticGmail_ProcessedEmails] CHECK CONSTRAINT [FK_AutomaticGmail_ProcessedEmails_InboxEmail]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState]  WITH CHECK ADD  CONSTRAINT [FK_BookingContactChannelState_Bookings] FOREIGN KEY([BookingId])
+REFERENCES [dbo].[Bookings] ([Id])
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] CHECK CONSTRAINT [FK_BookingContactChannelState_Bookings]
+GO
+ALTER TABLE [dbo].[Bookings]  WITH CHECK ADD  CONSTRAINT [FK_Bookings_Customers] FOREIGN KEY([CustomerId])
+REFERENCES [dbo].[Customers] ([Id])
+GO
+ALTER TABLE [dbo].[Bookings] CHECK CONSTRAINT [FK_Bookings_Customers]
+GO
+ALTER TABLE [dbo].[CustomerContactLabels]  WITH CHECK ADD  CONSTRAINT [FK_CustomerContactLabels_Customers] FOREIGN KEY([CustomerId])
+REFERENCES [dbo].[Customers] ([Id])
+GO
+ALTER TABLE [dbo].[CustomerContactLabels] CHECK CONSTRAINT [FK_CustomerContactLabels_Customers]
+GO
+ALTER TABLE [dbo].[TourGuideAssignments]  WITH CHECK ADD  CONSTRAINT [FK_TourGuideAssignments_Guides] FOREIGN KEY([GuideId])
+REFERENCES [dbo].[Guides] ([Id])
+GO
+ALTER TABLE [dbo].[TourGuideAssignments] CHECK CONSTRAINT [FK_TourGuideAssignments_Guides]
+GO
+ALTER TABLE [dbo].[TourLinks]  WITH CHECK ADD  CONSTRAINT [FK_TourLinks_Tours] FOREIGN KEY([TourId])
+REFERENCES [dbo].[Tours] ([Id])
+GO
+ALTER TABLE [dbo].[TourLinks] CHECK CONSTRAINT [FK_TourLinks_Tours]
+GO
+ALTER TABLE [dbo].[TourNameMappings]  WITH CHECK ADD  CONSTRAINT [FK_TourNameMappings_Tours] FOREIGN KEY([TourId])
+REFERENCES [dbo].[Tours] ([Id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[TourNameMappings] CHECK CONSTRAINT [FK_TourNameMappings_Tours]
+GO
+ALTER TABLE [dbo].[TourSchedules]  WITH CHECK ADD  CONSTRAINT [FK_TourSchedules_Tours] FOREIGN KEY([TourId])
+REFERENCES [dbo].[Tours] ([Id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[TourSchedules] CHECK CONSTRAINT [FK_TourSchedules_Tours]
+GO
+ALTER TABLE [dbo].[VendorTours]  WITH CHECK ADD  CONSTRAINT [FK_VendorTours_Vendors] FOREIGN KEY([VendorId])
+REFERENCES [dbo].[Vendors] ([Id])
+GO
+ALTER TABLE [dbo].[VendorTours] CHECK CONSTRAINT [FK_VendorTours_Vendors]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState]  WITH CHECK ADD  CONSTRAINT [CK_BookingContactChannelState_Channel] CHECK  (([Channel]=N'platform' OR [Channel]=N'wa' OR [Channel]=N'sms'))
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] CHECK CONSTRAINT [CK_BookingContactChannelState_Channel]
+GO
+ALTER TABLE [dbo].[BookingContactChannelState]  WITH CHECK ADD  CONSTRAINT [CK_BookingContactChannelState_ContactState] CHECK  (([ContactState]=(3) OR [ContactState]=(2) OR [ContactState]=(1) OR [ContactState]=(0)))
+GO
+ALTER TABLE [dbo].[BookingContactChannelState] CHECK CONSTRAINT [CK_BookingContactChannelState_ContactState]
+GO
+ALTER TABLE [dbo].[TourSetupQaPipeListInput]  WITH CHECK ADD  CONSTRAINT [CK_TourSetupQaPipeListInput_RecordCountPositive] CHECK  (([RecordCount]>(0)))
+GO
+ALTER TABLE [dbo].[TourSetupQaPipeListInput] CHECK CONSTRAINT [CK_TourSetupQaPipeListInput_RecordCountPositive]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging]  WITH CHECK ADD  CONSTRAINT [CK_TourSetupQaStaging_GapTypeComputed] CHECK  (([GapTypeComputed]=N'OK' OR [GapTypeComputed]=N'DetailDrift' OR [GapTypeComputed]=N'MissingSchedule' OR [GapTypeComputed]=N'MissingTour' OR [GapTypeComputed]=N'MissingAlias'))
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] CHECK CONSTRAINT [CK_TourSetupQaStaging_GapTypeComputed]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging]  WITH CHECK ADD  CONSTRAINT [CK_TourSetupQaStaging_GapTypeFinal] CHECK  (([GapTypeFinal] IS NULL OR ([GapTypeFinal]=N'OK' OR [GapTypeFinal]=N'DetailDrift' OR [GapTypeFinal]=N'MissingSchedule' OR [GapTypeFinal]=N'MissingTour' OR [GapTypeFinal]=N'MissingAlias')))
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] CHECK CONSTRAINT [CK_TourSetupQaStaging_GapTypeFinal]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging]  WITH CHECK ADD  CONSTRAINT [CK_TourSetupQaStaging_RecordCountPositive] CHECK  (([RecordCount]>(0)))
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] CHECK CONSTRAINT [CK_TourSetupQaStaging_RecordCountPositive]
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging]  WITH CHECK ADD  CONSTRAINT [CK_TourSetupQaStaging_SourceType] CHECK  (([SourceType]=N'ManagerList' OR [SourceType]=N'PipeList' OR [SourceType]=N'IncomingEmail'))
+GO
+ALTER TABLE [dbo].[TourSetupQaStaging] CHECK CONSTRAINT [CK_TourSetupQaStaging_SourceType]
+GO
+USE [master]
+GO
+ALTER DATABASE [DB_176118_autogmail] SET  READ_WRITE 
+GO

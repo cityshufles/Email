@@ -1,0 +1,10 @@
+Booking Confirmation
+You have a new reservation for Grand Central Terminal History and Mysteries.
+Booking Reference: BR-1361381631
+Tour Name: Grand Central Terminal History and Mysteries
+Travel Date: Sun, Feb 22, 2026
+Lead Traveler Name: Christopher Knisely
+Travelers: 2 Adults
+Tour Grade: Grand Central Terminal History and Mysteries 14:00
+Phone: (Alternate Phone)US+1 5134486530
+Customer Email: traveler@example.com

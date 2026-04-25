@@ -1,0 +1,289 @@
+@using Microsoft.AspNetCore.Components
+@inject ITourGuideDefaultsApiService TourGuideDefaultsApi
+@inject IJSRuntime JSRuntime
+
+<div class="border rounded p-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+            <h6 class="mb-0">Default Guide Schedule</h6>
+            <div class="text-muted small">Per-day guide defaults for this tour.</div>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="ShowAddScheduleRow" disabled="@(!CanEdit)">
+            <i class="bi bi-plus-lg me-1"></i>Add
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (!CanEdit)
+    {
+        <div class="text-muted">Save the master tour to manage default guide schedules.</div>
+    }
+    else if (isLoading)
+    {
+        <div class="text-muted">Loading default schedule...</div>
+    }
+    else if (schedule.Count == 0)
+    {
+        <div class="text-muted">No schedule rows yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 140px;">Day</th>
+                        <th style="width: 180px;">Start Time</th>
+                        <th>Guide</th>
+                        <th style="width: 90px;">Active</th>
+                        <th style="width: 120px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in schedule)
+                    {
+                        <tr>
+                            <td>@DayName(row.DayOfWeek)</td>
+                            <td>@row.StartTime</td>
+                            <td>@GuideName(row.GuideId)</td>
+                            <td>
+                                <span class="badge @(row.IsActive ? "bg-success" : "bg-secondary")">@(row.IsActive ? "Yes" : "No")</span>
+                            </td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" @onclick="() => EditScheduleRow(row)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger" @onclick="() => DeleteScheduleRow(row)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (showScheduleEditor)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingSchedule.Id == 0 ? "Add" : "Edit") Schedule Row</h5>
+                    <button type="button" class="btn-close" @onclick="CloseEditor"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">Day of Week</label>
+                            <select class="form-select" @bind="editingSchedule.DayOfWeek">
+                                @for (int i = 0; i < 7; i++)
+                                {
+                                    <option value="@i">@DayName(i)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Start Time</label>
+                            <div class="input-group">
+                                <input class="form-control" @bind="editingSchedule.StartTime" placeholder="e.g., 1:50 PM" />
+                                <select class="form-select" style="max-width: 10rem;" @onchange="OnPickExactTime">
+                                    <option value="">pick exact</option>
+                                    @foreach (var t in ExactTimes)
+                                    {
+                                        <option value="@t">@t</option>
+                                    }
+                                </select>
+                            </div>
+                            <small class="text-muted">Pick an exact tour time to avoid typos.</small>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label">Guide</label>
+                        <select class="form-select" @bind="editingSchedule.GuideId">
+                            <option value="0">-- select guide --</option>
+                            @foreach (var g in Guides)
+                            {
+                                <option value="@g.Id">@GuideName(g.Id)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="schedActive" @bind="editingSchedule.IsActive" />
+                        <label class="form-check-label" for="schedActive">Active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" @onclick="CloseEditor">Cancel</button>
+                    <button class="btn btn-success btn-sm" @onclick="SaveScheduleRow" disabled="@(editingSchedule.GuideId == 0 || string.IsNullOrWhiteSpace(editingSchedule.StartTime))">
+                        <i class="bi bi-check2-circle me-1"></i>Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public int TourId { get; set; }
+    [Parameter] public IReadOnlyList<DbGuide> Guides { get; set; } = Array.Empty<DbGuide>();
+    [Parameter] public IReadOnlyList<string> ExactTimes { get; set; } = Array.Empty<string>();
+
+    private List<TourGuideDefault> schedule = new();
+    private bool isLoading;
+    private bool showScheduleEditor;
+    private TourGuideDefault editingSchedule = new();
+    private string? errorMessage;
+
+    private bool CanEdit => TourId > 0;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load default guide schedule for the tour.
+        if (!CanEdit)
+        {
+            schedule = new List<TourGuideDefault>();
+            return;
+        }
+
+        await LoadScheduleAsync();
+    }
+
+    private async Task LoadScheduleAsync()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            schedule = await TourGuideDefaultsApi.GetByTourAsync(TourId);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourDefaultGuideSchedule] LoadScheduleAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load default guide schedule.";
+            schedule = new List<TourGuideDefault>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowAddScheduleRow()
+    {
+        if (!CanEdit) return;
+        editingSchedule = new TourGuideDefault
+        {
+            TourId = TourId,
+            DayOfWeek = 0,
+            StartTime = string.Empty,
+            GuideId = 0,
+            IsActive = true
+        };
+        showScheduleEditor = true;
+    }
+
+    private void EditScheduleRow(TourGuideDefault row)
+    {
+        editingSchedule = new TourGuideDefault
+        {
+            Id = row.Id,
+            TourId = row.TourId,
+            DayOfWeek = row.DayOfWeek,
+            StartTime = row.StartTime,
+            GuideId = row.GuideId,
+            IsActive = row.IsActive
+        };
+        showScheduleEditor = true;
+    }
+
+    private void CloseEditor()
+    {
+        showScheduleEditor = false;
+    }
+
+    private async Task SaveScheduleRow()
+    {
+        if (!CanEdit) return;
+
+        try
+        {
+            if (editingSchedule.Id == 0)
+            {
+                var created = await TourGuideDefaultsApi.CreateAsync(editingSchedule);
+                if (created != null) schedule.Add(created);
+            }
+            else
+            {
+                var ok = await TourGuideDefaultsApi.UpdateAsync(editingSchedule.Id, editingSchedule);
+                if (ok)
+                {
+                    var idx = schedule.FindIndex(x => x.Id == editingSchedule.Id);
+                    if (idx >= 0) schedule[idx] = editingSchedule;
+                }
+            }
+            showScheduleEditor = false;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourDefaultGuideSchedule] SaveScheduleRow failed: {ex}");
+#endif
+            errorMessage = "Failed to save default guide schedule.";
+        }
+    }
+
+    private async Task DeleteScheduleRow(TourGuideDefault row)
+    {
+        if (!CanEdit) return;
+
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete schedule for {DayName(row.DayOfWeek)} {row.StartTime}?");
+            if (!confirmed) return;
+
+            var ok = await TourGuideDefaultsApi.DeleteAsync(row.Id);
+            if (ok) schedule.RemoveAll(x => x.Id == row.Id);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourDefaultGuideSchedule] DeleteScheduleRow failed: {ex}");
+#endif
+            errorMessage = "Failed to delete schedule row.";
+        }
+    }
+
+    private void OnPickExactTime(ChangeEventArgs e)
+    {
+        var val = e?.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(val))
+        {
+            editingSchedule.StartTime = val;
+        }
+    }
+
+    private string DayName(int day)
+    {
+        return System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetDayName((DayOfWeek)day);
+    }
+
+    private string GuideName(int id)
+    {
+        var guide = Guides.FirstOrDefault(x => x.Id == id);
+        if (guide == null) return $"#{id}";
+        if (string.IsNullOrWhiteSpace(guide.LastName)) return guide.FirstName ?? string.Empty;
+        return $"{guide.FirstName} {guide.LastName}";
+    }
+}

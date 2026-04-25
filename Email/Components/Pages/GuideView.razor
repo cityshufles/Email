@@ -1,0 +1,663 @@
+@page "/guide-view"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.Mobile
+@using Email.Services
+@using Email.Calendar.Services
+@using Email.Calendar.Models
+@inject ITourGuideAssignmentService AssignmentService
+@inject ICalendarDataService CalendarService
+@inject IGuidesApiService GuidesService
+
+<!-- Created: 2026-01-08 - Guide View for guides to see their assigned tours -->
+
+<PageTitle>My Tours</PageTitle>
+
+<div class="container-fluid py-3">
+    <!-- Header: Guide Select + Date Navigation -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="bi bi-person-check me-2"></i>My Tours</h4>
+        
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <!-- Guide Selector -->
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small fw-semibold">Guide:</label>
+                <select class="form-select form-select-sm" style="width: 220px;"
+                        value="@SelectedFilterMode"
+                        @onchange="OnGuideSelectChange">
+                    <option value="">Select Guide...</option>
+                    <option value="all-grouped">📋 All Guides (Grouped)</option>
+                    <option value="all-assigned">📊 All Assigned Tours</option>
+                    @* <option value="no-guide-calendar">⚠️ Unassigned Tours (Calendar)</option> *@
+                    <option value="no-guide-assignments">🔍 No Guide Assigned</option>
+                    <option disabled>──────────────</option>
+                    @foreach (var g in Guides.OrderBy(x => x.FirstName).ThenBy(x => x.LastName))
+                    {
+                        <option value="guide-@g.Id">@g.FirstName @g.LastName</option>
+                    }
+                </select>
+            </div>
+            
+            <!-- Date Navigation -->
+            <div class="d-flex align-items-center gap-1">
+                <button class="btn btn-outline-secondary btn-sm" @onclick="GoToPreviousDay" title="Previous">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <input type="date" class="form-control form-control-sm" style="width: 140px;"
+                       value="@SelectedDate.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateChanged" />
+                <button class="btn btn-outline-secondary btn-sm" @onclick="GoToNextDay" title="Next">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+                <button class='@($"btn btn-sm {(ViewMode == "day" ? "btn-primary" : "btn-outline-primary")}")' @onclick="SetDayView">Day</button>
+                <button class='@($"btn btn-sm {(ViewMode == "week" ? "btn-primary" : "btn-outline-primary")}")' @onclick="SetWeekView">Week</button>
+                <button class='@($"btn btn-sm {(ViewMode == "month" ? "btn-primary" : "btn-outline-primary")}")' @onclick="SetMonthView">Month</button>
+                <button class="btn btn-outline-success btn-sm" @onclick="GoToToday">Today</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Date Header -->
+    @if (!string.IsNullOrEmpty(SelectedFilterMode))
+    {
+        <div class="mb-3">
+            <h5 class="text-muted">
+                <i class="bi bi-calendar3 me-2"></i>
+                @if (ViewMode == "day")
+                {
+                    @SelectedDate.ToString("dddd, MMMM d, yyyy")
+                }
+                else if (ViewMode == "week")
+                {
+                    @($"{SelectedDate:MMM d} - {EndDate:MMM d, yyyy}")
+                }
+                else
+                {
+                    @($"{SelectedDate:MMMM yyyy}")
+                }
+                @if (AssignedTours.Count > 0)
+                {
+                    <span class="badge bg-primary ms-2">@AssignedTours.Count tour(s)</span>
+                    <span class="badge bg-secondary ms-1">@TotalGuests guests</span>
+                }
+            </h5>
+        </div>
+    }
+    
+    <!-- Content -->
+    @if (string.IsNullOrEmpty(SelectedFilterMode))
+    {
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-person-circle" style="font-size: 3rem;"></i>
+                <div class="mt-3">Select your name from the dropdown above to view your tours</div>
+            </div>
+        </div>
+    }
+    else if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="mt-2 text-muted">Loading your tours...</div>
+        </div>
+    }
+    else if (AssignedTours.Count == 0)
+    {
+        <div class="card">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-calendar-x" style="font-size: 3rem;"></i>
+                <div class="mt-3">No tours assigned to you on this date</div>
+                <button class="btn btn-outline-primary btn-sm mt-2" @onclick="GoToToday">
+                    <i class="bi bi-calendar-day me-1"></i>Go to Today
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Tour Cards -->
+        <div class="row g-3">
+            @foreach (var tour in AssignedTours)
+            {
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">
+                                    @if (tour.TourDate.HasValue)
+                                    {
+                                        <span class="badge bg-secondary me-2">@tour.TourDate.Value.ToString("ddd MMM d")</span>
+                                    }
+                                    <i class="bi bi-clock me-1"></i>@tour.TourTime
+                                    <span class="ms-2">@tour.TourName</span>
+                                </h5>
+                                @if (!string.IsNullOrWhiteSpace(tour.GuideName))
+                                {
+                                    <small class="text-info fw-semibold">
+                                        <i class="bi bi-person-badge me-1"></i>@tour.GuideName
+                                    </small>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(tour.MeetingPlace))
+                                {
+                                    <small class="text-muted ms-2"><i class="bi bi-geo-alt me-1"></i>@tour.MeetingPlace</small>
+                                }
+                            </div>
+                            <div>
+                                <span class="badge bg-primary fs-6">
+                                    <i class="bi bi-people me-1"></i>@tour.TotalGuests guests
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            @if (tour.VendorGroups.Count == 0)
+                            {
+                                <div class="text-muted">No walkers for this tour</div>
+                            }
+                            else
+                            {
+                                @foreach (var vendor in tour.VendorGroups)
+                                {
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center border-bottom pb-1 mb-2">
+                                            <span class="fw-semibold">@vendor.VendorName</span>
+                                            <span class="badge bg-secondary">@vendor.TotalGuests guests</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>Phone</th>
+                                                        <th class="text-center">Guests</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var walker in vendor.Walkers)
+                                                    {
+                                                        <tr>
+                                                            <td>@walker.DisplayName</td>
+                                                            <td>
+                                                                @if (!string.IsNullOrWhiteSpace(walker.Phone))
+                                                                {
+                                                                    <a href="tel:@walker.Phone" class="text-decoration-none">
+                                                                        <i class="bi bi-telephone me-1"></i>@walker.Phone
+                                                                    </a>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span class="text-muted">No phone</span>
+                                                                }
+                                                            </td>
+                                                            <td class="text-center">
+                                                                <span class="badge bg-info">@walker.Attendees</span>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private DateTime SelectedDate { get; set; } = DateTime.Today;
+    private DateTime EndDate { get; set; } = DateTime.Today;
+    private string ViewMode { get; set; } = "day"; // day, week, month
+    private string SelectedFilterMode { get; set; } = "";
+    private int? SelectedGuideId { get; set; }
+    private List<DbGuide> Guides { get; set; } = new();
+    private List<GuideViewTour> AssignedTours { get; set; } = new();
+    private bool isLoading = false;
+    
+    private int TotalGuests => AssignedTours.Sum(t => t.TotalGuests);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGuidesAsync();
+    }
+
+    private async Task LoadGuidesAsync()
+    {
+        try
+        {
+            Guides = await GuidesService.GetGuidesAsync();
+        }
+        catch
+        {
+            Guides = new List<DbGuide>();
+        }
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var date))
+        {
+            SelectedDate = date;
+            UpdateEndDate();
+            await LoadToursAsync();
+        }
+    }
+
+    private void UpdateEndDate()
+    {
+        EndDate = ViewMode switch
+        {
+            "week" => SelectedDate.AddDays(6),
+            "month" => new DateTime(SelectedDate.Year, SelectedDate.Month, DateTime.DaysInMonth(SelectedDate.Year, SelectedDate.Month)),
+            _ => SelectedDate
+        };
+    }
+
+    private async Task SetDayView()
+    {
+        ViewMode = "day";
+        EndDate = SelectedDate;
+        await LoadToursAsync();
+    }
+
+    private async Task SetWeekView()
+    {
+        ViewMode = "week";
+        EndDate = SelectedDate.AddDays(6);
+        await LoadToursAsync();
+    }
+
+    private async Task SetMonthView()
+    {
+        ViewMode = "month";
+        SelectedDate = new DateTime(SelectedDate.Year, SelectedDate.Month, 1);
+        EndDate = SelectedDate.AddMonths(1).AddDays(-1);
+        await LoadToursAsync();
+    }
+
+    private async Task OnGuideSelectChange(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        SelectedFilterMode = val ?? "";
+        
+        if (string.IsNullOrEmpty(val))
+        {
+            SelectedGuideId = null;
+            AssignedTours.Clear();
+        }
+        else if (val.StartsWith("guide-") && int.TryParse(val.Replace("guide-", ""), out var id))
+        {
+            SelectedGuideId = id;
+            await LoadToursAsync();
+        }
+        else
+        {
+            SelectedGuideId = null;
+            await LoadToursAsync();
+        }
+    }
+
+    private async Task GoToPreviousDay()
+    {
+        switch (ViewMode)
+        {
+            case "week":
+                SelectedDate = SelectedDate.AddDays(-7);
+                EndDate = SelectedDate.AddDays(6);
+                break;
+            case "month":
+                SelectedDate = SelectedDate.AddMonths(-1);
+                EndDate = SelectedDate.AddMonths(1).AddDays(-1);
+                break;
+            default:
+                SelectedDate = SelectedDate.AddDays(-1);
+                EndDate = SelectedDate;
+                break;
+        }
+        await LoadToursAsync();
+    }
+
+    private async Task GoToNextDay()
+    {
+        switch (ViewMode)
+        {
+            case "week":
+                SelectedDate = SelectedDate.AddDays(7);
+                EndDate = SelectedDate.AddDays(6);
+                break;
+            case "month":
+                SelectedDate = SelectedDate.AddMonths(1);
+                EndDate = SelectedDate.AddMonths(1).AddDays(-1);
+                break;
+            default:
+                SelectedDate = SelectedDate.AddDays(1);
+                EndDate = SelectedDate;
+                break;
+        }
+        await LoadToursAsync();
+    }
+
+    private async Task GoToToday()
+    {
+        SelectedDate = DateTime.Today;
+        UpdateEndDate();
+        await LoadToursAsync();
+    }
+
+    private async Task LoadToursAsync()
+    {
+        if (string.IsNullOrEmpty(SelectedFilterMode)) return;
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            AssignedTours.Clear();
+
+            switch (SelectedFilterMode)
+            {
+                case "all-grouped":
+                    await LoadAllToursGroupedByGuideAsync();
+                    break;
+                case "all-assigned":
+                    await LoadAllAssignedToursAsync();
+                    break;
+                case "no-guide-calendar":
+                    await LoadUnassignedToursFromCalendarAsync();
+                    break;
+                case "no-guide-assignments":
+                    await LoadToursWithNoGuideAssignedAsync();
+                    break;
+                default:
+                    if (SelectedGuideId.HasValue)
+                    {
+                        await LoadToursForGuideAsync(SelectedGuideId.Value);
+                    }
+                    break;
+            }
+        }
+        catch
+        {
+            AssignedTours.Clear();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Load all assigned tours grouped by guide name
+    /// </summary>
+    private async Task LoadAllToursGroupedByGuideAsync()
+    {
+        var allAssignments = await AssignmentService.GetAssignmentsForDateAsync(SelectedDate);
+        var start = SelectedDate.Date;
+        var allAppointments = await CalendarService.GetAppointmentsAsync(start, start);
+
+        // Group assignments by guide
+        var groupedByGuide = allAssignments
+            .Where(a => a.GuideId.HasValue)
+            .GroupBy(a => a.GuideId!.Value)
+            .OrderBy(g => Guides.FirstOrDefault(x => x.Id == g.Key)?.FirstName ?? "Unknown");
+
+        foreach (var guideGroup in groupedByGuide)
+        {
+            var guide = Guides.FirstOrDefault(g => g.Id == guideGroup.Key);
+            var guideName = guide != null ? $"{guide.FirstName} {guide.LastName}" : "Unknown Guide";
+
+            foreach (var assignment in guideGroup)
+            {
+                var tour = await BuildTourFromAssignment(assignment, allAppointments, SelectedDate);
+                tour.GuideName = guideName;
+                AssignedTours.Add(tour);
+            }
+        }
+
+        AssignedTours = AssignedTours.OrderBy(t => t.GuideName).ThenBy(t => ParseTime(t.TourTime)).ToList();
+    }
+
+    /// <summary>
+    /// Load all tours that have any guide assigned (flat list)
+    /// </summary>
+    private async Task LoadAllAssignedToursAsync()
+    {
+        var allAssignments = await AssignmentService.GetAssignmentsForDateAsync(SelectedDate);
+        var start = SelectedDate.Date;
+        var allAppointments = await CalendarService.GetAppointmentsAsync(start, start);
+
+        var assignedTours = allAssignments.Where(a => a.GuideId.HasValue).ToList();
+
+        foreach (var assignment in assignedTours)
+        {
+            var guide = Guides.FirstOrDefault(g => g.Id == assignment.GuideId);
+            var tour = await BuildTourFromAssignment(assignment, allAppointments, SelectedDate);
+            tour.GuideName = guide != null ? $"{guide.FirstName} {guide.LastName}" : "Unknown";
+            AssignedTours.Add(tour);
+        }
+
+        AssignedTours = AssignedTours.OrderBy(t => ParseTime(t.TourTime)).ToList();
+    }
+
+    /// <summary>
+    /// Load tours from calendar that don't have any guide assignment
+    /// </summary>
+    private async Task LoadUnassignedToursFromCalendarAsync()
+    {
+        var allAssignments = await AssignmentService.GetAssignmentsForDateAsync(SelectedDate);
+        var start = SelectedDate.Date;
+        var allAppointments = await CalendarService.GetAppointmentsAsync(start, start);
+
+        // Get unique tour name+time combinations that have assignments
+        var assignedTourKeys = allAssignments
+            .Select(a => $"{a.TourName?.ToLower()}|{a.TourTime?.ToLower()}")
+            .ToHashSet();
+
+        // Find appointments that don't match any assignment
+        var unassignedAppointments = allAppointments
+            .Where(a => a.StartTime.Date == SelectedDate.Date)
+            .GroupBy(a => new { TourName = a.TourName ?? "Unknown", Time = a.StartTime.ToString("h:mm tt") })
+            .Where(g => !assignedTourKeys.Contains($"{g.Key.TourName.ToLower()}|{g.Key.Time.ToLower()}"))
+            .ToList();
+
+        foreach (var group in unassignedAppointments)
+        {
+            var walkers = group.Select(a => new MobileWalkerInfoModel
+            {
+                DisplayName = a.CustomerName ?? "Guest",
+                Phone = a.CustomerPhone ?? "",
+                Attendees = a.NumberOfAttendees ?? 1,
+                TourName = a.TourName ?? "",
+                VendorName = a.VendorName ?? ""
+            }).ToList();
+
+            var vendorGroups = walkers
+                .GroupBy(w => string.IsNullOrWhiteSpace(w.VendorName) ? "Direct" : w.VendorName)
+                .Select(g => new MobileVendorGroupModel
+                {
+                    VendorName = g.Key,
+                    Walkers = g.ToList()
+                })
+                .OrderBy(v => v.VendorName)
+                .ToList();
+
+            AssignedTours.Add(new GuideViewTour
+            {
+                TourName = group.Key.TourName,
+                TourTime = group.Key.Time,
+                GuideName = "⚠️ No Guide",
+                VendorGroups = vendorGroups
+            });
+        }
+
+        AssignedTours = AssignedTours.OrderBy(t => ParseTime(t.TourTime)).ToList();
+    }
+
+    /// <summary>
+    /// Load tours from calendar that have no assignment record at all (need to be assigned)
+    /// </summary>
+    private async Task LoadToursWithNoGuideAssignedAsync()
+    {
+        var allAssignments = await AssignmentService.GetAssignmentsForDateAsync(SelectedDate);
+        var start = SelectedDate.Date;
+        var allAppointments = await CalendarService.GetAppointmentsAsync(start, start);
+
+        // Get unique tour name+time combinations that have any assignment (regardless of guide)
+        var assignedTourKeys = allAssignments
+            .Select(a => $"{a.TourName?.ToLower()}|{a.TourTime?.ToLower()}")
+            .ToHashSet();
+
+        // Find calendar appointments that don't have any assignment record
+        var unassignedAppointments = allAppointments
+            .Where(a => a.StartTime.Date == SelectedDate.Date)
+            .GroupBy(a => new { TourName = a.TourName ?? "Unknown", Time = a.StartTime.ToString("h:mm tt") })
+            .Where(g => !assignedTourKeys.Contains($"{g.Key.TourName.ToLower()}|{g.Key.Time.ToLower()}"))
+            .ToList();
+
+        foreach (var group in unassignedAppointments)
+        {
+            var walkers = group.Select(a => new MobileWalkerInfoModel
+            {
+                DisplayName = a.CustomerName ?? "Guest",
+                Phone = a.CustomerPhone ?? "",
+                Attendees = a.NumberOfAttendees ?? 1,
+                TourName = a.TourName ?? "",
+                VendorName = a.VendorName ?? ""
+            }).ToList();
+
+            var vendorGroups = walkers
+                .GroupBy(w => string.IsNullOrWhiteSpace(w.VendorName) ? "Direct" : w.VendorName)
+                .Select(g => new MobileVendorGroupModel
+                {
+                    VendorName = g.Key,
+                    Walkers = g.ToList()
+                })
+                .OrderBy(v => v.VendorName)
+                .ToList();
+
+            AssignedTours.Add(new GuideViewTour
+            {
+                TourName = group.Key.TourName,
+                TourTime = group.Key.Time,
+                GuideName = "🔍 No Guide Assigned",
+                VendorGroups = vendorGroups
+            });
+        }
+
+        AssignedTours = AssignedTours.OrderBy(t => ParseTime(t.TourTime)).ToList();
+    }
+
+    /// <summary>
+    /// Load tours for a specific guide (supports date range for week/month views)
+    /// </summary>
+    private async Task LoadToursForGuideAsync(int guideId)
+    {
+        // Iterate over the date range
+        for (var date = SelectedDate.Date; date <= EndDate.Date; date = date.AddDays(1))
+        {
+            var allAssignments = await AssignmentService.GetAssignmentsForDateAsync(date);
+            var myAssignments = allAssignments.Where(a => a.GuideId == guideId).ToList();
+
+            if (myAssignments.Count == 0) continue;
+
+            var allAppointments = await CalendarService.GetAppointmentsAsync(date, date);
+
+            foreach (var assignment in myAssignments)
+            {
+                var tour = await BuildTourFromAssignment(assignment, allAppointments, date);
+                // Add date label for multi-day views
+                if (ViewMode != "day")
+                {
+                    tour.TourDate = date;
+                }
+                AssignedTours.Add(tour);
+            }
+        }
+
+        // Sort by date first, then by time
+        AssignedTours = AssignedTours
+            .OrderBy(t => t.TourDate ?? SelectedDate)
+            .ThenBy(t => ParseTime(t.TourTime))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Helper method to build a GuideViewTour from an assignment
+    /// </summary>
+    private Task<GuideViewTour> BuildTourFromAssignment(TourGuideAssignment assignment, List<CalendarAppointmentModel> allAppointments, DateTime date)
+    {
+        var tourAppointments = allAppointments
+            .Where(a => a.StartTime.Date == date.Date &&
+                        (a.TourName ?? "").Equals(assignment.TourName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Try to match by time if there are multiple tours with same name
+        if (!string.IsNullOrWhiteSpace(assignment.TourTime))
+        {
+            var timeFiltered = tourAppointments
+                .Where(a => a.StartTime.ToString("h:mm tt").Equals(assignment.TourTime, StringComparison.OrdinalIgnoreCase) ||
+                            a.StartTime.ToString("HH:mm").Equals(assignment.TourTime, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (timeFiltered.Count > 0)
+            {
+                tourAppointments = timeFiltered;
+            }
+        }
+
+        var walkers = tourAppointments.Select(a => new MobileWalkerInfoModel
+        {
+            DisplayName = a.CustomerName ?? "Guest",
+            Phone = a.CustomerPhone ?? "",
+            Attendees = a.NumberOfAttendees ?? 1,
+            TourName = a.TourName ?? "",
+            VendorName = a.VendorName ?? ""
+        }).ToList();
+
+        var vendorGroups = walkers
+            .GroupBy(w => string.IsNullOrWhiteSpace(w.VendorName) ? "Direct" : w.VendorName)
+            .Select(g => new MobileVendorGroupModel
+            {
+                VendorName = g.Key,
+                Walkers = g.ToList()
+            })
+            .OrderBy(v => v.VendorName)
+            .ToList();
+
+        return Task.FromResult(new GuideViewTour
+        {
+            TourName = assignment.TourName,
+            TourTime = assignment.TourTime,
+            MeetingPlace = "",
+            VendorGroups = vendorGroups
+        });
+    }
+
+    // ExtractVendor method removed - now using a.VendorName directly from CalendarAppointmentModel
+
+    private static TimeSpan ParseTime(string? time)
+    {
+        if (string.IsNullOrWhiteSpace(time)) return TimeSpan.MaxValue;
+        if (DateTime.TryParse(time, out var dt)) return dt.TimeOfDay;
+        if (TimeSpan.TryParse(time, out var ts)) return ts;
+        return TimeSpan.MaxValue;
+    }
+
+    // View model for a tour in the guide view
+    private class GuideViewTour
+    {
+        public string TourName { get; set; } = "";
+        public string TourTime { get; set; } = "";
+        public string MeetingPlace { get; set; } = "";
+        public string GuideName { get; set; } = "";
+        public DateTime? TourDate { get; set; } // For multi-day views
+        public List<MobileVendorGroupModel> VendorGroups { get; set; } = new();
+        public int TotalGuests => VendorGroups.Sum(v => v.TotalGuests);
+    }
+}

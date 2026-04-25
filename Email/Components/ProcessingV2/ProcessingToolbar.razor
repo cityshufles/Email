@@ -1,0 +1,51 @@
+@using Microsoft.AspNetCore.Components
+@using Syncfusion.Blazor.Buttons
+@inherits ComponentBase
+
+@* Created: 2025-11-07 00:00 UTC *@
+<div class="mb-3 d-flex gap-2 align-items-center">
+    <SfButton CssClass="e-btn e-primary" OnClick="HandleRefresh" IsDisabled="@IsBusy">Refresh</SfButton>
+    <SfButton CssClass="e-btn e-success" OnClick="HandleProcessSelected" IsDisabled="@(IsBusy || IsProcessSelectedDisabled)">
+        @if (IsSelectedBusy)
+        {
+            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            <span>Processing...</span>
+        }
+        else
+        {
+            @:Process Selected
+        }
+    </SfButton>
+    <SfButton CssClass="e-btn e-warning" OnClick="HandleProcessAll" IsDisabled="@IsBusy">
+        @if (IsBusy)
+        {
+            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"> </span>
+            <span>Processing…</span>
+        }
+        else
+        {
+            @:Process All
+        }
+    </SfButton>
+    @if (IsBusy)
+    {
+        <SfButton CssClass="e-btn e-outline e-danger" OnClick="HandleCancel">Cancel</SfButton>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnRefresh { get; set; }
+    [Parameter] public EventCallback OnProcessAll { get; set; }
+    [Parameter] public EventCallback OnProcessSelected { get; set; }
+    [Parameter] public bool IsProcessSelectedDisabled { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public bool IsSelectedBusy { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task HandleRefresh() => await OnRefresh.InvokeAsync();
+    private async Task HandleProcessAll() => await OnProcessAll.InvokeAsync();
+    private async Task HandleProcessSelected() => await OnProcessSelected.InvokeAsync();
+    private async Task HandleCancel() => await OnCancel.InvokeAsync();
+}
+
+

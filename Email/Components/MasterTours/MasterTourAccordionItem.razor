@@ -1,0 +1,426 @@
+@inject IMasterTourService MasterTourService
+@inject IJSRuntime JSRuntime
+
+<div class="accordion-item">
+    <h2 class="accordion-header" id="@headerId">
+        <div class="d-flex align-items-center">
+            <button class="accordion-button @(IsExpanded ? "" : "collapsed") flex-grow-1"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#@collapseId"
+                    aria-expanded="@(IsExpanded.ToString().ToLowerInvariant())"
+                    aria-controls="@collapseId">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span>@displayName</span>
+                    @if (isMasterNameMissing)
+                    {
+                        <span class="badge bg-danger">Master Name Missing</span>
+                    }
+                </div>
+            </button>
+            <div class="btn-group btn-group-sm ms-2">
+                <button class="btn btn-outline-primary" type="button" @onclick="ToggleEdit">
+                    <i class="bi bi-pencil me-1"></i>@(isEditing ? "Close" : "Edit")
+                </button>
+                <button class="btn btn-outline-danger" type="button" @onclick="DeleteAsync">
+                    <i class="bi bi-trash me-1"></i>Delete
+                </button>
+            </div>
+        </div>
+    </h2>
+    <div id="@collapseId"
+         class="accordion-collapse collapse @(IsExpanded ? "show" : "")"
+         aria-labelledby="@headerId"
+         data-bs-parent="#@ParentAccordionId">
+        <div class="accordion-body">
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="alert alert-danger">@errorMessage</div>
+            }
+
+            @if (isEditing)
+            {
+                <TourDetailsForm Tour="Tour"
+                                 AvailableTimeSlots="availableTimeSlots"
+                                 AvailableGuides="AvailableGuides"
+                                 @bind-SelectedTourTime="selectedTourTime"
+                                 IsBusy="isSaving" />
+
+                <div class="mt-4">
+                    <TourVariantsManager TourId="Tour.Id" />
+                </div>
+
+                <div class="mt-4">
+                    <MasterTourLinksEditor Tour="Tour" />
+                </div>
+
+                <div class="mt-4">
+                    <MasterTourDefaultGuideSchedule TourId="Tour.Id"
+                                                    Guides="AvailableGuides"
+                                                    ExactTimes="ExactTimesForSchedule" />
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mt-3 align-items-start">
+                    <div>
+                        <button class="btn btn-primary" type="button" @onclick="SaveAsync" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Save Changes
+                        </button>
+                        @if (showSavedLabel)
+                        {
+                            <div class="form-text text-success">Saved</div>
+                        }
+                    </div>
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CancelAsync" disabled="@isSaving">
+                        Cancel
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Master Name (Desktop)</div>
+                        <div>@(string.IsNullOrWhiteSpace(Tour.MasterTourNameDesktop) ? "N/A" : Tour.MasterTourNameDesktop)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Abbreviation (Mobile)</div>
+                        <div>@(string.IsNullOrWhiteSpace(Tour.MasterTourNameMobile) ? "N/A" : Tour.MasterTourNameMobile)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Selected Tour Time</div>
+                        <div>@(string.IsNullOrWhiteSpace(selectedTourTime) ? "N/A" : FormatTimeDisplay(selectedTourTime))</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Default Guide</div>
+                        <div>@(string.IsNullOrWhiteSpace(defaultGuideName) ? "N/A" : defaultGuideName)</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Meeting Place</div>
+                        <div>@(string.IsNullOrWhiteSpace(Tour.MeetingPlace) ? "N/A" : Tour.MeetingPlace)</div>
+                    </div>
+                    <div class="col-12">
+                        <div class="text-muted small">Meeting Instructions</div>
+                        <div>@(string.IsNullOrWhiteSpace(Tour.MeetingInstructions) ? "N/A" : Tour.MeetingInstructions)</div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <MasterTourLinksEditor Tour="Tour" IsReadOnly="true" />
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DbTour Tour { get; set; } = new();
+    [Parameter] public IReadOnlyList<DbGuide> AvailableGuides { get; set; } = Array.Empty<DbGuide>();
+    [Parameter] public string ParentAccordionId { get; set; } = string.Empty;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public bool IsExpanded { get; set; }
+    [Parameter] public EventCallback OnRefreshRequested { get; set; }
+    [Parameter] public EventCallback<DbTour> OnCancelNew { get; set; }
+
+    private readonly string headerId = $"master-tour-header-{Guid.NewGuid():N}";
+    private readonly string collapseId = $"master-tour-body-{Guid.NewGuid():N}";
+    private List<MasterTourTimeSlot> availableTimeSlots = new();
+    private string? selectedTourTime;
+    private bool isEditing;
+    private bool isSaving;
+    private string? errorMessage;
+    private string? defaultGuideName;
+    private bool showSavedLabel;
+    private CancellationTokenSource? savedCts;
+
+    private string displayName => !string.IsNullOrWhiteSpace(Tour.MasterTourName)
+        ? Tour.MasterTourName
+        : !string.IsNullOrWhiteSpace(Tour.MasterTourNameDesktop)
+            ? Tour.MasterTourNameDesktop
+            : !string.IsNullOrWhiteSpace(Tour.TourName)
+                ? Tour.TourName
+                : "Unnamed Tour";
+
+    private bool isMasterNameMissing => string.IsNullOrWhiteSpace(Tour.MasterTourName);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Load time slots and initialize edit state.
+        try
+        {
+            isEditing = IsNew;
+
+            if (Tour.Id <= 0)
+            {
+                availableTimeSlots = new List<MasterTourTimeSlot>();
+                selectedTourTime = null;
+                return;
+            }
+
+            await LoadAvailableTimeSlotsAsync();
+            defaultGuideName = ResolveGuideName(Tour.DefaultGuideId);
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] OnParametersSetAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load master tour details.";
+        }
+    }
+
+    private async Task LoadAvailableTimeSlotsAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Pull schedule-based tour times for selection.
+        try
+        {
+            availableTimeSlots = await MasterTourService.GetAvailableTourTimeSlotsAsync(Tour.Id);
+
+            if (!string.IsNullOrWhiteSpace(Tour.TourStartTime))
+            {
+                selectedTourTime = Tour.TourStartTime;
+            }
+
+            if (string.IsNullOrWhiteSpace(selectedTourTime) && availableTimeSlots.Count > 0)
+            {
+                selectedTourTime = availableTimeSlots[0].TourTime;
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] LoadAvailableTimeSlotsAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to load schedule times.";
+        }
+    }
+
+    private void ToggleEdit()
+    {
+        // Created: 2026-02-12 00:00 UTC - Toggle edit state for the accordion item.
+        try
+        {
+            isEditing = !isEditing;
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] ToggleEdit failed: {ex}");
+#endif
+            errorMessage = "Failed to toggle edit mode.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Validate and persist master tour changes.
+        try
+        {
+            errorMessage = null;
+            isSaving = true;
+
+            var masterName = (Tour.MasterTourName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(masterName))
+            {
+                errorMessage = "Master tour name is required.";
+                return;
+            }
+
+            Tour.MasterTourName = masterName;
+
+            if (string.IsNullOrWhiteSpace(Tour.MasterTourNameDesktop))
+            {
+                Tour.MasterTourNameDesktop = masterName;
+            }
+
+            if (string.IsNullOrWhiteSpace(Tour.TourName))
+            {
+                Tour.TourName = Tour.MasterTourNameDesktop ?? masterName;
+            }
+
+            Tour.TourStartTime = string.IsNullOrWhiteSpace(selectedTourTime) ? Tour.TourStartTime : selectedTourTime;
+            Tour.MeetingPlace ??= string.Empty;
+            Tour.IsActive = true;
+
+            var savedId = await MasterTourService.SaveMasterTourAsync(Tour);
+            if (savedId > 0)
+            {
+                Tour.Id = savedId;
+            }
+
+            isEditing = false;
+            TriggerSavedLabel();
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] SaveAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to save master tour changes.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Soft delete or discard the tour.
+        try
+        {
+            errorMessage = null;
+
+            if (IsNew || Tour.Id == 0)
+            {
+                await OnCancelNew.InvokeAsync(Tour);
+                return;
+            }
+
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete '{displayName}'?");
+            if (!confirmed) return;
+
+            await MasterTourService.DeleteMasterTourAsync(Tour.Id);
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] DeleteAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to delete the master tour.";
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        // Created: 2026-02-12 00:00 UTC - Cancel editing and refresh data as needed.
+        try
+        {
+            errorMessage = null;
+
+            if (IsNew || Tour.Id == 0)
+            {
+                await OnCancelNew.InvokeAsync(Tour);
+                return;
+            }
+
+            isEditing = false;
+            await OnRefreshRequested.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] CancelAsync failed: {ex}");
+#endif
+            errorMessage = "Failed to cancel edits.";
+        }
+    }
+
+    private string FormatTimeDisplay(string rawTime)
+    {
+        // Created: 2026-02-12 00:00 UTC - Format a time string for display.
+        try
+        {
+            if (DateTime.TryParse(rawTime, out var dt))
+            {
+                return dt.ToString("h:mm tt");
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] FormatTimeDisplay failed: {ex}");
+#endif
+        }
+
+        return rawTime;
+    }
+
+    private void TriggerSavedLabel()
+    {
+        showSavedLabel = true;
+        savedCts?.Cancel();
+        savedCts = new CancellationTokenSource();
+        _ = ClearSavedLabelAsync(savedCts.Token);
+    }
+
+    private async Task ClearSavedLabelAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        showSavedLabel = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string ResolveGuideName(int? guideId)
+    {
+        if (!guideId.HasValue || guideId.Value <= 0) return string.Empty;
+        var guide = AvailableGuides.FirstOrDefault(g => g.Id == guideId.Value);
+        if (guide == null) return $"#{guideId.Value}";
+        if (string.IsNullOrWhiteSpace(guide.LastName)) return guide.FirstName ?? string.Empty;
+        return $"{guide.FirstName} {guide.LastName}";
+    }
+
+    private List<string> ExactTimesForSchedule
+    {
+        get
+        {
+            var list = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(selectedTourTime))
+            {
+                list.Add(selectedTourTime);
+            }
+
+            if (!string.IsNullOrWhiteSpace(Tour.TourStartTime) && !list.Contains(Tour.TourStartTime))
+            {
+                list.Add(Tour.TourStartTime);
+            }
+
+            var computed = ComputeMeetingTime(selectedTourTime);
+            if (!string.IsNullOrWhiteSpace(computed) && !list.Contains(computed))
+            {
+                list.Add(computed);
+            }
+
+            if (!string.IsNullOrWhiteSpace(Tour.MeetingTime) && !list.Contains(Tour.MeetingTime))
+            {
+                list.Add(Tour.MeetingTime);
+            }
+
+            return list;
+        }
+    }
+
+    private string ComputeMeetingTime(string? tourTime)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(tourTime) && DateTime.TryParse(tourTime, out var dt))
+            {
+                return dt.AddMinutes(-10).ToString("h:mm tt");
+            }
+        }
+        catch (Exception ex)
+        {
+#if DEBUG
+            Console.WriteLine($"[MasterTourAccordionItem] ComputeMeetingTime failed: {ex}");
+#endif
+        }
+
+        return string.Empty;
+    }
+}

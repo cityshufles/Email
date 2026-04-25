@@ -1,0 +1,49 @@
+@* Created: 2025-12-09 00:00 UTC - Messaging help dialog for template stages and vendor links *@
+@if (Show)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-info-circle me-2 text-info"></i> Messaging Help</h5>
+                    <button type="button" class="btn-close" @onclick="OnClose"></button>
+                </div>
+                <div class="modal-body">
+                    <h6>Picking the right template</h6>
+                    <ul>
+                        <li>Select the vendor-specific template you want to send (e.g., DayOfGetYourGuide, TomorrowGuruwalk).</li>
+                        <li>Set <strong>Type</strong> to: welcome, tomorrow, dayOf, thankyou, or promo when possible.</li>
+                        <li>If Type is left generic, include a stage keyword in the <strong>Name</strong>: welcome, tomorrow/tmrw/reminder, dayof/day-of, thank/thanks, promo/promotion/marketing.</li>
+                        <li>If no match is found, the badge will use <code>misc</code> but still send the selected template content.</li>
+                    </ul>
+                    <h6>When badges update</h6>
+                    <ul>
+                        <li>Quick SMS/WhatsApp sends auto-mark the stage (channel sms/wa).</li>
+                        <li>SMS dialog: clicking Copy marks the stage.</li>
+                        <li>WhatsApp dialog: App or Web send marks the stage.</li>
+                        <li>Legacy chat icon still controls the original MessageSent flag.</li>
+                    </ul>
+                    <h6>Vendor links</h6>
+                    <ul>
+                        <li>{vendorTourLink} pulls from TourLinks.TourLink for the matching vendor + tour.</li>
+                        <li>{vendorReviewLink} pulls from TourLinks.ReviewLink for the matching vendor + tour.</li>
+                        <li>{allToursLink} pulls from Vendors.AllToursLink by booked vendor.</li>
+                        <li>{tempSignature} uses all-tours-link behavior for DATE/TODAY/TOMORROW stages; other stages keep legacy fallback links.</li>
+                        <li>{galleryLink} pulls vendor gallery first, then default gallery, if the report gallery exists for that tour/date/time.</li>
+                        <li>If a vendor link token cannot be resolved, the message shows a visible missing-value marker.</li>
+                        <li>Primary vendor placeholders are {vendorTourLink}, {vendorReviewLink}, {allToursLink}, {galleryLink}, and {vendorName}.</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="OnClose">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}
+

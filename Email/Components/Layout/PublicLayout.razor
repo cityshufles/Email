@@ -1,0 +1,34 @@
+@inherits LayoutComponentBase
+
+<div class="public-container">
+    <main>
+        @Body
+    </main>
+    
+    <footer class="text-center py-4 mt-5 text-muted border-top">
+        <small>&copy; @DateTime.Now.Year - City Shuffles Guides</small>
+    </footer>
+</div>
+
+<style>
+    body {
+        /* Use default body background or let theme handle it */
+    }
+    .public-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        min-height: 100vh;
+        /* Let theme handle background */
+        background-color: var(--bs-body-bg, #fff);
+        color: var(--bs-body-color, #212529);
+        box-shadow: 0 0 15px rgba(0,0,0,0.05);
+    }
+    @@media (prefers-color-scheme: dark) {
+        .public-container {
+             /* Ensure dark mode support if theme variables aren't sufficient */
+            background-color: var(--bs-body-bg, #1e1e1e); 
+            color: var(--bs-body-color, #e0e0e0);
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
+    }
+</style>
