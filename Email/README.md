@@ -1,115 +1,134 @@
-# Email Project Architecture Guide
+# CityShuffles Guides - Email Project
 
-This document is the quick-start architecture guide for building new features in the `Email` project.
+Sanitized developer handoff project for third-party implementation work.
 
-## Tech stack
+## Current Delivery Focus
+- Primary focus is stabilizing the standalone photo upload flow at `/tour-photos`.
+- Known issue: SignalR/circuit timeouts during or after upload, most visible on iPhones, occasionally on Android, and less common on desktop.
+- We need support for up to 12 photos per upload session.
+- Photos must remain full resolution (often ~5 MB to 12 MB each).
+- SignalR diagnostics route exists to troubleshoot disconnects/timeouts: `/signalr-diagnostics`.
+- Rollout plan: finish and validate standalone uploader first, then move/integrate that flow into Guide Calendar.
 
-- ASP.NET Core `.NET 8` web app
-- Blazor Server UI (Razor components)
-- Syncfusion + Bootstrap styling
-- Services + SQL-backed data access in `Services/`
+## Current State (April 2026)
+- This repo is the destination project migrated from `WhatsAppBusiness/Email`.
+- It is actively trimmed for external development (non-essential internal tooling removed).
+- SQL Server connectivity is intentionally kept.
+- External service credentials are intentionally blanked in config by default.
 
-## Top-level structure
+## Tech Stack
+- .NET 8
+- ASP.NET Core + Blazor Server
+- SQL Server (via `Microsoft.Data.SqlClient` + Dapper)
+- Syncfusion Blazor + Bootstrap/Bootswatch
 
+## Quick Start
+1. Prereqs:
+- .NET 8 SDK
+- SQL access to the configured dev database
+
+2. From repo root (`cityshufflesguidesproject`):
+```powershell
+dotnet restore .\Email.sln
+dotnet build .\Email\Email.csproj
+```
+
+3. Run app:
+```powershell
+dotnet run --project .\Email\Email.csproj
+```
+
+4. Open in browser:
+- `http://localhost:5282` (or URL shown by `dotnet run`)
+
+## Login and Auth
+- Login page route: `/`
+- POST login endpoint: `/login`
+- Logout endpoint: `/logout`
+- Cookie auth configured in `Program.cs`.
+- Guide users are redirected to `/guide-report` after login.
+
+## Configuration and Secrets
+Primary config file:
+- `Email/appsettings.json`
+
+### Intentionally present
+- `ConnectionStrings:AutomaticGmailSqlServer` is kept for dev DB connectivity.
+
+### Intentionally blanked for handoff
+- `Gmail:*`
+- `Textbelt:*`
+- `Checkfront:*` (including OAuth and V4 keys)
+- `GoogleCalendar:*`
+- `LocalApiAuth:TextApiKey`
+
+Do not commit live service credentials. Prefer local overrides (`appsettings.Development.json`, environment variables, or user-secrets).
+
+## Intentional Removals / Disabled Areas
+The following internal/testing surfaces were removed or disabled for handoff:
+- Collect UI and collection control buttons in dashboard/mobile flow
+- Checkfront test/manual pages and related test services
+- QA/admin links/pages:
+  - Tour Setup QA
+  - Tour Tree Coverage QA
+  - AllToursLink Parity QA
+  - School Tour Intake
+- Sample email credential docs under `Email_Docs/sample_mails`
+- Service-account JSON credential files for calendar integrations
+
+Reference: `Email/Email_Docs/4_24_26_sanitization_changes.md`
+
+## Core Routes in Current Nav
+- `/tour-management-dashboard` - Dashboard
+- `/guide-report` - Guide calendar/reporting flow
+- `/guide-lite` - GuideLite static shell
+- `/tour-managment` - Tours
+- `/guide-schedule` - Schedule
+- `/staff` - Guides
+- `/vendors` - Vendors
+- `/messages` - Messages
+- `/reports-list` - Reports
+- `/reports-bookings` - Bookings
+- `/tour-photos` - Gallery
+- `/vcard-export` - vCard export
+- `/signalr-diagnostics` - SignalR diagnostics page
+
+## Tour Photos (Current Behavior)
+- Main route: `/tour-photos`
+- Includes Blazor upload flow and camera capture modal.
+- Uploader has visible `Upload Photos` action in the component.
+- Target behavior is reliable upload of up to 12 high-resolution images per session.
+- Camera permission failures now show user-facing warnings instead of raw technical errors.
+- Upload backend endpoints are under `TourPhotoUploadController` (`/tour-photos/*`).
+
+## Repository Layout
 ```text
 Email/
   Program.cs
-  App.razor
   Components/
   Controllers/
   Models/
   Services/
-  Data/
+  Pages/
   Calendar/
   Hubs/
   wwwroot/
-    app.css
-    css/
-      tour-dashboard.css
-      sf-grid-overrides.css
-      emailModHighlighter.css
-    js/
+Email.Test/
+Email_Docs/
 ```
 
-## UI architecture (how to build features)
-
-- Pages live in `Components/Pages/` (and subfolders like `Admin/`, `Staff/`, `Public/`).
-- Reusable feature UI lives in domain folders under `Components/` (example: `Components/Messages/`, `Components/Tours/`).
-- Layout and navigation live in:
-  - `Components/Layout/MainLayout.razor`
-  - `Components/Layout/NavMenu.razor`
-
-### Required pattern for new features
-
-1. Create a page (`@page`) in `Components/Pages/...`.
-2. Create one or more reusable components in `Components/<FeatureName>/...`.
-3. Use **code-behind for C# logic**:
-   - Keep markup in `Component.razor`
-   - Keep logic in `Component.razor.cs` (partial class)
-4. Put feature-specific style in `Component.razor.css` when possible.
-5. Use shared/global classes from existing CSS before adding new styles.
-
-## Code-behind standard
-
-For new work, default to this shape:
-
-```text
-Components/
-  Pages/
-    FeaturePage.razor
-  FeatureX/
-    FeatureXPanel.razor
-    FeatureXPanel.razor.cs
-    FeatureXPanel.razor.css
-```
-
-Guideline:
-
-- `.razor`: HTML/UI composition only.
-- `.razor.cs`: data loading, event handlers, service calls, state, validation.
-- Keep page files thin; move complex logic into feature components/services.
-
-## Styling standard (important)
-
-Use existing project style classes/patterns first, especially from:
-
-- `wwwroot/app.css`
-- `wwwroot/css/tour-dashboard.css`
-- `wwwroot/css/sf-grid-overrides.css`
-- `wwwroot/css/emailModHighlighter.css`
-
-Practical rules:
-
-1. Reuse existing classes and Bootstrap utility classes where possible.
-2. Avoid inline styles unless there is no reasonable alternative.
-3. If new class names are needed, keep them feature-scoped and readable.
-4. Put global/shared style in `wwwroot/app.css` or `wwwroot/css/*.css`.
-5. Put component-only style in `Component.razor.css`.
-
-## Routing and nav updates
-
-When adding a new page:
-
-1. Add `@page "/your-route"` to the page component.
-2. Add a `NavLink` entry in `Components/Layout/NavMenu.razor` if it should be visible in sidebar nav.
-3. Keep route names short and consistent with existing pages.
-
-## Service and model placement
-
-- API/data orchestration: `Services/`
-- DTO/domain models: `Models/`
-- Controller endpoints (if needed): `Controllers/`
-- Keep business logic out of UI files whenever possible.
-
-## Feature delivery checklist
-
-1. Page created under `Components/Pages/...`
-2. Reusable component(s) created under `Components/<Feature>/...`
-3. C# logic moved to `.razor.cs` code-behind
-4. Existing CSS classes reused first, then minimal new styles added
-5. Nav route added (if needed)
-6. Build passes
-
+## Testing
 ```powershell
-dotnet build .\Email\Email.csproj
+dotnet test .\Email.Test\Email.Test.csproj
 ```
+
+## Docs for New Devs
+- `Email/Email_Docs/4_24_26_dev_migration.md`
+- `Email/Email_Docs/4_24_26_sanitization_changes.md`
+- `Email/Email_Docs/email_project_separation_plan_2026-04-19.md`
+- `Email/Email_Docs/gallery4_18.md`
+- `Email/Email_Docs/sqlserver_schema.txt`
+- `Email/Email_Docs/sqlserver_schema_4_22.txt`
+
+## Git History Note
+History was rewritten during sanitization handoff. If you have an older clone from before this cleanup, re-clone the repository to avoid stale history containing removed artifacts.
