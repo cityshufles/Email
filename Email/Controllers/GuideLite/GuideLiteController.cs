@@ -777,7 +777,7 @@ public sealed class GuideLiteController : ControllerBase
             return string.Empty;
         }
 
-        var baseUrl = _configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        var baseUrl = _configuration["PublicGallery:BaseUrl"] ?? "http://testcity.w41.wh-2.com";
         var fileName = $"{report.PublicId}.html";
 
         if (!string.IsNullOrWhiteSpace(vendor))

@@ -419,6 +419,10 @@
 
     async function uploadAll() {
         if (state.isUploading) return;
+        if (!state.tourTime || !state.tourTime.trim()) {
+            updateStatus("Tour time is required. Tour time must match actual tour time.", "error");
+            return;
+        }
         if (!state.items.length) {
             updateStatus("No files selected.", "error");
             return;

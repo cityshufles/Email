@@ -32,7 +32,7 @@ public class TourPhotoUploadController : ControllerBase
     public async Task<IActionResult> UploadAlt([FromForm] List<IFormFile> files,
         [FromForm] string tourDate,
         [FromForm] string tourName,
-        [FromForm] string tourTime)
+        [FromForm] string? tourTime)
     {
         var uploadId = string.IsNullOrWhiteSpace(HttpContext.TraceIdentifier)
             ? Guid.NewGuid().ToString("N")
@@ -54,14 +54,15 @@ public class TourPhotoUploadController : ControllerBase
             return BadRequest(new { error = "No files uploaded." });
         }
 
-        if (string.IsNullOrWhiteSpace(tourDate) || string.IsNullOrWhiteSpace(tourName))
+        if (string.IsNullOrWhiteSpace(tourDate) || string.IsNullOrWhiteSpace(tourName) || string.IsNullOrWhiteSpace(tourTime))
         {
             _logger.LogWarning(
-                "UploadAlt REJECTED UploadId={UploadId} Reason=MissingRequiredFields TourDate={TourDate} TourName={TourName}",
-                uploadId, tourDate, tourName);
-            _photoLog.Error($"UploadAlt REJECTED UploadId={uploadId} Reason=MissingRequiredFields TourDate={tourDate} TourName={tourName}");
-            return BadRequest(new { error = "TourDate and TourName are required." });
+                "UploadAlt REJECTED UploadId={UploadId} Reason=MissingRequiredFields TourDate={TourDate} TourName={TourName} TourTime={TourTime}",
+                uploadId, tourDate, tourName, tourTime);
+            _photoLog.Error($"UploadAlt REJECTED UploadId={uploadId} Reason=MissingRequiredFields TourDate={tourDate} TourName={tourName} TourTime={tourTime}");
+            return BadRequest(new { error = "TourDate, TourName, and TourTime are required. Tour time must match actual tour time." });
         }
+        tourTime = tourTime.Trim();
 
         var declaredTotalBytes = files.Sum(f => f.Length);
         _logger.LogInformation(
@@ -175,9 +176,10 @@ public class TourPhotoUploadController : ControllerBase
         }
 
         if (string.IsNullOrWhiteSpace(request.TourDate) ||
-            string.IsNullOrWhiteSpace(request.TourName))
+            string.IsNullOrWhiteSpace(request.TourName) ||
+            string.IsNullOrWhiteSpace(request.TourTime))
         {
-            return BadRequest(new { error = "TourDate and TourName are required." });
+            return BadRequest(new { error = "TourDate, TourName, and TourTime are required. Tour time must match actual tour time." });
         }
 
         DateTime parsedTourDate;
@@ -197,7 +199,7 @@ public class TourPhotoUploadController : ControllerBase
 
         try
         {
-            var syncTourTime = request.TourTime ?? string.Empty;
+            var syncTourTime = request.TourTime;
 
             _logger.LogInformation(
                 "SyncReport START SyncId={SyncId} TourDate={TourDate} TourName={TourName} TourTime={TourTime}",

@@ -35,6 +35,25 @@ Prepared destination project for 3rd-party developer handoff while keeping DB co
 ## Notes
 - No backup copies were created.
 
+## Gallery/Uploader Domain + Folder Safeguard (4/25/26)
+- Set gallery/uploader base domain for dev handoff to:
+  - `http://testcity.w41.wh-2.com`
+- Updated config:
+  - `appsettings.json` -> `PublicGallery:BaseUrl`
+  - `appsettings.Development.json` -> `PublicGallery:BaseUrl`
+- Updated Guide Report uploader link generation to use the configured base domain (absolute URL):
+  - `Components/Pages/GuideReportPage.razor` (`GetMobileUploaderUrl`)
+- Updated gallery link fallback logic to test domain in:
+  - `Components/Mobile/MobileTourCard.razor`
+  - `Components/Pages/GuideReportPage.razor`
+  - `Components/Pages/ReportsListPage.razor`
+  - `Components/Tours/TourTreeDisplay_Main.cs`
+  - `Components/Tours/TourTreeDisplay_SMS_WhatsApp.cs`
+  - `Controllers/GuideLite/GuideLiteController.cs`
+  - `Services/GalleryLinkResolver.cs`
+- Added upload folder auto-create safeguard:
+  - `Services/TourPhotoService.cs` now ensures `wwwroot/tour-photos` exists at startup, and per-date folders continue to be created on save.
+
 ## Checkfront Test Surface Cleanup (4/24/26)
 - Removed Checkfront test/manual navigation links from `Components/Layout/NavMenu.razor`:
   - `checkfront-test`

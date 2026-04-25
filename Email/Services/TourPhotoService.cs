@@ -24,6 +24,26 @@ public class TourPhotoService : ITourPhotoService
         _environment = environment;
         _logger = logger;
         _photoLog = photoLog;
+        EnsurePhotoRootFolder();
+    }
+
+    private void EnsurePhotoRootFolder()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_environment.WebRootPath))
+            {
+                return;
+            }
+
+            var photosRoot = Path.Combine(_environment.WebRootPath, PhotosFolder);
+            Directory.CreateDirectory(photosRoot);
+            _logger.LogInformation("Ensured photo root folder exists: {Path}", photosRoot);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to ensure photo root folder exists.");
+        }
     }
 
     public async Task<string?> SavePhotoAsync(string imageData, string tourDate, string tourName, string tourTime, string fileExtension = "jpg")

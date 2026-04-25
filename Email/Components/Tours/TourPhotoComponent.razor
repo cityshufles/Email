@@ -168,6 +168,15 @@
 
     private async Task OpenAltUploadDialog()
     {
+        if (string.IsNullOrWhiteSpace(TourTime))
+        {
+            errorMessage = "Tour time is required.";
+            successMessage = string.Empty;
+            await JSRuntime.InvokeVoidAsync("alert", "Tour time must match actual tour time");
+            StateHasChanged();
+            return;
+        }
+
         showAltUploadDialog = true;
         altUploadCompleted = false;
         altUploadCompletedSuccess = false;
@@ -253,6 +262,15 @@
 
     private async Task StartAltUpload()
     {
+        if (string.IsNullOrWhiteSpace(TourTime))
+        {
+            errorMessage = "Tour time is required.";
+            successMessage = string.Empty;
+            await JSRuntime.InvokeVoidAsync("alert", "Tour time must match actual tour time");
+            StateHasChanged();
+            return;
+        }
+
         var clientState = await TryGetAltUploadClientStateAsync();
 
         if (clientState?.IsComplete == true)

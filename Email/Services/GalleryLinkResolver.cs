@@ -52,7 +52,7 @@ namespace Email.Services
                     return result;
                 }
 
-                var baseUrl = _configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+                var baseUrl = _configuration["PublicGallery:BaseUrl"] ?? "http://testcity.w41.wh-2.com";
                 var publicId = report.PublicId.Trim();
                 result.PublicId = publicId;
 

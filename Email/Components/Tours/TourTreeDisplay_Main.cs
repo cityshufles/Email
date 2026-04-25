@@ -1500,7 +1500,7 @@ namespace Email.Components.Tours
                 return string.Empty;
             }
 
-            var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+            var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "http://testcity.w41.wh-2.com";
             return $"{baseUrl}/tour-gallery/{publicId.Trim()}.html";
         }
 

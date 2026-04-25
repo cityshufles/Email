@@ -666,7 +666,7 @@
     private string GetGalleryUrl(TourReport? report)
     {
         if (report == null || string.IsNullOrEmpty(report.PublicId)) return "";
-        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "http://testcity.w41.wh-2.com";
         return $"{baseUrl}/tour-gallery/{report.PublicId}.html";
     }
 

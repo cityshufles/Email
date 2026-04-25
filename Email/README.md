@@ -15,6 +15,7 @@ Sanitized developer handoff project for third-party implementation work.
 - It is actively trimmed for external development (non-essential internal tooling removed).
 - SQL Server connectivity is intentionally kept.
 - External service credentials are intentionally blanked in config by default.
+- Public gallery/uploader base routing is configured for dev handoff at `http://testcity.w41.wh-2.com`.
 
 ## Tech Stack
 - .NET 8
@@ -81,7 +82,6 @@ Reference: `Email/Email_Docs/4_24_26_sanitization_changes.md`
 ## Core Routes in Current Nav
 - `/tour-management-dashboard` - Dashboard
 - `/guide-report` - Guide calendar/reporting flow
-- `/guide-lite` - GuideLite static shell
 - `/tour-managment` - Tours
 - `/guide-schedule` - Schedule
 - `/staff` - Guides
@@ -98,8 +98,13 @@ Reference: `Email/Email_Docs/4_24_26_sanitization_changes.md`
 - Includes Blazor upload flow and camera capture modal.
 - Uploader has visible `Upload Photos` action in the component.
 - Target behavior is reliable upload of up to 12 high-resolution images per session.
+- Tour time is mandatory for upload flows.
 - Camera permission failures now show user-facing warnings instead of raw technical errors.
 - Upload backend endpoints are under `TourPhotoUploadController` (`/tour-photos/*`).
+- `Guide Report` uploader launch uses absolute domain routing to:
+  - `http://testcity.w41.wh-2.com/mobile-photo-upload.html`
+- Upload storage root is auto-created on app start when missing:
+  - `wwwroot/tour-photos`
 
 ## Repository Layout
 ```text

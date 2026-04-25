@@ -46,3 +46,13 @@ reference C:\Users\daves\source\repos\WhatsAppBusiness\Email\Email.csproj for re
 - Build + basic auth smoke checks passed:
   - `dave` login redirects to `/mobile-tours`
   - `jon` login redirects to `/guide-report`
+
+## 4/25/26 Completed (Gallery/Uploader Routing for 3rd-Party Dev)
+- Set `PublicGallery:BaseUrl` to `http://testcity.w41.wh-2.com` in:
+  - `appsettings.json`
+  - `appsettings.Development.json`
+- Updated Guide Report uploader route builder to use absolute test-domain uploader URL:
+  - `GetMobileUploaderUrl()` now returns `http://testcity.w41.wh-2.com/mobile-photo-upload.html?...`
+- Updated gallery link fallback logic across report/mobile/guide-lite surfaces to use the same test-domain base URL.
+- Added startup safeguard so upload root folder exists automatically:
+  - `Services/TourPhotoService.cs` ensures `wwwroot/tour-photos` is created if missing.

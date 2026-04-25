@@ -2999,18 +2999,21 @@
 
     private string GetMobileUploaderUrl()
     {
+        var baseUrl = GetConfiguredBaseUrl();
+        var uploaderBaseUrl = $"{baseUrl}/mobile-photo-upload.html";
+
         if (SelectedTour == null)
         {
-            return "/mobile-photo-upload.html";
+            return uploaderBaseUrl;
         }
 
         var tourDate = Uri.EscapeDataString(SelectedDate.ToString("yyyy-MM-dd"));
         var tourName = Uri.EscapeDataString(SelectedTour.TourName ?? string.Empty);
         var tourTime = Uri.EscapeDataString(SelectedTour.RawTourTime ?? string.Empty);
-        var returnUrl = $"/guide-report?date={tourDate}&tourName={tourName}&tourTime={tourTime}&photoReturn=1";
+        var returnUrl = $"{baseUrl}/guide-report?date={tourDate}&tourName={tourName}&tourTime={tourTime}&photoReturn=1";
         var encodedReturnUrl = Uri.EscapeDataString(returnUrl);
 
-        return $"/mobile-photo-upload.html?tourDate={tourDate}&tourName={tourName}&tourTime={tourTime}&returnUrl={encodedReturnUrl}";
+        return $"{uploaderBaseUrl}?tourDate={tourDate}&tourName={tourName}&tourTime={tourTime}&returnUrl={encodedReturnUrl}";
     }
 
     private void ApplyRouteContextFromQuery()
@@ -3106,7 +3109,7 @@
     private string GetGalleryUrl(TourReport? report, string? vendor = null)
     {
         if (report == null) return "";
-        var baseUrl = Configuration["PublicGallery:BaseUrl"] ?? "https://cityshufflesguides.com";
+        var baseUrl = GetConfiguredBaseUrl();
         
         var fileName = $"{report.PublicId}.html";
         if (!string.IsNullOrWhiteSpace(vendor))
@@ -3120,6 +3123,17 @@
         }
         
         return $"{baseUrl}/tour-gallery/{fileName}";
+    }
+
+    private string GetConfiguredBaseUrl()
+    {
+        var configured = Configuration["PublicGallery:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return "http://testcity.w41.wh-2.com";
+        }
+
+        return configured.Trim().TrimEnd('/');
     }
 
     private bool HasGalleryFile(TourReport? report)

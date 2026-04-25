@@ -6,6 +6,7 @@
 
 @inject ITourPhotoService PhotoService
 @inject ITourTreeService TourTreeService
+@inject IJSRuntime JSRuntime
 
 <div class="container-fluid py-3">
     <div class="row mb-4">
@@ -60,11 +61,20 @@
                                 </datalist>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Tour Time</label>
+                                <label class="form-label d-flex align-items-center gap-2">
+                                    <span>Tour Time</span>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-info rounded-circle p-0"
+                                            style="width: 1.35rem; height: 1.35rem; line-height: 1;"
+                                            title="Tour time help"
+                                            @onclick="ShowTourTimeHelp">
+                                        ?
+                                    </button>
+                                </label>
                                 <input type="text" class="form-control" @bind="uploadTourTime" placeholder="e.g., 10:00 AM" />
                             </div>
                         </div>
-                        @if (!string.IsNullOrWhiteSpace(uploadTourName))
+                        @if (!string.IsNullOrWhiteSpace(uploadTourName) && !string.IsNullOrWhiteSpace(uploadTourTime))
                         {
                             <TourPhotoComponent 
                                 TourDate='@uploadDate.ToString("yyyy-MM-dd")'
@@ -75,7 +85,7 @@
                         else
                         {
                             <div class="alert alert-info mb-0">
-                                <i class="bi bi-info-circle me-2"></i>Enter a tour name to start uploading.
+                                <i class="bi bi-info-circle me-2"></i>Enter both tour name and tour time to start uploading.
                             </div>
                         }
                     </div>
@@ -202,8 +212,14 @@
         showUploader = false;
     }
 
-    private void OpenCamera()
+    private async Task OpenCamera()
     {
+        if (string.IsNullOrWhiteSpace(uploadTourTime))
+        {
+            await ShowTourTimeHelp();
+            return;
+        }
+
         showCamera = true;
         StateHasChanged();
     }
@@ -214,7 +230,13 @@
         // User can edit these later if needed
         var tourDate = DateTime.Today.ToString("yyyy-MM-dd");
         var tourName = string.IsNullOrWhiteSpace(uploadTourName) ? "Quick Photo" : uploadTourName;
-        var tourTime = string.IsNullOrWhiteSpace(uploadTourTime) ? DateTime.Now.ToString("h:mm tt") : uploadTourTime;
+        if (string.IsNullOrWhiteSpace(uploadTourTime))
+        {
+            await ShowTourTimeHelp();
+            return;
+        }
+
+        var tourTime = uploadTourTime;
 
         var savedPath = await PhotoService.SavePhotoAsync(imageData, tourDate, tourName, tourTime);
         
@@ -225,6 +247,11 @@
         
         showCamera = false;
         StateHasChanged();
+    }
+
+    private async Task ShowTourTimeHelp()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Tour time must match actual tour time");
     }
 }
 
