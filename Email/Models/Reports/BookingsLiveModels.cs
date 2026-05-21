@@ -25,6 +25,11 @@ namespace Email.Models.Reports
         public DateTime UpdatedAt { get; set; }
         public DateTime ActivityAtUtc { get; set; }
         public bool NeedsNumber { get; set; }
+        public int? NumberOfAttendees { get; set; }
+        public int? NumberOfAdults { get; set; }
+        public int? NumberOfChildren { get; set; }
+        public string? Language { get; set; }
+        public string? BookingStatus { get; set; }
     }
 
     public sealed class CustomerCommunicationProfile

@@ -28,6 +28,17 @@
             <select class="form-select form-select-sm" style="width: 180px;" @bind="SelectedOrderBy" @bind:after="LoadBookingsAsync">
                 <option value="booking_date">Booking date (newest)</option>
                 <option value="tour_date">Tour date (newest)</option>
+                <option value="group_size">Group size (largest)</option>
+                <option value="language">Language (A-Z)</option>
+            </select>
+            <label class="small text-muted">Language</label>
+            <select class="form-select form-select-sm" style="width: 140px;" @bind="SelectedLanguageFilter" @bind:after="LoadBookingsAsync">
+                <option value="">All</option>
+                <option value="English">English</option>
+                <option value="Spanish">Spanish</option>
+                <option value="French">French</option>
+                <option value="Portuguese">Portuguese</option>
+                <option value="German">German</option>
             </select>
             <button class="btn btn-sm btn-outline-primary" @onclick="LoadBookingsAsync" disabled="@isLoading">
                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -105,6 +116,8 @@
                                     <tr>
                                         <th>Walker</th>
                                         <th>Tour</th>
+                                        <th>Group</th>
+                                        <th>Lang</th>
                                         <th>Activity</th>
                                     </tr>
                                 </thead>
@@ -124,6 +137,30 @@
                                             <td>
                                                 <div>@row.TourName</div>
                                                 <div class="small text-muted">@FormatTourDateTime(row.TourDate, row.TourTime)</div>
+                                            </td>
+                                            <td class="text-center">
+                                                @if (row.NumberOfAttendees.HasValue)
+                                                {
+                                                    <span>@row.NumberOfAttendees</span>
+                                                    @if (row.NumberOfAdults.HasValue || row.NumberOfChildren.HasValue)
+                                                    {
+                                                        <div class="small text-muted">@(row.NumberOfAdults ?? 0)A @(row.NumberOfChildren ?? 0)C</div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(row.Language))
+                                                {
+                                                    <span class="badge text-bg-info">@row.Language</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
                                             </td>
                                             <td>
                                                 <div>@FormatEventType(row)</div>
@@ -311,6 +348,7 @@
     private bool isLoadingProfile;
     private int SelectedLimit { get; set; } = 100;
     private string SelectedOrderBy { get; set; } = "booking_date";
+    private string SelectedLanguageFilter { get; set; } = string.Empty;
     private string WalkerSearchText { get; set; } = string.Empty;
     private bool AllVendors { get; set; } = true;
     private string ActiveTab { get; set; } = "history";
@@ -363,7 +401,8 @@
         try
         {
             IEnumerable<string>? vendorFilter = AllVendors ? null : SelectedVendors.ToList();
-            var rows = await BookingsInboxService.GetRecentBookingsAsync(SelectedLimit, vendorFilter, SelectedOrderBy);
+            string? langFilter = string.IsNullOrWhiteSpace(SelectedLanguageFilter) ? null : SelectedLanguageFilter;
+            var rows = await BookingsInboxService.GetRecentBookingsAsync(SelectedLimit, vendorFilter, SelectedOrderBy, langFilter);
             Bookings = rows.ToList();
 
             foreach (var vendor in Bookings

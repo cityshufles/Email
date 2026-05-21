@@ -1,0 +1,349 @@
+@page "/bookings"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models.Reports
+@inject IBookingsInboxService BookingsInboxService
+@inject IVendorsApiService VendorsService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+
+<PageTitle>Bookings Dashboard</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h4 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>Bookings Dashboard</h4>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <label class="small text-muted">Rows</label>
+            <select class="form-select form-select-sm" style="width: 100px;" @bind="SelectedLimit" @bind:after="LoadBookingsAsync">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="5000">All</option>
+            </select>
+            <label class="small text-muted">Sort</label>
+            <select class="form-select form-select-sm" style="width: 170px;" @bind="SelectedOrderBy" @bind:after="LoadBookingsAsync">
+                <option value="booking_date">Booking date</option>
+                <option value="tour_date">Tour date</option>
+                <option value="group_size">Group size</option>
+                <option value="language">Language</option>
+            </select>
+            <label class="small text-muted">Language</label>
+            <select class="form-select form-select-sm" style="width: 130px;" @bind="SelectedLanguageFilter" @bind:after="LoadBookingsAsync">
+                <option value="">All</option>
+                <option value="English">English</option>
+                <option value="Spanish">Spanish</option>
+                <option value="French">French</option>
+                <option value="Portuguese">Portuguese</option>
+                <option value="German">German</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" @onclick="LoadBookingsAsync" disabled="@isLoading">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    @* Vendor filter pills *@
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <button class='@($"btn btn-sm {(AllVendors ? "btn-primary" : "btn-outline-secondary")}")' @onclick="SelectAllVendors">All</button>
+        @foreach (var vendor in VendorFilters)
+        {
+            var isSelected = SelectedVendors.Contains(vendor);
+            <button class='@($"btn btn-sm {(isSelected ? "btn-primary" : "btn-outline-secondary")}")' @onclick="() => ToggleVendor(vendor)">@vendor</button>
+        }
+    </div>
+
+    @* Search bar *@
+    <div class="mb-3">
+        <div class="input-group input-group-sm" style="max-width: 400px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input class="form-control" type="text" placeholder="Search by name, phone, or email..." @bind="SearchText" @bind:event="oninput" />
+            @if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                <button class="btn btn-outline-secondary" type="button" @onclick="ClearSearch"><i class="bi bi-x-lg"></i></button>
+            }
+        </div>
+        <small class="text-muted">@GetResultsLabel()</small>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5 text-muted">
+            <div class="spinner-border me-2"></div>Loading bookings...
+        </div>
+    }
+    else if (GetVisibleBookings().Count == 0)
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            @(string.IsNullOrWhiteSpace(SearchText) ? "No bookings found." : "No bookings match your search.")
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+            @foreach (var booking in GetVisibleBookings())
+            {
+                <div class="col">
+                    <div class="card h-100 bookings-card">
+                        <div class="card-body pb-2">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0 fw-bold">@booking.CustomerName</h6>
+                                @if (!string.IsNullOrWhiteSpace(booking.BookingStatus))
+                                {
+                                    <span class='@($"badge {GetStatusBadgeClass(booking)}")'>@FormatEventType(booking)</span>
+                                }
+                                else
+                                {
+                                    <span class='@($"badge {GetStatusBadgeClass(booking)}")'>@FormatEventType(booking)</span>
+                                }
+                            </div>
+
+                            <div class="small mb-1">
+                                <i class="bi bi-geo-alt me-1 text-muted"></i>@booking.TourName
+                            </div>
+                            <div class="small mb-1 text-muted">
+                                <i class="bi bi-calendar me-1"></i>@FormatTourDateTime(booking.TourDate, booking.TourTime)
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                <span class='@($"badge {GetVendorBadgeClass(booking.VendorName)}")'>@booking.VendorName</span>
+                                @if (!string.IsNullOrWhiteSpace(booking.Language))
+                                {
+                                    <span class="badge text-bg-info">@booking.Language</span>
+                                }
+                                @if (booking.NeedsNumber)
+                                {
+                                    <span class="badge text-bg-warning">needs number</span>
+                                }
+                            </div>
+
+                            @if (booking.NumberOfAttendees.HasValue)
+                            {
+                                <div class="small mb-2">
+                                    <i class="bi bi-people me-1 text-muted"></i>
+                                    <strong>@booking.NumberOfAttendees</strong> attendee(s)
+                                    @if (booking.NumberOfAdults.HasValue || booking.NumberOfChildren.HasValue)
+                                    {
+                                        <span class="text-muted"> (@(booking.NumberOfAdults ?? 0) adults, @(booking.NumberOfChildren ?? 0) children)</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="card-footer bg-transparent d-flex flex-wrap gap-2 align-items-center">
+                            @if (!string.IsNullOrWhiteSpace(booking.CustomerPhone))
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenSms(booking)" title="Open SMS">
+                                    <i class="bi bi-chat-dots me-1"></i>SMS
+                                </button>
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => OpenWhatsApp(booking)" title="Open WhatsApp">
+                                    <i class="bi bi-whatsapp me-1"></i>WhatsApp
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="small text-muted"><i class="bi bi-telephone-x me-1"></i>No phone</span>
+                            }
+                            <a href="/reports-bookings" class="btn btn-sm btn-outline-secondary ms-auto" title="View details">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<BookingsLiveListItem> Bookings { get; set; } = new();
+    private List<string> VendorFilters { get; set; } = new();
+    private HashSet<string> SelectedVendors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private bool AllVendors { get; set; } = true;
+    private bool isLoading;
+    private int SelectedLimit { get; set; } = 100;
+    private string SelectedOrderBy { get; set; } = "booking_date";
+    private string SelectedLanguageFilter { get; set; } = string.Empty;
+    private string SearchText { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadVendorsAsync();
+        await LoadBookingsAsync();
+    }
+
+    private async Task LoadVendorsAsync()
+    {
+        var vendors = await VendorsService.GetVendorsAsync();
+        VendorFilters = vendors
+            .Where(v => v.IsActive && !string.IsNullOrWhiteSpace(v.VendorName))
+            .Select(v => v.VendorName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v)
+            .ToList();
+    }
+
+    private async Task LoadBookingsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            IEnumerable<string>? vendorFilter = AllVendors ? null : SelectedVendors.ToList();
+            string? langFilter = string.IsNullOrWhiteSpace(SelectedLanguageFilter) ? null : SelectedLanguageFilter;
+            var rows = await BookingsInboxService.GetRecentBookingsAsync(SelectedLimit, vendorFilter, SelectedOrderBy, langFilter);
+            Bookings = rows.ToList();
+
+            foreach (var vendor in Bookings
+                .Where(b => !string.IsNullOrWhiteSpace(b.VendorName))
+                .Select(b => b.VendorName.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!VendorFilters.Contains(vendor, StringComparer.OrdinalIgnoreCase))
+                {
+                    VendorFilters.Add(vendor);
+                }
+            }
+            VendorFilters = VendorFilters.OrderBy(v => v).ToList();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectAllVendors()
+    {
+        AllVendors = true;
+        SelectedVendors.Clear();
+        _ = LoadBookingsAsync();
+    }
+
+    private void ToggleVendor(string vendor)
+    {
+        AllVendors = false;
+        if (SelectedVendors.Contains(vendor))
+        {
+            SelectedVendors.Remove(vendor);
+        }
+        else
+        {
+            SelectedVendors.Add(vendor);
+        }
+
+        if (SelectedVendors.Count == 0)
+        {
+            AllVendors = true;
+        }
+
+        _ = LoadBookingsAsync();
+    }
+
+    private List<BookingsLiveListItem> GetVisibleBookings()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            return Bookings;
+        }
+
+        var term = SearchText.Trim();
+        return Bookings
+            .Where(row =>
+                (!string.IsNullOrWhiteSpace(row.CustomerName) && row.CustomerName.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.CustomerPhone) && row.CustomerPhone.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.CustomerEmail) && row.CustomerEmail.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.TourName) && row.TourName.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(row.BookingCode) && row.BookingCode.Contains(term, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private string GetResultsLabel()
+    {
+        var visible = GetVisibleBookings().Count;
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            return $"{visible} booking(s)";
+        }
+        return $"{visible} match(es)";
+    }
+
+    private void ClearSearch()
+    {
+        SearchText = string.Empty;
+    }
+
+    private async Task OpenSms(BookingsLiveListItem booking)
+    {
+        if (string.IsNullOrWhiteSpace(booking.CustomerPhone)) return;
+        var url = BuildSmsUrl(booking.CustomerPhone);
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private async Task OpenWhatsApp(BookingsLiveListItem booking)
+    {
+        if (string.IsNullOrWhiteSpace(booking.CustomerPhone)) return;
+        var url = BuildWhatsAppUrl(booking.CustomerPhone);
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private static string BuildSmsUrl(string phone)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        var formatted = digits.Length == 10 ? $"+1{digits}" : $"+{digits}";
+        return $"sms:{formatted}";
+    }
+
+    private static string BuildWhatsAppUrl(string phone)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        return $"https://wa.me/{digits}";
+    }
+
+    private static string FormatTourDateTime(DateTime? date, string? time)
+    {
+        if (date.HasValue)
+        {
+            return $"{date.Value:MMM d, yyyy} {time}".Trim();
+        }
+        return time ?? string.Empty;
+    }
+
+    private static string FormatEventType(BookingsLiveListItem row)
+    {
+        if (row.IsCancellation) return "Cancelled";
+        if (row.IsModification) return "Rescheduled";
+        return "Booked";
+    }
+
+    private static string GetStatusBadgeClass(BookingsLiveListItem row)
+    {
+        if (row.IsCancellation) return "text-bg-danger";
+        if (row.IsModification) return "text-bg-warning";
+        return "text-bg-success";
+    }
+
+    private static string GetVendorBadgeClass(string vendorName)
+    {
+        if (string.IsNullOrWhiteSpace(vendorName)) return "text-bg-secondary";
+        var hash = Math.Abs(vendorName.GetHashCode());
+        var classes = new[] { "text-bg-primary", "text-bg-secondary", "text-bg-dark" };
+        return classes[hash % classes.Length];
+    }
+}
+
+<style>
+    .bookings-card {
+        transition: box-shadow 0.15s ease-in-out, transform 0.15s ease-in-out;
+        border: 1px solid var(--bs-border-color);
+    }
+
+    .bookings-card:hover {
+        box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .12);
+        transform: translateY(-2px);
+    }
+
+    @@media (max-width: 575px) {
+        .bookings-card .card-footer {
+            justify-content: center !important;
+        }
+    }
+</style>

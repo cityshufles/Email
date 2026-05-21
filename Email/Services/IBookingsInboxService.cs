@@ -11,6 +11,7 @@ namespace Email.Services
             int limit = 100,
             IEnumerable<string>? vendors = null,
             string orderBy = "booking_date",
+            string? languageFilter = null,
             CancellationToken ct = default);
 
         Task<CustomerCommunicationProfile?> GetWalkerProfileAsync(

@@ -29,6 +29,7 @@ namespace Email.Services
             int limit = 100,
             IEnumerable<string>? vendors = null,
             string orderBy = "booking_date",
+            string? languageFilter = null,
             CancellationToken ct = default)
         {
             var safeLimit = Math.Clamp(limit <= 0 ? 100 : limit, 1, 5000);
@@ -38,6 +39,7 @@ namespace Email.Services
                 .Select(v => v.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList() ?? new List<string>();
+            var safeLang = string.IsNullOrWhiteSpace(languageFilter) ? null : languageFilter.Trim();
 
             using var conn = _connectionFactory.CreateOpenConnection();
 
@@ -68,25 +70,41 @@ SELECT TOP (@Limit)
         WHERE ccl.CustomerId = b.CustomerId
           AND ccl.LabelKey = 'needs_number'
           AND ccl.IsActive = 1
-    ) THEN 1 ELSE 0 END AS bit) AS NeedsNumber
+    ) THEN 1 ELSE 0 END AS bit) AS NeedsNumber,
+    b.NumberOfAttendees,
+    b.NumberOfAdults,
+    b.NumberOfChildren,
+    b.Language,
+    b.BookingStatus
 FROM dbo.Bookings b";
 
+            var conditions = new List<string>();
             if (vendorList.Count > 0)
             {
-                sql += "\nWHERE b.VendorName IN @Vendors";
+                conditions.Add("b.VendorName IN @Vendors");
+            }
+            if (safeLang != null)
+            {
+                conditions.Add("b.Language LIKE @LanguageFilter");
+            }
+            if (conditions.Count > 0)
+            {
+                sql += "\nWHERE " + string.Join(" AND ", conditions);
             }
 
             sql += normalizedOrder switch
             {
                 "tour_date" => "\nORDER BY b.TourDate DESC, COALESCE(b.UpdatedAt, b.CreatedAt) DESC, b.Id DESC;",
                 "booking_date" => "\nORDER BY b.CreatedAt DESC, b.Id DESC;",
+                "group_size" => "\nORDER BY ISNULL(b.NumberOfAttendees, 0) DESC, b.CreatedAt DESC, b.Id DESC;",
+                "language" => "\nORDER BY ISNULL(b.Language, 'zzz'), b.CreatedAt DESC, b.Id DESC;",
                 _ => "\nORDER BY COALESCE(b.UpdatedAt, b.CreatedAt) DESC, b.Id DESC;"
             };
 
             var rows = await conn.QueryAsync<BookingsLiveListItem>(
                 new CommandDefinition(
                     sql,
-                    new { Limit = safeLimit, Vendors = vendorList },
+                    new { Limit = safeLimit, Vendors = vendorList, LanguageFilter = safeLang != null ? "%" + safeLang + "%" : null },
                     cancellationToken: ct));
 
             return rows.ToList();
@@ -745,6 +763,9 @@ WHERE Id = @BookingId;";
                 "booking" => "booking_date",
                 "booking_date" => "booking_date",
                 "booking date" => "booking_date",
+                "group_size" => "group_size",
+                "group size" => "group_size",
+                "language" => "language",
                 _ => "booking_date"
             };
         }
