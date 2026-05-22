@@ -1,0 +1,481 @@
+@page "/resources"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models
+@using Email.Models.Resources
+@using Email.Services.Resources
+@inject IResourceService ResourceService
+@inject IToursApiService ToursService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+
+<PageTitle>Resources</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h4 class="mb-0"><i class="bi bi-folder me-2"></i>Resources</h4>
+        <button class="btn btn-sm btn-primary" @onclick="ToggleUploadPanel">
+            <i class="bi bi-cloud-upload me-1"></i>@(showUploadPanel ? "Hide Upload" : "Upload Resource")
+        </button>
+    </div>
+
+    @* Upload panel *@
+    @if (showUploadPanel)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold">File</label>
+                        <InputFile OnChange="OnFileSelected" class="form-control form-control-sm"
+                                   accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.webm,.pdf" />
+                        @if (selectedFile != null)
+                        {
+                            <small class="text-muted">@selectedFile.Name (@FormatFileSize(selectedFile.Size))</small>
+                        }
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold">Description (optional)</label>
+                        <input type="text" class="form-control form-control-sm" @bind="uploadDescription" placeholder="Brief description..." />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold">Assign to tours</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            @foreach (var tour in Tours)
+                            {
+                                var tourId = tour.Id;
+                                var isChecked = selectedTourIds.Contains(tourId);
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="@($"tour-{tourId}")"
+                                           checked="@isChecked"
+                                           @onchange="(e) => ToggleTour(tourId, e)" />
+                                    <label class="form-check-label" for="@($"tour-{tourId}")">@tour.TourName</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        @if (isUploading)
+                        {
+                            <button class="btn btn-sm btn-primary" disabled>
+                                <span class="spinner-border spinner-border-sm me-1"></span>Uploading...
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-primary" @onclick="UploadFileAsync" disabled="@(selectedFile == null)">
+                                <i class="bi bi-upload me-1"></i>Upload
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Tour tabs *@
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <button class='@($"nav-link {(selectedTourTab == 0 ? "active" : "")}")' @onclick="() => SelectTourTab(0)">
+                All <span class="badge bg-secondary ms-1">@Resources.Count</span>
+            </button>
+        </li>
+        @foreach (var tour in Tours)
+        {
+            var count = Resources.Count(r => r.TourIds.Contains(tour.Id));
+            <li class="nav-item">
+                <button class='@($"nav-link {(selectedTourTab == tour.Id ? "active" : "")}")' @onclick="() => SelectTourTab(tour.Id)">
+                    @tour.TourName <span class="badge bg-secondary ms-1">@count</span>
+                </button>
+            </li>
+        }
+    </ul>
+
+    @* Resources grid *@
+    @if (isLoading)
+    {
+        <div class="text-center py-5 text-muted">
+            <div class="spinner-border me-2"></div>Loading resources...
+        </div>
+    }
+    else if (GetVisibleResources().Count == 0)
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-folder2-open fs-1 d-block mb-2"></i>
+            No resources found. Upload your first resource above.
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+            @foreach (var resource in GetVisibleResources())
+            {
+                <div class="col">
+                    <div class="card h-100 resource-card">
+                        <div class="resource-preview">
+                            @if (resource.IsPhoto)
+                            {
+                                <img src="/@resource.RelativePath" alt="@resource.OriginalFileName" class="resource-img" loading="lazy" />
+                            }
+                            else if (resource.IsVideo)
+                            {
+                                <div class="resource-video-placeholder">
+                                    <i class="bi bi-play-circle fs-1"></i>
+                                </div>
+                            }
+                            else if (resource.IsPdf)
+                            {
+                                <div class="resource-pdf-placeholder">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="resource-file-placeholder">
+                                    <i class="bi bi-file-earmark fs-1"></i>
+                                </div>
+                            }
+                        </div>
+                        <div class="card-body py-2">
+                            <div class="fw-semibold small text-truncate" title="@resource.OriginalFileName">@resource.OriginalFileName</div>
+                            @if (!string.IsNullOrWhiteSpace(resource.Description))
+                            {
+                                <div class="small text-muted text-truncate">@resource.Description</div>
+                            }
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                <span class='@($"badge {GetFileTypeBadge(resource.FileType)}")'>@resource.FileType</span>
+                                <span class="badge text-bg-light text-dark">@resource.FileSizeDisplay</span>
+                            </div>
+                            @if (resource.TourNames.Count > 0)
+                            {
+                                <div class="mt-1">
+                                    @foreach (var tour in resource.TourNames)
+                                    {
+                                        <span class="badge text-bg-outline-secondary me-1 mb-1" style="border: 1px solid var(--bs-border-color); color: var(--bs-body-color);">@tour</span>
+                                    }
+                                </div>
+                            }
+                            <div class="small text-muted mt-1">
+                                <i class="bi bi-person me-1"></i>@resource.UploadedByName
+                                <span class="ms-2"><i class="bi bi-clock me-1"></i>@resource.CreatedAtUtc.ToString("MMM d, yyyy")</span>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent d-flex flex-wrap gap-2">
+                            @if (resource.IsVideo)
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowVideoPlayer(resource)">
+                                    <i class="bi bi-play me-1"></i>Play
+                                </button>
+                            }
+                            <a href="/@resource.RelativePath" download="@resource.OriginalFileName" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-download me-1"></i>Download
+                            </a>
+                            <AuthorizeView Roles="Admin,Manager">
+                                <button class="btn btn-sm btn-outline-danger ms-auto" @onclick="() => ConfirmDelete(resource)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </AuthorizeView>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@* Video player modal *@
+@if (videoResource != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7);" @onclick="CloseVideoPlayer">
+        <div class="modal-dialog modal-lg modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">@videoResource.OriginalFileName</h6>
+                    <button type="button" class="btn-close" @onclick="CloseVideoPlayer"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <video controls autoplay class="w-100" style="max-height: 70vh;">
+                        <source src="/@videoResource.RelativePath" type="@GetVideoMimeType(videoResource.FileName)" />
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="modal-footer">
+                    <a href="/@videoResource.RelativePath" download="@videoResource.OriginalFileName" class="btn btn-sm btn-primary">
+                        <i class="bi bi-download me-1"></i>Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Delete confirmation modal *@
+@if (deleteResource != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);" @onclick="CancelDelete">
+        <div class="modal-dialog modal-sm modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-body text-center py-4">
+                    <i class="bi bi-exclamation-triangle fs-1 text-warning d-block mb-2"></i>
+                    <p>Delete <strong>@deleteResource.OriginalFileName</strong>?</p>
+                    <div class="d-flex justify-content-center gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelDelete">Cancel</button>
+                        <button class="btn btn-sm btn-danger" @onclick="ExecuteDeleteAsync">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ResourceItem> Resources { get; set; } = new();
+    private List<DbTour> Tours { get; set; } = new();
+    private bool isLoading;
+    private bool showUploadPanel;
+    private int selectedTourTab;
+
+    // Upload state
+    private IBrowserFile? selectedFile;
+    private string uploadDescription = string.Empty;
+    private HashSet<int> selectedTourIds = new();
+    private bool isUploading;
+
+    // Modal state
+    private ResourceItem? videoResource;
+    private ResourceItem? deleteResource;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var toursTask = ToursService.GetToursAsync();
+            var resourcesTask = ResourceService.GetAllResourcesAsync();
+            await Task.WhenAll(toursTask, resourcesTask);
+
+            Tours = (await toursTask)
+                .Where(t => !string.IsNullOrWhiteSpace(t.TourName))
+                .OrderBy(t => t.TourName)
+                .ToList();
+            Resources = await resourcesTask;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private List<ResourceItem> GetVisibleResources()
+    {
+        if (selectedTourTab == 0) return Resources;
+        return Resources.Where(r => r.TourIds.Contains(selectedTourTab)).ToList();
+    }
+
+    private void SelectTourTab(int tourId)
+    {
+        selectedTourTab = tourId;
+    }
+
+    private void ToggleUploadPanel()
+    {
+        showUploadPanel = !showUploadPanel;
+        if (!showUploadPanel) ResetUploadForm();
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private void ToggleTour(int tourId, ChangeEventArgs e)
+    {
+        var isChecked = e?.Value?.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        if (isChecked)
+            selectedTourIds.Add(tourId);
+        else
+            selectedTourIds.Remove(tourId);
+    }
+
+    private async Task UploadFileAsync()
+    {
+        if (selectedFile == null) return;
+
+        isUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var maxSize = 200 * 1024 * 1024L;
+            using var fileStream = selectedFile.OpenReadStream(maxSize);
+            var streamContent = new StreamContent(fileStream);
+            content.Add(streamContent, "file", selectedFile.Name);
+
+            if (!string.IsNullOrWhiteSpace(uploadDescription))
+            {
+                content.Add(new StringContent(uploadDescription), "description");
+            }
+
+            if (selectedTourIds.Count > 0)
+            {
+                content.Add(new StringContent(string.Join(",", selectedTourIds)), "tourIds");
+            }
+
+            using var http = new HttpClient { BaseAddress = GetBaseUri() };
+            var cookies = GetAuthCookies();
+            if (!string.IsNullOrEmpty(cookies))
+            {
+                http.DefaultRequestHeaders.Add("Cookie", cookies);
+            }
+
+            var response = await http.PostAsync("/resources/upload", content);
+            if (response.IsSuccessStatusCode)
+            {
+                await ToastService.ShowSuccessAsync("Resource uploaded successfully!");
+                ResetUploadForm();
+                showUploadPanel = false;
+                Resources = await ResourceService.GetAllResourcesAsync();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                await ToastService.ShowErrorAsync($"Upload failed: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorAsync($"Upload error: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ResetUploadForm()
+    {
+        selectedFile = null;
+        uploadDescription = string.Empty;
+        selectedTourIds.Clear();
+    }
+
+    private void ShowVideoPlayer(ResourceItem resource) => videoResource = resource;
+    private void CloseVideoPlayer() => videoResource = null;
+    private void ConfirmDelete(ResourceItem resource) => deleteResource = resource;
+    private void CancelDelete() => deleteResource = null;
+
+    private async Task ExecuteDeleteAsync()
+    {
+        if (deleteResource == null) return;
+        try
+        {
+            await ResourceService.DeleteResourceAsync(deleteResource.Id);
+            Resources.Remove(deleteResource);
+            await ToastService.ShowSuccessAsync("Resource deleted.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to delete resource.");
+        }
+        finally
+        {
+            deleteResource = null;
+            StateHasChanged();
+        }
+    }
+
+    private Uri GetBaseUri()
+    {
+        var request = ((IHttpContextAccessor?)
+            ((IServiceProvider)JSRuntime).GetService(typeof(IHttpContextAccessor)))?.HttpContext?.Request;
+        if (request != null)
+        {
+            return new Uri($"{request.Scheme}://{request.Host}");
+        }
+        return new Uri("http://localhost:5282");
+    }
+
+    private string? GetAuthCookies()
+    {
+        var accessor = (IHttpContextAccessor?)
+            ((IServiceProvider)JSRuntime).GetService(typeof(IHttpContextAccessor));
+        if (accessor?.HttpContext?.Request.Headers.TryGetValue("Cookie", out var cookies) == true)
+        {
+            return cookies.ToString();
+        }
+        return null;
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+
+    private static string GetFileTypeBadge(string fileType)
+    {
+        return fileType switch
+        {
+            "photo" => "text-bg-success",
+            "video" => "text-bg-primary",
+            "pdf" => "text-bg-danger",
+            _ => "text-bg-secondary"
+        };
+    }
+
+    private static string GetVideoMimeType(string fileName)
+    {
+        var ext = Path.GetExtension(fileName)?.ToLowerInvariant();
+        return ext switch
+        {
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            _ => "video/mp4"
+        };
+    }
+}
+
+<style>
+    .resource-card {
+        transition: box-shadow 0.15s ease-in-out;
+    }
+
+    .resource-card:hover {
+        box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .12);
+    }
+
+    .resource-preview {
+        height: 160px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bs-tertiary-bg);
+    }
+
+    .resource-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .resource-video-placeholder,
+    .resource-pdf-placeholder,
+    .resource-file-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        color: var(--bs-secondary-color);
+    }
+
+    @@media (max-width: 575px) {
+        .resource-preview {
+            height: 120px;
+        }
+    }
+</style>

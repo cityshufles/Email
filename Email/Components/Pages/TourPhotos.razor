@@ -7,6 +7,7 @@
 @inject ITourPhotoService PhotoService
 @inject ITourTreeService TourTreeService
 @inject IJSRuntime JSRuntime
+@inject IToastService ToastService
 
 <div class="container-fluid py-3">
     <div class="row mb-4">
@@ -33,7 +34,7 @@
         </div>
     </div>
 
-    @* Upload Section *@
+    @* Upload Section with drag-and-drop *@
     @if (showUploader)
     {
         <div class="row mb-4">
@@ -41,7 +42,7 @@
                 <div class="card">
                     <div class="card-header">
                         <h5 class="card-title mb-0">
-                            <i class="bi bi-upload me-2"></i>Upload Photo
+                            <i class="bi bi-upload me-2"></i>Upload Photos
                         </h5>
                     </div>
                     <div class="card-body">
@@ -74,13 +75,83 @@
                                 <input type="text" class="form-control" @bind="uploadTourTime" placeholder="e.g., 10:00 AM" />
                             </div>
                         </div>
+
                         @if (!string.IsNullOrWhiteSpace(uploadTourName) && !string.IsNullOrWhiteSpace(uploadTourTime))
                         {
-                            <TourPhotoComponent 
-                                TourDate='@uploadDate.ToString("yyyy-MM-dd")'
-                                TourName="@uploadTourName"
-                                TourTime="@uploadTourTime"
-                                OnPhotoSaved="OnPhotoSaved" />
+                            @* Drag-and-drop zone *@
+                            <div class="dropzone @(isDragOver ? "dropzone-active" : "")"
+                                 @ondragover="OnDragOver"
+                                 @ondragover:preventDefault="true"
+                                 @ondragleave="OnDragLeave"
+                                 @ondrop="OnDrop"
+                                 @ondrop:preventDefault="true">
+                                <InputFile OnChange="OnFilesSelected" multiple
+                                           accept="image/*"
+                                           class="dropzone-input"
+                                           id="photo-file-input" />
+                                <div class="dropzone-content">
+                                    <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                                    <p class="mt-2 mb-1 fw-semibold">Drag & drop photos here</p>
+                                    <p class="small text-muted mb-0">or click to browse</p>
+                                </div>
+                            </div>
+
+                            @* Preview grid *@
+                            @if (pendingFiles.Count > 0)
+                            {
+                                <div class="mt-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-semibold small">@pendingFiles.Count file(s) selected</span>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearPendingFiles">Clear All</button>
+                                            <button class="btn btn-sm btn-primary" @onclick="UploadPendingFiles" disabled="@isUploadingBatch">
+                                                @if (isUploadingBatch)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                                }
+                                                <i class="bi bi-upload me-1"></i>Upload All
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="preview-grid">
+                                        @foreach (var pf in pendingFiles)
+                                        {
+                                            <div class="preview-item">
+                                                <div class="preview-thumb">
+                                                    <i class="bi bi-image fs-3 text-muted"></i>
+                                                </div>
+                                                <div class="preview-info">
+                                                    <div class="small text-truncate fw-semibold" title="@pf.Name">@pf.Name</div>
+                                                    <div class="small text-muted">@FormatSize(pf.Size)</div>
+                                                </div>
+                                                @if (pf.Status == UploadStatus.Uploading)
+                                                {
+                                                    <div class="preview-progress">
+                                                        <div class="progress" style="height: 4px;">
+                                                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%;"></div>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                else if (pf.Status == UploadStatus.Done)
+                                                {
+                                                    <span class="badge text-bg-success"><i class="bi bi-check"></i></span>
+                                                }
+                                                else if (pf.Status == UploadStatus.Failed)
+                                                {
+                                                    <span class="badge text-bg-danger"><i class="bi bi-x"></i></span>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-outline-danger p-0 px-1" @onclick="() => RemovePendingFile(pf)" title="Remove">
+                                                        <i class="bi bi-x"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                         }
                         else
                         {
@@ -132,8 +203,8 @@
                     }
                     else
                     {
-                        <TourPhotoGallery 
-                            Photos="@filteredPhotos.Select(p => p.Path).ToList()" 
+                        <TourPhotoGallery
+                            Photos="@filteredPhotos.Select(p => p.Path).ToList()"
                             AllowDelete="true"
                             OnPhotoDeleted="LoadAllPhotos" />
                     }
@@ -152,21 +223,25 @@
     private bool isLoading = true;
     private bool showUploader = false;
     private bool showCamera = false;
-    
+
     // Upload form fields
     private DateTime uploadDate = DateTime.Today;
     private string uploadTourName = "Quick Photo";
     private string uploadTourTime = string.Empty;
 
+    // Drag-and-drop
+    private bool isDragOver = false;
+    private List<PendingFile> pendingFiles = new();
+    private bool isUploadingBatch = false;
+
     protected override async Task OnInitializedAsync()
     {
-        // Load tour names for autocomplete
         try
         {
             tourNames = await TourTreeService.GetDistinctTourNamesAsync();
         }
         catch { tourNames = new(); }
-        
+
         await LoadAllPhotos();
     }
 
@@ -174,7 +249,7 @@
     {
         isLoading = true;
         StateHasChanged();
-        
+
         try
         {
             allPhotos = await PhotoService.GetAllPhotosAsync();
@@ -206,6 +281,93 @@
         StateHasChanged();
     }
 
+    // Drag events
+    private void OnDragOver() => isDragOver = true;
+    private void OnDragLeave() => isDragOver = false;
+    private void OnDrop() => isDragOver = false;
+
+    private void OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        isDragOver = false;
+        var maxFiles = 50;
+        var files = e.GetMultipleFiles(maxFiles);
+        foreach (var file in files)
+        {
+            if (!pendingFiles.Any(p => p.Name == file.Name && p.Size == file.Size))
+            {
+                pendingFiles.Add(new PendingFile
+                {
+                    Name = file.Name,
+                    Size = file.Size,
+                    File = file,
+                    Status = UploadStatus.Pending
+                });
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void RemovePendingFile(PendingFile pf)
+    {
+        pendingFiles.Remove(pf);
+        StateHasChanged();
+    }
+
+    private void ClearPendingFiles()
+    {
+        pendingFiles.Clear();
+        StateHasChanged();
+    }
+
+    private async Task UploadPendingFiles()
+    {
+        if (pendingFiles.Count == 0) return;
+        isUploadingBatch = true;
+        StateHasChanged();
+
+        var tourDate = uploadDate.ToString("yyyy-MM-dd");
+        var tourName = uploadTourName;
+        var tourTime = uploadTourTime;
+
+        foreach (var pf in pendingFiles.Where(p => p.Status == UploadStatus.Pending))
+        {
+            pf.Status = UploadStatus.Uploading;
+            StateHasChanged();
+
+            try
+            {
+                var maxSize = 200 * 1024 * 1024L;
+                await using var stream = pf.File!.OpenReadStream(maxSize);
+                var ext = Path.GetExtension(pf.Name)?.ToLowerInvariant() ?? ".jpg";
+                var savedPath = await PhotoService.SavePhotoRawAsync(stream, tourDate, tourName, tourTime, ext);
+
+                pf.Status = string.IsNullOrWhiteSpace(savedPath) ? UploadStatus.Failed : UploadStatus.Done;
+            }
+            catch
+            {
+                pf.Status = UploadStatus.Failed;
+            }
+            StateHasChanged();
+        }
+
+        isUploadingBatch = false;
+
+        var successCount = pendingFiles.Count(p => p.Status == UploadStatus.Done);
+        var failCount = pendingFiles.Count(p => p.Status == UploadStatus.Failed);
+
+        if (successCount > 0)
+        {
+            await ToastService.ShowSuccessAsync("Upload complete", $"{successCount} photo(s) uploaded.");
+            await LoadAllPhotos();
+        }
+        if (failCount > 0)
+        {
+            await ToastService.ShowErrorAsync("Upload issues", $"{failCount} file(s) failed.");
+        }
+
+        StateHasChanged();
+    }
+
     private async Task OnPhotoSaved()
     {
         await LoadAllPhotos();
@@ -226,8 +388,6 @@
 
     private async Task OnPhotoCaptured(string imageData)
     {
-        // Save the captured photo directly using today's date and a default tour name
-        // User can edit these later if needed
         var tourDate = DateTime.Today.ToString("yyyy-MM-dd");
         var tourName = string.IsNullOrWhiteSpace(uploadTourName) ? "Quick Photo" : uploadTourName;
         if (string.IsNullOrWhiteSpace(uploadTourTime))
@@ -239,12 +399,12 @@
         var tourTime = uploadTourTime;
 
         var savedPath = await PhotoService.SavePhotoAsync(imageData, tourDate, tourName, tourTime);
-        
+
         if (!string.IsNullOrWhiteSpace(savedPath))
         {
             await LoadAllPhotos();
         }
-        
+
         showCamera = false;
         StateHasChanged();
     }
@@ -253,5 +413,100 @@
     {
         await JSRuntime.InvokeVoidAsync("alert", "Tour time must match actual tour time");
     }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+
+    private class PendingFile
+    {
+        public string Name { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public IBrowserFile? File { get; set; }
+        public UploadStatus Status { get; set; }
+    }
+
+    private enum UploadStatus { Pending, Uploading, Done, Failed }
 }
 
+<style>
+    /* Drag and drop zone */
+    .dropzone {
+        position: relative;
+        border: 2px dashed var(--bs-border-color);
+        border-radius: 0.75rem;
+        padding: 2rem;
+        text-align: center;
+        transition: border-color 0.2s, background 0.2s;
+        cursor: pointer;
+    }
+
+    .dropzone:hover,
+    .dropzone-active {
+        border-color: var(--bs-primary);
+        background: rgba(var(--bs-primary-rgb), 0.05);
+    }
+
+    .dropzone-input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    .dropzone-content {
+        pointer-events: none;
+    }
+
+    /* Preview grid */
+    .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 0.5rem;
+    }
+
+    .preview-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.5rem;
+        background: var(--bs-tertiary-bg);
+    }
+
+    .preview-thumb {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bs-body-bg);
+        border-radius: 0.25rem;
+    }
+
+    .preview-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .preview-progress {
+        width: 60px;
+    }
+
+    @@media (max-width: 575px) {
+        .dropzone {
+            padding: 1.5rem 1rem;
+        }
+
+        .preview-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

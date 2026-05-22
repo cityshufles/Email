@@ -367,3 +367,7 @@ Email.Test/.tmp_build_output/
 Email/wwwroot/tour-photos/
 Email/Config/cityshufflescalendar-*.json
 Email/Config/whatsapp-business-calendar-*.json
+
+# Claude AI / Internal planning
+.claude/
+PROJECT_TASKS.md

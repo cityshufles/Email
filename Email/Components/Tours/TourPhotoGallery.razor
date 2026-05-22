@@ -1,4 +1,4 @@
-@* 2025-12-21 - Photo gallery component for displaying tour photos *@
+@* 2025-12-21 - Photo gallery component - modernized with masonry grid and improved lightbox *@
 @using Email.Services
 @inject ITourPhotoService PhotoService
 @inject IJSRuntime JSRuntime
@@ -21,11 +21,15 @@
     }
     else
     {
-        <div class="gallery-grid">
+        <div class="gallery-count mb-2 text-muted small">
+            <i class="bi bi-images me-1"></i>@Photos.Count photo(s)
+        </div>
+        <div class="masonry-grid">
             @foreach (var photo in Photos)
             {
                 var thumb = BuildThumbnailUrl(photo);
-                <div class="gallery-item" @onclick="() => OpenLightbox(photo)">
+                var index = Photos.IndexOf(photo);
+                <div class="masonry-item" @onclick="() => OpenLightbox(index)">
                     <img src="@thumb"
                          data-full="@photo"
                          alt="Tour photo"
@@ -33,7 +37,7 @@
                          onerror="this.onerror=null;this.src=this.dataset.full;" />
                     <div class="gallery-overlay">
                         <div class="gallery-actions">
-                            <button class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" @onclick="() => OpenLightbox(photo)" title="View full size">
+                            <button class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" @onclick="() => OpenLightbox(index)" title="View full size">
                                 <i class="bi bi-zoom-in"></i>
                             </button>
                             <a href="@photo" download class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" title="Download">
@@ -54,22 +58,45 @@
     }
 </div>
 
-@* Lightbox Modal *@
-@if (showLightbox && !string.IsNullOrWhiteSpace(lightboxPhoto))
+@* Lightbox Modal with navigation *@
+@if (showLightbox && lightboxIndex >= 0 && lightboxIndex < Photos.Count)
 {
-    <div class="lightbox-backdrop" @onclick="CloseLightbox">
+    <div class="lightbox-backdrop" @onclick="CloseLightbox" @onkeydown="OnLightboxKeyDown" tabindex="0">
         <div class="lightbox-content" @onclick:stopPropagation="true">
-            <button class="lightbox-close" @onclick="CloseLightbox">
+            <button class="lightbox-close" @onclick="CloseLightbox" title="Close (Esc)">
                 <i class="bi bi-x-lg"></i>
             </button>
-            <img src="@lightboxPhoto" alt="Full size photo" />
+
+            @* Counter *@
+            <div class="lightbox-counter">
+                @(lightboxIndex + 1) / @Photos.Count
+            </div>
+
+            @* Previous button *@
+            @if (lightboxIndex > 0)
+            {
+                <button class="lightbox-nav lightbox-prev" @onclick="PrevPhoto" title="Previous">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+            }
+
+            <img src="@Photos[lightboxIndex]" alt="Full size photo" />
+
+            @* Next button *@
+            @if (lightboxIndex < Photos.Count - 1)
+            {
+                <button class="lightbox-nav lightbox-next" @onclick="NextPhoto" title="Next">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            }
+
             <div class="lightbox-toolbar">
-                <a href="@lightboxPhoto" download class="btn btn-outline-light btn-sm">
+                <a href="@Photos[lightboxIndex]" download class="btn btn-outline-light btn-sm">
                     <i class="bi bi-download me-1"></i>Download
                 </a>
                 @if (AllowDelete)
                 {
-                    <button class="btn btn-danger btn-sm ms-2" @onclick="() => ConfirmDelete(lightboxPhoto)">
+                    <button class="btn btn-danger btn-sm ms-2" @onclick="() => ConfirmDelete(Photos[lightboxIndex])">
                         <i class="bi bi-trash me-1"></i>Delete
                     </button>
                 }
@@ -110,17 +137,17 @@
     [Parameter] public List<string> Photos { get; set; } = new();
     [Parameter] public bool AllowDelete { get; set; } = true;
     [Parameter] public EventCallback OnPhotoDeleted { get; set; }
-    
+
     private bool isLoading = false;
     private bool showLightbox = false;
-    private string? lightboxPhoto;
+    private int lightboxIndex = -1;
     private bool showDeleteConfirm = false;
     private string? photoToDelete;
     private bool isDeleting = false;
 
-    private void OpenLightbox(string photo)
+    private void OpenLightbox(int index)
     {
-        lightboxPhoto = photo;
+        lightboxIndex = index;
         showLightbox = true;
         StateHasChanged();
     }
@@ -128,8 +155,42 @@
     private void CloseLightbox()
     {
         showLightbox = false;
-        lightboxPhoto = null;
+        lightboxIndex = -1;
         StateHasChanged();
+    }
+
+    private void NextPhoto()
+    {
+        if (lightboxIndex < Photos.Count - 1)
+        {
+            lightboxIndex++;
+            StateHasChanged();
+        }
+    }
+
+    private void PrevPhoto()
+    {
+        if (lightboxIndex > 0)
+        {
+            lightboxIndex--;
+            StateHasChanged();
+        }
+    }
+
+    private void OnLightboxKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowRight":
+                NextPhoto();
+                break;
+            case "ArrowLeft":
+                PrevPhoto();
+                break;
+            case "Escape":
+                CloseLightbox();
+                break;
+        }
     }
 
     private void ConfirmDelete(string photo)
@@ -150,14 +211,14 @@
     private async Task ExecuteDelete()
     {
         if (string.IsNullOrWhiteSpace(photoToDelete)) return;
-        
+
         try
         {
             isDeleting = true;
             StateHasChanged();
-            
+
             var deleted = await PhotoService.DeletePhotoAsync(photoToDelete);
-            
+
             if (deleted)
             {
                 if (OnPhotoDeleted.HasDelegate)
@@ -189,7 +250,6 @@
         if (string.IsNullOrWhiteSpace(path)) return "";
         var parts = path.Split('/');
         var filename = parts.Length > 0 ? parts[^1] : path;
-        // Truncate long filenames
         return filename.Length > 30 ? filename.Substring(0, 27) + "..." : filename;
     }
 
@@ -217,34 +277,35 @@
 }
 
 <style>
-    .gallery-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 1rem;
+    /* Pinterest-style masonry grid */
+    .masonry-grid {
+        columns: 4 220px;
+        column-gap: 0.75rem;
         padding: 0.5rem 0;
     }
-    
-    .gallery-item {
+
+    .masonry-item {
+        break-inside: avoid;
+        margin-bottom: 0.75rem;
         position: relative;
-        aspect-ratio: 4/3;
         border-radius: 0.5rem;
         overflow: hidden;
         cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    
-    .gallery-item:hover {
+
+    .masonry-item:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
-    
-    .gallery-item img {
+
+    .masonry-item img {
         width: 100%;
-        height: 100%;
-        object-fit: cover;
+        height: auto;
+        display: block;
     }
-    
+
     .gallery-overlay {
         position: absolute;
         inset: 0;
@@ -256,35 +317,40 @@
         justify-content: flex-end;
         padding: 0.75rem;
     }
-    
-    .gallery-item:hover .gallery-overlay {
+
+    .masonry-item:hover .gallery-overlay {
         opacity: 1;
     }
-    
+
     .gallery-actions {
         display: flex;
         gap: 0.5rem;
         margin-bottom: 0.5rem;
     }
-    
+
     .gallery-filename {
         color: white;
         font-size: 0.75rem;
         text-shadow: 0 1px 2px rgba(0,0,0,0.5);
     }
-    
+
+    .gallery-count {
+        font-size: 0.85rem;
+    }
+
     /* Lightbox styles */
     .lightbox-backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,0.9);
+        background: rgba(0,0,0,0.92);
         z-index: 9999;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 2rem;
+        outline: none;
     }
-    
+
     .lightbox-content {
         position: relative;
         max-width: 90vw;
@@ -293,14 +359,14 @@
         flex-direction: column;
         align-items: center;
     }
-    
+
     .lightbox-content img {
         max-width: 100%;
-        max-height: 80vh;
+        max-height: 78vh;
         object-fit: contain;
         border-radius: 0.5rem;
     }
-    
+
     .lightbox-close {
         position: absolute;
         top: -2.5rem;
@@ -311,25 +377,97 @@
         font-size: 1.5rem;
         cursor: pointer;
         padding: 0.5rem;
+        z-index: 10;
     }
-    
+
     .lightbox-close:hover {
         color: #ccc;
     }
-    
+
+    .lightbox-counter {
+        position: absolute;
+        top: -2.5rem;
+        left: 0;
+        color: rgba(255,255,255,0.8);
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .lightbox-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        z-index: 10;
+        transition: background 0.2s;
+    }
+
+    .lightbox-nav:hover {
+        background: rgba(0,0,0,0.8);
+    }
+
+    .lightbox-prev {
+        left: -4rem;
+    }
+
+    .lightbox-next {
+        right: -4rem;
+    }
+
     .lightbox-toolbar {
         margin-top: 1rem;
     }
-    
-    /* Responsive adjustments */
-    @@media (max-width: 576px) {
-        .gallery-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 0.5rem;
+
+    /* Responsive */
+    @@media (max-width: 991px) {
+        .masonry-grid {
+            columns: 3 160px;
         }
-        
-        .gallery-item {
-            aspect-ratio: 1;
+
+        .lightbox-prev {
+            left: 0.5rem;
+        }
+
+        .lightbox-next {
+            right: 0.5rem;
+        }
+
+        .lightbox-nav {
+            padding: 0.5rem 0.75rem;
+            font-size: 1.25rem;
+        }
+    }
+
+    @@media (max-width: 575px) {
+        .masonry-grid {
+            columns: 2 140px;
+            column-gap: 0.5rem;
+        }
+
+        .masonry-item {
+            margin-bottom: 0.5rem;
+        }
+
+        .lightbox-backdrop {
+            padding: 0.5rem;
+        }
+
+        .lightbox-content img {
+            max-height: 70vh;
+        }
+    }
+
+    /* Touch: always show overlay on mobile */
+    @@media (hover: none) {
+        .gallery-overlay {
+            opacity: 1;
+            background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 40%);
         }
     }
 </style>

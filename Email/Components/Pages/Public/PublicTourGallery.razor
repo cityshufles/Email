@@ -6,6 +6,7 @@
 @using System.Text.Json
 @inject IGuideReportService ReportService
 @inject IPublicGalleryService GalleryService
+@inject IJSRuntime JSRuntime
 @attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
 
 <PageTitle>Tour Photos - City Shuffles</PageTitle>
@@ -38,11 +39,29 @@ else
             {
                 @((MarkupString)headerHtml)
             }
-            
+
             <div class="text-muted small mt-2">
                 <i class="bi bi-calendar-event me-1"></i>@report.TourDate.ToLongDateString()
-                <span class="mx-2">•</span>
+                <span class="mx-2">|</span>
                 <i class="bi bi-clock me-1"></i>@report.TourTime
+                <span class="mx-2">|</span>
+                <i class="bi bi-images me-1"></i>@Photos.Count photo(s)
+            </div>
+
+            @* Share buttons *@
+            <div class="d-flex justify-content-center gap-2 mt-3">
+                <button class="btn btn-sm btn-outline-success" @onclick="ShareWhatsApp" title="Share via WhatsApp">
+                    <i class="bi bi-whatsapp me-1"></i>Share
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CopyLink" title="Copy gallery link">
+                    <i class="bi bi-link-45deg me-1"></i>@(linkCopied ? "Copied!" : "Copy Link")
+                </button>
+                @if (Photos.Count > 0)
+                {
+                    <a href="/tour-photos/download-all/@PublicId" class="btn btn-sm btn-outline-primary" title="Download all photos">
+                        <i class="bi bi-download me-1"></i>Download All
+                    </a>
+                }
             </div>
         </header>
 
@@ -79,36 +98,33 @@ else
     private List<FooterLink> FooterLinks { get; set; } = new();
     private string headerHtml = "";
     private bool isLoading = true;
+    private bool linkCopied = false;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            // Load Report
             report = await ReportService.GetReportByPublicIdAsync(PublicId);
             if (report != null && !string.IsNullOrWhiteSpace(report.ImagePaths))
             {
                 Photos = report.ImagePaths.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
             }
 
-            // Load Settings
             Settings = await GalleryService.GetSettingsAsync();
             if (Settings != null)
             {
-                // Process Header Template
                 if (!string.IsNullOrWhiteSpace(Settings.HeaderText))
                 {
                     headerHtml = Settings.HeaderText.Replace("{TourName}", report?.TourName ?? "our tour");
                 }
 
-                // Process Links
                 if (!string.IsNullOrWhiteSpace(Settings.FooterLinksJson))
                 {
-                    try 
+                    try
                     {
                         FooterLinks = JsonSerializer.Deserialize<List<FooterLink>>(Settings.FooterLinksJson) ?? new();
                     }
-                    catch { /* ignore json error */ }
+                    catch { }
                 }
             }
         }
@@ -119,6 +135,37 @@ else
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task ShareWhatsApp()
+    {
+        var url = await GetCurrentUrl();
+        var text = $"Check out our tour photos! {url}";
+        var waUrl = $"https://wa.me/?text={Uri.EscapeDataString(text)}";
+        await JSRuntime.InvokeVoidAsync("open", waUrl, "_blank");
+    }
+
+    private async Task CopyLink()
+    {
+        var url = await GetCurrentUrl();
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        linkCopied = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        linkCopied = false;
+        StateHasChanged();
+    }
+
+    private async Task<string> GetCurrentUrl()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<string>("eval", "window.location.href");
+        }
+        catch
+        {
+            return $"/tour-gallery/{PublicId}";
         }
     }
 }

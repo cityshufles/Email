@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Email.Services;
 using System.Globalization;
+using System.IO.Compression;
 
 namespace Email.Controllers;
 
@@ -12,18 +13,21 @@ public class TourPhotoUploadController : ControllerBase
     private readonly IGuideReportService _reportService;
     private readonly IPhotoUploadLog _photoLog;
     private readonly ILogger<TourPhotoUploadController> _logger;
+    private readonly IWebHostEnvironment _env;
     private const long RawSaveThresholdBytes = 3_000_000; // ~3MB
 
     public TourPhotoUploadController(
         ITourPhotoService photoService,
         IGuideReportService reportService,
         IPhotoUploadLog photoLog,
-        ILogger<TourPhotoUploadController> logger)
+        ILogger<TourPhotoUploadController> logger,
+        IWebHostEnvironment env)
     {
         _photoService = photoService;
         _reportService = reportService;
         _photoLog = photoLog;
         _logger = logger;
+        _env = env;
     }
 
     [HttpPost("upload-alt")]
@@ -284,6 +288,63 @@ public class TourPhotoUploadController : ControllerBase
                 listId, tourDate, tourName, safeTourTime);
             _photoLog.Error($"ListPhotos ERROR ListId={listId} TourDate={tourDate} TourName={tourName} TourTime={safeTourTime} Error={ex.Message}");
             return StatusCode(500, new { error = "Failed to load photos." });
+        }
+    }
+
+    [HttpGet("download-all/{publicId}")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    public async Task<IActionResult> DownloadAll(string publicId)
+    {
+        if (string.IsNullOrWhiteSpace(publicId))
+        {
+            return BadRequest(new { error = "PublicId is required." });
+        }
+
+        try
+        {
+            var report = await _reportService.GetReportByPublicIdAsync(publicId);
+            if (report == null || string.IsNullOrWhiteSpace(report.ImagePaths))
+            {
+                return NotFound(new { error = "Gallery not found or empty." });
+            }
+
+            var photoPaths = report.ImagePaths.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (photoPaths.Length == 0)
+            {
+                return NotFound(new { error = "No photos in this gallery." });
+            }
+
+            var memoryStream = new MemoryStream();
+            using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
+            {
+                var fileIndex = 0;
+                foreach (var relativePath in photoPaths)
+                {
+                    var cleanPath = relativePath.Trim().TrimStart('/');
+                    if (cleanPath.Contains("_thumb.")) continue;
+
+                    var absolutePath = Path.Combine(_env.WebRootPath, cleanPath.Replace('/', Path.DirectorySeparatorChar));
+                    if (!System.IO.File.Exists(absolutePath)) continue;
+
+                    fileIndex++;
+                    var fileName = Path.GetFileName(absolutePath);
+                    var entryName = $"{fileIndex:D3}_{fileName}";
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                    await using var entryStream = entry.Open();
+                    await using var fileStream = System.IO.File.OpenRead(absolutePath);
+                    await fileStream.CopyToAsync(entryStream);
+                }
+            }
+
+            memoryStream.Position = 0;
+            var safeTourName = (report.TourName ?? "tour").Replace(" ", "-");
+            var zipName = $"{safeTourName}-photos-{report.TourDate:yyyy-MM-dd}.zip";
+            return File(memoryStream, "application/zip", zipName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DownloadAll error for PublicId={PublicId}", publicId);
+            return StatusCode(500, new { error = "Failed to create download archive." });
         }
     }
 

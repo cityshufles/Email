@@ -124,6 +124,7 @@ builder.Services.AddScoped<ITourCatalogService, TourCatalogService>();
 builder.Services.AddScoped<IMessageStatusApiService, MessageStatusSqlService>();
 builder.Services.AddScoped<MessageTemplateService>();
 builder.Services.AddScoped<IBookingsInboxService, BookingsInboxSqlService>();
+builder.Services.AddScoped<Email.Services.Resources.IResourceService, Email.Services.Resources.ResourceSqlService>();
 builder.Services.AddScoped<IGalleryLinkResolver, GalleryLinkResolver>();
 // 2025-12-19 00:00 UTC - Centralized vCard export for iPhone/iPad compatibility
 builder.Services.AddScoped<VCardExportService>();
@@ -648,6 +649,10 @@ static string RenderSmsTemplate(string? content, string? signature, Email.Servic
 app.MapControllers();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
+
+// Ensure resources upload folder exists
+var resourcesRoot = Path.Combine(app.Environment.WebRootPath, "resources");
+Directory.CreateDirectory(resourcesRoot);
 
 app.Run();
 
