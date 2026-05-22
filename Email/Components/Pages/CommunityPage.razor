@@ -1,0 +1,369 @@
+@page "/community"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models.Community
+@using Email.Services.Community
+@using System.Security.Claims
+@inject ICommunityService CommunityService
+@inject IToastService ToastService
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Community</PageTitle>
+
+<div class="container-fluid py-3" style="max-width: 800px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-megaphone me-2"></i>Community</h4>
+        <button class="btn btn-sm btn-outline-primary" @onclick="LoadPostsAsync" disabled="@isLoading">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    @* New post form *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <textarea class="form-control mb-2" rows="3" placeholder="Share something with the team..."
+                      @bind="newPostContent"></textarea>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <AuthorizeView Roles="Admin,Manager">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="announcement-check" @bind="newPostIsAnnouncement" />
+                        <label class="form-check-label small" for="announcement-check">
+                            <i class="bi bi-envelope me-1"></i>Post as Announcement (email all guides)
+                        </label>
+                    </div>
+                </AuthorizeView>
+                <button class="btn btn-sm btn-primary" @onclick="CreatePostAsync"
+                        disabled="@(string.IsNullOrWhiteSpace(newPostContent) || isPosting)">
+                    @if (isPosting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    <i class="bi bi-send me-1"></i>Post
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* Posts feed *@
+    @if (isLoading)
+    {
+        <div class="text-center py-4 text-muted">
+            <div class="spinner-border me-2"></div>Loading posts...
+        </div>
+    }
+    else if (Posts.Count == 0)
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-chat-square-text fs-1 d-block mb-2"></i>
+            No posts yet. Be the first to share something!
+        </div>
+    }
+    else
+    {
+        @foreach (var post in Posts)
+        {
+            <div class='@($"card mb-3 {(post.IsHighlighted ? "border-warning" : "")} {(post.IsPinned ? "border-primary" : "")}")'>
+                <div class='@($"card-body {(post.IsHighlighted ? "bg-warning bg-opacity-10" : "")}")'>
+                    @* Post header *@
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <span class="fw-bold">@post.AuthorName</span>
+                            <span class="text-muted small ms-2">@FormatTime(post.CreatedAtUtc)</span>
+                            @if (post.IsPinned)
+                            {
+                                <span class="badge text-bg-primary ms-1"><i class="bi bi-pin-angle"></i> Pinned</span>
+                            }
+                            @if (post.IsAnnouncement)
+                            {
+                                <span class="badge text-bg-info ms-1"><i class="bi bi-megaphone"></i> Announcement</span>
+                            }
+                        </div>
+                        <AuthorizeView Roles="Admin,Manager">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle p-1" data-bs-toggle="dropdown">
+                                    <i class="bi bi-three-dots"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><button class="dropdown-item" @onclick="() => TogglePin(post)">@(post.IsPinned ? "Unpin" : "Pin")</button></li>
+                                    <li><button class="dropdown-item" @onclick="() => ToggleHighlight(post)">@(post.IsHighlighted ? "Remove Highlight" : "Highlight")</button></li>
+                                    @if (post.IsAnnouncement && post.AnnouncementEmailSentAt == null)
+                                    {
+                                        <li><button class="dropdown-item" @onclick="() => SendAnnouncementEmail(post)"><i class="bi bi-envelope me-1"></i>Send Announcement Email</button></li>
+                                    }
+                                    <li><hr class="dropdown-divider" /></li>
+                                    <li><button class="dropdown-item text-danger" @onclick="() => DeletePost(post)"><i class="bi bi-trash me-1"></i>Delete</button></li>
+                                </ul>
+                            </div>
+                        </AuthorizeView>
+                    </div>
+
+                    @* Post content *@
+                    <div class="mb-2" style="white-space: pre-wrap;">@post.Content</div>
+
+                    @if (post.AnnouncementEmailSentAt.HasValue)
+                    {
+                        <div class="small text-success mb-2">
+                            <i class="bi bi-check-circle me-1"></i>Announcement emailed @FormatTime(post.AnnouncementEmailSentAt.Value)
+                        </div>
+                    }
+
+                    @* Reply button *@
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-sm btn-link text-muted p-0" @onclick="() => ToggleReplyForm(post.Id)">
+                            <i class="bi bi-reply me-1"></i>Reply
+                            @if (post.ReplyCount > 0)
+                            {
+                                <span class="text-muted">(@post.ReplyCount)</span>
+                            }
+                        </button>
+                    </div>
+
+                    @* Reply form *@
+                    @if (replyToPostId == post.Id)
+                    {
+                        <div class="mt-2 ms-3">
+                            <textarea class="form-control form-control-sm mb-1" rows="2" placeholder="Write a reply..."
+                                      @bind="replyContent"></textarea>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-primary" @onclick="() => SubmitReplyAsync(post.Id)"
+                                        disabled="@(string.IsNullOrWhiteSpace(replyContent))">Reply</button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => replyToPostId = null">Cancel</button>
+                            </div>
+                        </div>
+                    }
+
+                    @* Nested replies *@
+                    @if (post.Replies.Count > 0)
+                    {
+                        <div class="mt-3">
+                            @{ RenderReplies(post.Replies, 1); }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<CommunityPost> Posts { get; set; } = new();
+    private bool isLoading = true;
+    private bool isPosting;
+    private string newPostContent = string.Empty;
+    private bool newPostIsAnnouncement;
+    private int? replyToPostId;
+    private string replyContent = string.Empty;
+
+    private int currentUserId;
+    private string currentUserName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        await LoadPostsAsync();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUserName = state.User.Identity?.Name ?? "Unknown";
+        var idStr = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        currentUserId = int.TryParse(idStr, out var id) ? id : 0;
+    }
+
+    private async Task LoadPostsAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            Posts = await CommunityService.GetPostsAsync();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreatePostAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newPostContent)) return;
+        isPosting = true;
+        StateHasChanged();
+
+        try
+        {
+            var postId = await CommunityService.CreatePostAsync(new CommunityPostWriteModel
+            {
+                AuthorUserId = currentUserId,
+                AuthorName = currentUserName,
+                Content = newPostContent.Trim(),
+                IsAnnouncement = newPostIsAnnouncement
+            });
+
+            if (newPostIsAnnouncement)
+            {
+                try
+                {
+                    await CommunityService.SendAnnouncementEmailsAsync(postId);
+                    await ToastService.ShowSuccessAsync("Posted and announcement emails sent!");
+                }
+                catch
+                {
+                    await ToastService.ShowWarningAsync("Post created but email sending failed.");
+                }
+            }
+            else
+            {
+                await ToastService.ShowSuccessAsync("Post created!");
+            }
+
+            newPostContent = string.Empty;
+            newPostIsAnnouncement = false;
+            await LoadPostsAsync();
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to create post.");
+        }
+        finally
+        {
+            isPosting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleReplyForm(int postId)
+    {
+        if (replyToPostId == postId)
+        {
+            replyToPostId = null;
+            replyContent = string.Empty;
+        }
+        else
+        {
+            replyToPostId = postId;
+            replyContent = string.Empty;
+        }
+    }
+
+    private async Task SubmitReplyAsync(int parentPostId)
+    {
+        if (string.IsNullOrWhiteSpace(replyContent)) return;
+
+        try
+        {
+            await CommunityService.CreatePostAsync(new CommunityPostWriteModel
+            {
+                AuthorUserId = currentUserId,
+                AuthorName = currentUserName,
+                Content = replyContent.Trim(),
+                ParentPostId = parentPostId
+            });
+
+            replyToPostId = null;
+            replyContent = string.Empty;
+            await LoadPostsAsync();
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to post reply.");
+        }
+    }
+
+    private async Task TogglePin(CommunityPost post)
+    {
+        await CommunityService.TogglePinAsync(post.Id, !post.IsPinned);
+        await LoadPostsAsync();
+    }
+
+    private async Task ToggleHighlight(CommunityPost post)
+    {
+        await CommunityService.ToggleHighlightAsync(post.Id, !post.IsHighlighted);
+        await LoadPostsAsync();
+    }
+
+    private async Task DeletePost(CommunityPost post)
+    {
+        await CommunityService.DeletePostAsync(post.Id);
+        await ToastService.ShowSuccessAsync("Post deleted.");
+        await LoadPostsAsync();
+    }
+
+    private async Task SendAnnouncementEmail(CommunityPost post)
+    {
+        try
+        {
+            await CommunityService.SendAnnouncementEmailsAsync(post.Id);
+            await ToastService.ShowSuccessAsync("Announcement emails sent!");
+            await LoadPostsAsync();
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to send announcement emails.");
+        }
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            var et = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), tz);
+            var diff = DateTime.UtcNow - utc;
+            if (diff.TotalMinutes < 1) return "just now";
+            if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+            if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+            if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+            return et.ToString("MMM d, yyyy");
+        }
+        catch
+        {
+            return utc.ToString("MMM d, yyyy");
+        }
+    }
+}
+
+@* Recursive reply rendering — Blazor doesn't support RenderFragment recursion easily, so inline *@
+@{
+    void RenderReplies(List<CommunityPost> replies, int depth)
+    {
+        foreach (var reply in replies)
+        {
+            var indent = Math.Min(depth, 4) * 24;
+            <div class="border-start border-2 ps-3 mt-2" style="margin-left: @(indent)px;">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span class="fw-semibold small">@reply.AuthorName</span>
+                        <span class="text-muted small ms-2">@FormatTime(reply.CreatedAtUtc)</span>
+                    </div>
+                    <AuthorizeView Roles="Admin,Manager">
+                        <button class="btn btn-sm btn-link text-danger p-0" @onclick="() => DeletePost(reply)" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </AuthorizeView>
+                </div>
+                <div class="small" style="white-space: pre-wrap;">@reply.Content</div>
+                <button class="btn btn-sm btn-link text-muted p-0 small" @onclick="() => ToggleReplyForm(reply.Id)">
+                    <i class="bi bi-reply me-1"></i>Reply
+                </button>
+                @if (replyToPostId == reply.Id)
+                {
+                    <div class="mt-1">
+                        <textarea class="form-control form-control-sm mb-1" rows="2" placeholder="Write a reply..."
+                                  @bind="replyContent"></textarea>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-primary" @onclick="() => SubmitReplyAsync(reply.Id)"
+                                    disabled="@(string.IsNullOrWhiteSpace(replyContent))">Reply</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => replyToPostId = null">Cancel</button>
+                        </div>
+                    </div>
+                }
+                @if (reply.Replies.Count > 0)
+                {
+                    RenderReplies(reply.Replies, depth + 1);
+                }
+            </div>
+        }
+    }
+}

@@ -1,0 +1,385 @@
+@page "/faq"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models.Faq
+@using Email.Services.Faq
+@using System.Security.Claims
+@inject IFaqService FaqService
+@inject IToastService ToastService
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>FAQ</PageTitle>
+
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-question-circle me-2"></i>FAQ</h4>
+        <button class="btn btn-sm btn-outline-primary" @onclick="LoadDataAsync" disabled="@isLoading">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    <div class="row g-3">
+        @* Left sidebar: categories *@
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold small">Categories</span>
+                    <AuthorizeView Roles="Admin,Manager">
+                        <button class="btn btn-sm btn-outline-primary p-0 px-1" @onclick="() => showAddCategory = true" title="Add category">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </AuthorizeView>
+                </div>
+                <div class="list-group list-group-flush">
+                    <button class='@($"list-group-item list-group-item-action d-flex justify-content-between {(selectedCategoryId == null ? "active" : "")}")'
+                            @onclick="() => SelectCategory(null)">
+                        All
+                        <span class="badge bg-secondary rounded-pill">@Categories.Sum(c => c.Items.Count)</span>
+                    </button>
+                    @foreach (var cat in Categories)
+                    {
+                        <button class='@($"list-group-item list-group-item-action d-flex justify-content-between {(selectedCategoryId == cat.Id ? "active" : "")}")'
+                                @onclick="() => SelectCategory(cat.Id)">
+                            @cat.Name
+                            <span class="badge bg-secondary rounded-pill">@cat.Items.Count</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            @* Add category form *@
+            @if (showAddCategory)
+            {
+                <div class="card mt-2">
+                    <div class="card-body py-2">
+                        <input type="text" class="form-control form-control-sm mb-2" placeholder="Category name..."
+                               @bind="newCategoryName" />
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-primary" @onclick="CreateCategoryAsync"
+                                    disabled="@(string.IsNullOrWhiteSpace(newCategoryName))">Add</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => showAddCategory = false">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* Main area: FAQ items *@
+        <div class="col-md-9">
+            @if (isLoading)
+            {
+                <div class="text-center py-4 text-muted">
+                    <div class="spinner-border me-2"></div>Loading FAQ...
+                </div>
+            }
+            else
+            {
+                @* Admin: add question *@
+                <AuthorizeView Roles="Admin,Manager">
+                    @if (selectedCategoryId.HasValue)
+                    {
+                        <div class="card mb-3">
+                            <div class="card-body py-2 d-flex gap-2">
+                                <input type="text" class="form-control form-control-sm" placeholder="Add a new question..."
+                                       @bind="newQuestionText" />
+                                <button class="btn btn-sm btn-primary" @onclick="CreateQuestionAsync"
+                                        disabled="@(string.IsNullOrWhiteSpace(newQuestionText))">
+                                    <i class="bi bi-plus me-1"></i>Add
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </AuthorizeView>
+
+                @if (GetVisibleCategories().Count == 0 || !GetVisibleCategories().Any(c => c.Items.Count > 0))
+                {
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-patch-question fs-1 d-block mb-2"></i>
+                        @if (!Categories.Any())
+                        {
+                            <span>No categories yet. Admin can create one from the sidebar.</span>
+                        }
+                        else
+                        {
+                            <span>No questions in this category yet.</span>
+                        }
+                    </div>
+                }
+
+                @foreach (var cat in GetVisibleCategories())
+                {
+                    @if (!selectedCategoryId.HasValue)
+                    {
+                        <h5 class="fw-semibold mt-3 mb-2">
+                            <i class="bi bi-folder me-1"></i>@cat.Name
+                            <AuthorizeView Roles="Admin,Manager">
+                                <button class="btn btn-sm btn-link text-danger p-0 ms-2" @onclick="() => DeleteCategoryAsync(cat)" title="Delete category">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </AuthorizeView>
+                        </h5>
+                    }
+
+                    <div class="accordion mb-3" id="@($"accordion-{cat.Id}")">
+                        @foreach (var item in cat.Items)
+                        {
+                            var collapseId = $"collapse-{item.Id}";
+                            var headerId = $"heading-{item.Id}";
+                            var isExpanded = expandedItemId == item.Id;
+
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="@headerId">
+                                    <button class='@($"accordion-button {(isExpanded ? "" : "collapsed")}")' type="button"
+                                            @onclick="() => ToggleItem(item.Id)">
+                                        @item.Question
+                                        @if (item.Answers.Count > 0)
+                                        {
+                                            <span class="badge bg-primary ms-2">@item.Answers.Count answer(s)</span>
+                                        }
+                                        @if (item.Answers.Any(a => a.IsAccepted))
+                                        {
+                                            <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i></span>
+                                        }
+                                    </button>
+                                </h2>
+                                @if (isExpanded)
+                                {
+                                    <div class="accordion-collapse collapse show">
+                                        <div class="accordion-body">
+                                            @* Admin controls *@
+                                            <AuthorizeView Roles="Admin,Manager">
+                                                <div class="d-flex gap-2 mb-3">
+                                                    @if (Categories.Count > 1)
+                                                    {
+                                                        <select class="form-select form-select-sm" style="width: auto;"
+                                                                @onchange="(e) => MoveItemAsync(item.Id, e)">
+                                                            <option value="">Move to...</option>
+                                                            @foreach (var c in Categories.Where(c => c.Id != item.CategoryId))
+                                                            {
+                                                                <option value="@c.Id">@c.Name</option>
+                                                            }
+                                                        </select>
+                                                    }
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteItemAsync(item)">
+                                                        <i class="bi bi-trash me-1"></i>Delete Question
+                                                    </button>
+                                                </div>
+                                            </AuthorizeView>
+
+                                            @* Answers list *@
+                                            @if (item.Answers.Count == 0)
+                                            {
+                                                <p class="text-muted small">No answers yet. Be the first to answer!</p>
+                                            }
+                                            @foreach (var answer in item.Answers)
+                                            {
+                                                <div class='@($"card mb-2 {(answer.IsAccepted ? "border-success" : "")}")'>
+                                                    <div class="card-body py-2">
+                                                        <div class="d-flex justify-content-between align-items-start">
+                                                            <div>
+                                                                <span class="fw-semibold small">@answer.AuthorName</span>
+                                                                <span class="text-muted small ms-2">@answer.CreatedAtUtc.ToString("MMM d, yyyy")</span>
+                                                                @if (answer.IsAccepted)
+                                                                {
+                                                                    <span class="badge text-bg-success ms-1"><i class="bi bi-check-circle me-1"></i>Best Answer</span>
+                                                                }
+                                                            </div>
+                                                            <AuthorizeView Roles="Admin,Manager">
+                                                                <div class="d-flex gap-1">
+                                                                    <button class="btn btn-sm btn-link p-0" title="@(answer.IsAccepted ? "Remove best" : "Mark best")"
+                                                                            @onclick="() => ToggleAcceptedAsync(answer)">
+                                                                        <i class='@($"bi {(answer.IsAccepted ? "bi-star-fill text-warning" : "bi-star")}")'></i>
+                                                                    </button>
+                                                                    <button class="btn btn-sm btn-link text-danger p-0" @onclick="() => DeleteAnswerAsync(answer)">
+                                                                        <i class="bi bi-trash"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </AuthorizeView>
+                                                        </div>
+                                                        <div class="small mt-1" style="white-space: pre-wrap;">@answer.Content</div>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            @* Post answer form *@
+                                            <div class="mt-2">
+                                                <textarea class="form-control form-control-sm" rows="2" placeholder="Write your answer..."
+                                                          @bind="answerContent"></textarea>
+                                                <button class="btn btn-sm btn-primary mt-1" @onclick="() => PostAnswerAsync(item.Id)"
+                                                        disabled="@(string.IsNullOrWhiteSpace(answerContent))">
+                                                    <i class="bi bi-send me-1"></i>Post Answer
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<FaqCategory> Categories { get; set; } = new();
+    private bool isLoading = true;
+    private int? selectedCategoryId;
+    private int? expandedItemId;
+
+    private bool showAddCategory;
+    private string newCategoryName = string.Empty;
+    private string newQuestionText = string.Empty;
+    private string answerContent = string.Empty;
+
+    private int currentUserId;
+    private string currentUserName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUserName = state.User.Identity?.Name ?? "Unknown";
+        var idStr = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        currentUserId = int.TryParse(idStr, out var id) ? id : 0;
+    }
+
+    private async Task LoadDataAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            Categories = await FaqService.GetCategoriesWithItemsAsync();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private List<FaqCategory> GetVisibleCategories()
+    {
+        return selectedCategoryId.HasValue
+            ? Categories.Where(c => c.Id == selectedCategoryId.Value).ToList()
+            : Categories;
+    }
+
+    private void SelectCategory(int? categoryId)
+    {
+        selectedCategoryId = categoryId;
+        expandedItemId = null;
+    }
+
+    private void ToggleItem(int itemId)
+    {
+        expandedItemId = expandedItemId == itemId ? null : itemId;
+        answerContent = string.Empty;
+    }
+
+    private async Task CreateCategoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newCategoryName)) return;
+        try
+        {
+            await FaqService.CreateCategoryAsync(newCategoryName.Trim());
+            newCategoryName = string.Empty;
+            showAddCategory = false;
+            await LoadDataAsync();
+            await ToastService.ShowSuccessAsync("Category created.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to create category.");
+        }
+    }
+
+    private async Task DeleteCategoryAsync(FaqCategory cat)
+    {
+        await FaqService.DeleteCategoryAsync(cat.Id);
+        if (selectedCategoryId == cat.Id) selectedCategoryId = null;
+        await LoadDataAsync();
+        await ToastService.ShowSuccessAsync("Category deleted.");
+    }
+
+    private async Task CreateQuestionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newQuestionText) || !selectedCategoryId.HasValue) return;
+        try
+        {
+            await FaqService.CreateFaqItemAsync(selectedCategoryId.Value, newQuestionText.Trim(), currentUserId);
+            newQuestionText = string.Empty;
+            await LoadDataAsync();
+            await ToastService.ShowSuccessAsync("Question added.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to add question.");
+        }
+    }
+
+    private async Task MoveItemAsync(int itemId, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var newCatId) && newCatId > 0)
+        {
+            await FaqService.MoveFaqItemAsync(itemId, newCatId);
+            await LoadDataAsync();
+            await ToastService.ShowSuccessAsync("Question moved.");
+        }
+    }
+
+    private async Task DeleteItemAsync(FaqItem item)
+    {
+        await FaqService.DeleteFaqItemAsync(item.Id);
+        if (expandedItemId == item.Id) expandedItemId = null;
+        await LoadDataAsync();
+        await ToastService.ShowSuccessAsync("Question deleted.");
+    }
+
+    private async Task PostAnswerAsync(int faqItemId)
+    {
+        if (string.IsNullOrWhiteSpace(answerContent)) return;
+        try
+        {
+            await FaqService.PostAnswerAsync(faqItemId, currentUserId, currentUserName, answerContent.Trim());
+            answerContent = string.Empty;
+            await LoadDataAsync();
+            await ToastService.ShowSuccessAsync("Answer posted.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to post answer.");
+        }
+    }
+
+    private async Task ToggleAcceptedAsync(FaqAnswer answer)
+    {
+        await FaqService.ToggleAcceptedAsync(answer.Id, !answer.IsAccepted);
+        await LoadDataAsync();
+    }
+
+    private async Task DeleteAnswerAsync(FaqAnswer answer)
+    {
+        await FaqService.DeleteAnswerAsync(answer.Id);
+        await LoadDataAsync();
+        await ToastService.ShowSuccessAsync("Answer deleted.");
+    }
+}
+
+<style>
+    .accordion-button:not(.collapsed) {
+        font-weight: 600;
+    }
+
+    @@media (max-width: 767px) {
+        .col-md-3 {
+            margin-bottom: 1rem;
+        }
+    }
+</style>

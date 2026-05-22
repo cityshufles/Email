@@ -125,6 +125,8 @@ builder.Services.AddScoped<IMessageStatusApiService, MessageStatusSqlService>();
 builder.Services.AddScoped<MessageTemplateService>();
 builder.Services.AddScoped<IBookingsInboxService, BookingsInboxSqlService>();
 builder.Services.AddScoped<Email.Services.Resources.IResourceService, Email.Services.Resources.ResourceSqlService>();
+builder.Services.AddScoped<Email.Services.Community.ICommunityService, Email.Services.Community.CommunitySqlService>();
+builder.Services.AddScoped<Email.Services.Faq.IFaqService, Email.Services.Faq.FaqSqlService>();
 builder.Services.AddScoped<IGalleryLinkResolver, GalleryLinkResolver>();
 // 2025-12-19 00:00 UTC - Centralized vCard export for iPhone/iPad compatibility
 builder.Services.AddScoped<VCardExportService>();
