@@ -663,21 +663,25 @@ public class TourPhotoService : ITourPhotoService
                 var folderName = Path.GetFileName(dateFolder);
                 var files = Directory.GetFiles(dateFolder, "*.jpg")
                     .Concat(Directory.GetFiles(dateFolder, "*.png"))
+                    .Concat(Directory.GetFiles(dateFolder, "*.mp4"))
+                    .Concat(Directory.GetFiles(dateFolder, "*.mov"))
+                    .Concat(Directory.GetFiles(dateFolder, "*.webm"))
                     .Where(f => !IsThumbnailFile(f))
                     .ToList();
-                
+
                 _logger.LogInformation("Found {Count} photos in {Folder}", files.Count, folderName);
-                
+
                 foreach (var file in files)
                 {
                     var fileName = Path.GetFileName(file);
                     var fileInfo = new FileInfo(file);
-                    
+
                     result.Add(new PhotoInfo
                     {
                         Path = $"/{PhotosFolder}/{folderName}/{fileName}",
                         DateFolder = folderName,
                         Filename = fileName,
+                        Extension = Path.GetExtension(fileName).ToLowerInvariant(),
                         CreatedDate = fileInfo.CreationTime
                     });
                 }
@@ -820,6 +824,8 @@ public class TourPhotoService : ITourPhotoService
 
     private void QueueThumbnailGeneration(string fullPath)
     {
+        // Video files are saved raw (SkiaSharp can't thumbnail them); skip.
+        if (IsVideoExtension(fullPath)) return;
         _ = Task.Run(async () =>
         {
             try
@@ -988,9 +994,16 @@ public class TourPhotoService : ITourPhotoService
             trimmed = ".jpg";
         }
 
-        return trimmed == ".jpg" || trimmed == ".png"
+        // Images + video (video is saved raw; no thumbnail/re-encode)
+        return trimmed is ".jpg" or ".png" or ".mp4" or ".mov" or ".webm"
             ? trimmed
             : ".jpg";
+    }
+
+    private static bool IsVideoExtension(string? path)
+    {
+        var ext = Path.GetExtension(path ?? string.Empty).ToLowerInvariant();
+        return ext is ".mp4" or ".mov" or ".webm";
     }
 
     private static SKBitmap RotateBitmap(SKBitmap bitmap, int degrees)

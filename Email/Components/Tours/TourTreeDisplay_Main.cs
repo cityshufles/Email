@@ -611,22 +611,10 @@ namespace Email.Components.Tours
 
             VCardLogService.LogAction("Desktop Button Clicked", $"DownloadIndividualVcard button clicked. Walker: {walkerNode.Label ?? "(no label)"}, MessageId: {w.MessageId ?? "(none)"}", url ?? "(no URL - missing MessageId)");
 
-            if (!string.IsNullOrWhiteSpace(w.MessageId))
-            {
-                try
-                {
-                    VCardLogService.LogAction("Desktop Primary Path Attempt", $"Attempting to open URL via window.open for walker: {walkerNode.Label ?? "(no label)"}", url!);
-                    await JSRuntime.InvokeVoidAsync("open", url!, "_blank");
-                    VCardLogService.LogAction("Desktop Primary Path Success", $"Successfully opened URL via window.open for walker: {walkerNode.Label ?? "(no label)"}", url!);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    VCardLogService.LogAction("Desktop Primary Path Failed", $"window.open failed, falling back to JS blob download. Walker: {walkerNode.Label ?? "(no label)"}", url!, ex);
-                    Console.WriteLine($"[TourTreeVCard] window.open failed, falling back to JS blob download: {ex.Message}");
-                }
-            }
-
+            // 2026-05-31 - Direct blob download (no window.open tab).
+            // Previously this opened /vcards/walker via window.open("_blank"), which briefly
+            // opened an extra browser tab on desktop. The blob download below produces the same
+            // vCard via VCardExportService and downloads it directly with no tab.
             try
             {
                 VCardLogService.LogAction("Desktop Fallback Started", $"Starting JS blob fallback download for walker: {walkerNode.Label ?? "(no label)"}", url ?? "(no URL)");

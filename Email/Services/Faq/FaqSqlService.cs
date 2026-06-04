@@ -27,7 +27,7 @@ namespace Email.Services.Faq
                 WHERE IsActive = 1
                 ORDER BY SortOrder, Name;
 
-                SELECT Id, CategoryId, Question, SortOrder, IsActive, CreatedByUserId, CreatedAtUtc, UpdatedAtUtc
+                SELECT Id, CategoryId, Question, SortOrder, IsActive, CreatedByUserId, IsLocked, CreatedAtUtc, UpdatedAtUtc
                 FROM dbo.FaqItems
                 WHERE IsActive = 1
                 ORDER BY SortOrder, CreatedAtUtc;
@@ -178,6 +178,22 @@ namespace Email.Services.Faq
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error moving FAQ item {ItemId}", faqItemId);
+                throw;
+            }
+        }
+
+        public async Task ToggleFaqItemLockAsync(int faqItemId, bool isLocked, CancellationToken ct = default)
+        {
+            try
+            {
+                using var conn = _connectionFactory.CreateOpenConnection();
+                await conn.ExecuteAsync(
+                    "UPDATE dbo.FaqItems SET IsLocked = @IsLocked, UpdatedAtUtc = SYSUTCDATETIME() WHERE Id = @Id",
+                    new { Id = faqItemId, IsLocked = isLocked });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling lock for FAQ item {ItemId}", faqItemId);
                 throw;
             }
         }

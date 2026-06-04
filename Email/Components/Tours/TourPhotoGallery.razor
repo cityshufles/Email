@@ -30,11 +30,19 @@
                 var thumb = BuildThumbnailUrl(photo);
                 var index = Photos.IndexOf(photo);
                 <div class="masonry-item" @onclick="() => OpenLightbox(index)">
-                    <img src="@thumb"
-                         data-full="@photo"
-                         alt="Tour photo"
-                         loading="lazy"
-                         onerror="this.onerror=null;this.src=this.dataset.full;" />
+                    @if (IsVideoPath(photo))
+                    {
+                        <video src="@photo" muted playsinline preload="metadata" style="width:100%;height:auto;display:block;"></video>
+                        <span class="gallery-video-badge"><i class="bi bi-play-circle-fill"></i></span>
+                    }
+                    else
+                    {
+                        <img src="@thumb"
+                             data-full="@photo"
+                             alt="Tour photo"
+                             loading="lazy"
+                             onerror="this.onerror=null;this.src=this.dataset.full;" />
+                    }
                     <div class="gallery-overlay">
                         <div class="gallery-actions">
                             <button class="btn btn-sm btn-outline-light" @onclick:stopPropagation="true" @onclick="() => OpenLightbox(index)" title="View full size">
@@ -80,7 +88,14 @@
                 </button>
             }
 
-            <img src="@Photos[lightboxIndex]" alt="Full size photo" />
+            @if (IsVideoPath(Photos[lightboxIndex]))
+            {
+                <video src="@Photos[lightboxIndex]" controls autoplay style="max-width:100%;max-height:78vh;border-radius:0.5rem;"></video>
+            }
+            else
+            {
+                <img src="@Photos[lightboxIndex]" alt="Full size photo" />
+            }
 
             @* Next button *@
             @if (lightboxIndex < Photos.Count - 1)
@@ -245,6 +260,12 @@
         }
     }
 
+    private static bool IsVideoPath(string path)
+    {
+        var ext = System.IO.Path.GetExtension(path ?? string.Empty).ToLowerInvariant();
+        return ext is ".mp4" or ".mov" or ".webm";
+    }
+
     private static string GetFilename(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return "";
@@ -300,10 +321,21 @@
         box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
 
-    .masonry-item img {
+    .masonry-item img,
+    .masonry-item video {
         width: 100%;
         height: auto;
         display: block;
+    }
+
+    .gallery-video-badge {
+        position: absolute;
+        top: 0.4rem;
+        left: 0.4rem;
+        color: #fff;
+        font-size: 1.4rem;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+        pointer-events: none;
     }
 
     .gallery-overlay {

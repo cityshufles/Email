@@ -139,6 +139,10 @@
                                         {
                                             <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i></span>
                                         }
+                                        @if (item.IsLocked)
+                                        {
+                                            <span class="badge text-bg-secondary ms-1" title="Locked"><i class="bi bi-lock"></i></span>
+                                        }
                                     </button>
                                 </h2>
                                 @if (isExpanded)
@@ -159,6 +163,9 @@
                                                             }
                                                         </select>
                                                     }
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleLockAsync(item)" title="Lock/unlock answers for this question">
+                                                        <i class="bi @(item.IsLocked ? "bi-unlock" : "bi-lock") me-1"></i>@(item.IsLocked ? "Unlock" : "Lock") Question
+                                                    </button>
                                                     <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteItemAsync(item)">
                                                         <i class="bi bi-trash me-1"></i>Delete Question
                                                     </button>
@@ -201,14 +208,25 @@
                                             }
 
                                             @* Post answer form *@
-                                            <div class="mt-2">
-                                                <textarea class="form-control form-control-sm" rows="2" placeholder="Write your answer..."
-                                                          @bind="answerContent"></textarea>
-                                                <button class="btn btn-sm btn-primary mt-1" @onclick="() => PostAnswerAsync(item.Id)"
-                                                        disabled="@(string.IsNullOrWhiteSpace(answerContent))">
-                                                    <i class="bi bi-send me-1"></i>Post Answer
-                                                </button>
-                                            </div>
+                                            @if (item.IsLocked)
+                                            {
+                                                <div class="alert alert-secondary py-2 mb-0 small"><i class="bi bi-lock me-1"></i>This question is locked. New answers are disabled.</div>
+                                            }
+                                            else if (faqLocked)
+                                            {
+                                                <div class="alert alert-warning py-2 mb-0 small"><i class="bi bi-lock me-1"></i>An administrator has locked you from posting FAQ answers.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="mt-2">
+                                                    <textarea class="form-control form-control-sm" rows="2" placeholder="Write your answer..."
+                                                              @bind="answerContent"></textarea>
+                                                    <button class="btn btn-sm btn-primary mt-1" @onclick="() => PostAnswerAsync(item.Id)"
+                                                            disabled="@(string.IsNullOrWhiteSpace(answerContent))">
+                                                        <i class="bi bi-send me-1"></i>Post Answer
+                                                    </button>
+                                                </div>
+                                            }
                                         </div>
                                     </div>
                                 }
@@ -234,6 +252,7 @@
 
     private int currentUserId;
     private string currentUserName = string.Empty;
+    private bool faqLocked;
 
     protected override async Task OnInitializedAsync()
     {
@@ -247,6 +266,31 @@
         currentUserName = state.User.Identity?.Name ?? "Unknown";
         var idStr = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         currentUserId = int.TryParse(idStr, out var id) ? id : 0;
+
+        var permissionsJson = state.User.FindFirst("Permissions")?.Value;
+        if (!string.IsNullOrWhiteSpace(permissionsJson))
+        {
+            try
+            {
+                var p = System.Text.Json.JsonSerializer.Deserialize<Email.Models.UserPermissions>(permissionsJson);
+                faqLocked = p?.FaqLocked ?? false;
+            }
+            catch { faqLocked = false; }
+        }
+    }
+
+    private async Task ToggleLockAsync(FaqItem item)
+    {
+        try
+        {
+            await FaqService.ToggleFaqItemLockAsync(item.Id, !item.IsLocked);
+            item.IsLocked = !item.IsLocked;
+            await ToastService.ShowSuccessAsync(item.IsLocked ? "Question locked." : "Question unlocked.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Failed to update question lock.");
+        }
     }
 
     private async Task LoadDataAsync()

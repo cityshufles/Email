@@ -358,7 +358,7 @@
                                                                                          }
                                                                                          <div class="d-flex flex-column align-items-center">
                                                                                              <a class="btn btn-sm @(hasPhone ? "btn-outline-info" : "btn-outline-secondary") @(!hasPhone ? "disabled" : "")"
-                                                                                                href="@GetQuickSmsUrl(walkerNode, vendorNode, tourNode)" target="_blank"
+                                                                                                href="@GetQuickSmsUrl(walkerNode, vendorNode, tourNode)"
                                                                                                 @onclick='() => TrackQuickSend(walkerNode, vendorNode, tourNode, "sms")'
                                                                                                 @onclick:stopPropagation="true"
                                                                                                 title="@(hasPhone ? "Quick send SMS" : "No phone number available")">
@@ -380,7 +380,7 @@
                                                                                          }
                                                                                          <div class="d-flex flex-column align-items-center">
                                                                                              <a class="btn btn-sm @(hasPhone ? "btn-outline-success" : "btn-outline-secondary") @(!hasPhone ? "disabled" : "")"
-                                                                                                href="@GetQuickWhatsAppUrl(walkerNode, vendorNode, tourNode)" target="_blank"
+                                                                                                href="@GetQuickWhatsAppUrl(walkerNode, vendorNode, tourNode)"
                                                                                                 @onclick='() => TrackQuickSend(walkerNode, vendorNode, tourNode, "wa")'
                                                                                                 @onclick:stopPropagation="true"
                                                                                                 title="@(hasPhone ? "Quick send WhatsApp message" : "No phone number available")">

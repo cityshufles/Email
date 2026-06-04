@@ -1,0 +1,244 @@
+@* 2026-06-03 - Guest page: long-term relationship view for one customer *@
+@page "/guest/{CustomerId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Email.Models.Reports
+@using Email.Services
+@inject IBookingsInboxService BookingsInboxService
+@inject IJSRuntime JSRuntime
+@inject IToastService ToastService
+
+<PageTitle>Guest</PageTitle>
+
+<div class="container-fluid py-3" style="max-width: 1000px;">
+    <a href="/bookings" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1"></i>Back to Bookings
+    </a>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5 text-muted"><div class="spinner-border me-2"></div>Loading guest...</div>
+    }
+    else if (profile?.SelectedBooking == null)
+    {
+        <div class="alert alert-warning">Guest not found.</div>
+    }
+    else
+    {
+        var b = profile.SelectedBooking;
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                    <div>
+                        <h4 class="mb-1">
+                            @b.CustomerName
+                            @if (profile.BookingTimeline.Count > 1)
+                            {
+                                <span class="badge text-bg-primary ms-2"><i class="bi bi-arrow-repeat me-1"></i>Returning (@profile.BookingTimeline.Count tours)</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-light text-dark border ms-2">First-time guest</span>
+                            }
+                        </h4>
+                        <div class="text-muted small">
+                            @if (!string.IsNullOrWhiteSpace(b.CustomerPhone))
+                            {
+                                <span class="me-3"><i class="bi bi-telephone me-1"></i>@b.CustomerPhone</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(b.CustomerEmail))
+                            {
+                                <span><i class="bi bi-envelope me-1"></i>@b.CustomerEmail</span>
+                            }
+                        </div>
+                        <div class="d-flex flex-wrap gap-1 mt-2">
+                            @if (profile.Labels.WhatsAppWorks)
+                            {
+                                <span class="badge text-bg-success">WhatsApp works</span>
+                            }
+                            @if (profile.Labels.SmsWorks)
+                            {
+                                <span class="badge text-bg-success">SMS works</span>
+                            }
+                            @if (profile.Labels.ContactedOnPlatform)
+                            {
+                                <span class="badge text-bg-info">contacted on platform</span>
+                            }
+                            @if (profile.Labels.NeedsNumber)
+                            {
+                                <span class="badge text-bg-warning">needs number</span>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-info" @onclick="DownloadVcardAsync" title="Download vCard">
+                            <i class="bi bi-person-vcard me-1"></i>vCard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-7">
+                @* Previous tours *@
+                <div class="card mb-3">
+                    <div class="card-header fw-semibold"><i class="bi bi-geo-alt me-1"></i>Tours (@profile.BookingTimeline.Count)</div>
+                    <div class="list-group list-group-flush">
+                        @if (profile.BookingTimeline.Count == 0)
+                        {
+                            <div class="list-group-item text-muted small">No tours found.</div>
+                        }
+                        @foreach (var t in profile.BookingTimeline)
+                        {
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <span class="fw-semibold">@t.TourName</span>
+                                    <span class="small text-muted">@(t.TourDate?.ToString("MMM d, yyyy"))</span>
+                                </div>
+                                <div class="small text-muted">
+                                    @t.VendorName
+                                    @if (!string.IsNullOrWhiteSpace(t.EventType))
+                                    {
+                                        <span class="badge text-bg-light text-dark border ms-1">@t.EventType</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* Conversation / message history *@
+                <div class="card">
+                    <div class="card-header fw-semibold"><i class="bi bi-chat-left-text me-1"></i>Conversation history (@profile.CommunicationEvents.Count)</div>
+                    <div class="list-group list-group-flush" style="max-height: 320px; overflow-y: auto;">
+                        @if (profile.CommunicationEvents.Count == 0)
+                        {
+                            <div class="list-group-item text-muted small">No messages logged yet.</div>
+                        }
+                        @foreach (var e in profile.CommunicationEvents)
+                        {
+                            <div class="list-group-item py-2">
+                                <div class="d-flex justify-content-between">
+                                    <span>
+                                        <span class="badge @(e.Channel == "wa" ? "text-bg-success" : "text-bg-primary")">@(e.Channel == "wa" ? "WhatsApp" : e.Channel?.ToUpperInvariant())</span>
+                                        <span class="small ms-1">@e.Stage</span>
+                                        @if (!string.IsNullOrWhiteSpace(e.TemplateName))
+                                        {
+                                            <span class="small text-muted ms-1">(@e.TemplateName)</span>
+                                        }
+                                    </span>
+                                    <span class="small text-muted">@e.SentAtUtc.ToString("MMM d, h:mm tt")</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                @* Notes *@
+                <div class="card">
+                    <div class="card-header fw-semibold"><i class="bi bi-sticky me-1"></i>Notes</div>
+                    <div class="card-body">
+                        <textarea class="form-control form-control-sm mb-2" rows="3" placeholder="Add a note about this guest..." @bind="newNote"></textarea>
+                        <button class="btn btn-sm btn-primary" @onclick="AddNoteAsync" disabled="@(savingNote || string.IsNullOrWhiteSpace(newNote))">
+                            @if (savingNote)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            <i class="bi bi-plus-lg me-1"></i>Add note
+                        </button>
+                        <hr />
+                        @if (notes.Count == 0)
+                        {
+                            <div class="text-muted small">No notes yet.</div>
+                        }
+                        @foreach (var n in notes)
+                        {
+                            <div class="border rounded p-2 mb-2">
+                                <div style="white-space: pre-wrap;">@n.Content</div>
+                                <div class="small text-muted mt-1">
+                                    @n.CreatedAtUtc.ToString("MMM d, yyyy h:mm tt")
+                                    @if (!string.IsNullOrWhiteSpace(n.CreatedBy))
+                                    {
+                                        <span> &middot; @n.CreatedBy</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int CustomerId { get; set; }
+
+    private CustomerCommunicationProfile? profile;
+    private List<CustomerNote> notes = new();
+    private bool isLoading = true;
+    private string newNote = string.Empty;
+    private bool savingNote;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+        try
+        {
+            profile = await BookingsInboxService.GetCustomerProfileAsync(CustomerId);
+            notes = await BookingsInboxService.GetCustomerNotesAsync(CustomerId);
+        }
+        catch
+        {
+            profile = null;
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddNoteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newNote)) return;
+        savingNote = true;
+        StateHasChanged();
+        try
+        {
+            await BookingsInboxService.SaveCustomerNoteAsync(CustomerId, newNote.Trim());
+            newNote = string.Empty;
+            notes = await BookingsInboxService.GetCustomerNotesAsync(CustomerId);
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Notes", "Could not save note.");
+        }
+        finally
+        {
+            savingNote = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadVcardAsync()
+    {
+        var mid = profile?.SelectedBooking?.MessageId;
+        if (string.IsNullOrWhiteSpace(mid))
+        {
+            await ToastService.ShowErrorAsync("vCard", "No message id for this guest.");
+            return;
+        }
+        var url = $"/vcards/walker?messageId={Uri.EscapeDataString(mid)}";
+        var safe = (profile?.SelectedBooking?.CustomerName ?? "contact").Replace(" ", "_").Replace(",", "");
+        await JSRuntime.InvokeVoidAsync("downloadUrlAsFile", url, $"{safe}.vcf");
+    }
+}

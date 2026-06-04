@@ -33,5 +33,21 @@ namespace Email.Services
         Task<Dictionary<int, GuestContactLabels>> GetCustomerLabelsAsync(
             IEnumerable<int> customerIds,
             CancellationToken ct = default);
+
+        // 2026-06-03 - Guest page: aggregate profile by customer + notes
+        Task<CustomerCommunicationProfile?> GetCustomerProfileAsync(
+            int customerId,
+            CancellationToken ct = default);
+
+        Task<List<CustomerNote>> GetCustomerNotesAsync(
+            int customerId,
+            CancellationToken ct = default);
+
+        Task<int> SaveCustomerNoteAsync(
+            int customerId,
+            string content,
+            string noteType = "general",
+            string? createdBy = null,
+            CancellationToken ct = default);
     }
 }

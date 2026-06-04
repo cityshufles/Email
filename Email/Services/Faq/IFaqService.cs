@@ -15,6 +15,7 @@ namespace Email.Services.Faq
         Task<int> CreateFaqItemAsync(int categoryId, string question, int? createdByUserId, CancellationToken ct = default);
         Task MoveFaqItemAsync(int faqItemId, int newCategoryId, CancellationToken ct = default);
         Task DeleteFaqItemAsync(int faqItemId, CancellationToken ct = default);
+        Task ToggleFaqItemLockAsync(int faqItemId, bool isLocked, CancellationToken ct = default);
         Task<int> PostAnswerAsync(int faqItemId, int authorUserId, string authorName, string content, CancellationToken ct = default);
         Task ToggleAcceptedAsync(int answerId, bool isAccepted, CancellationToken ct = default);
         Task DeleteAnswerAsync(int answerId, CancellationToken ct = default);

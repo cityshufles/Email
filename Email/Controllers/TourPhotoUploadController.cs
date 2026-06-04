@@ -368,6 +368,11 @@ public class TourPhotoUploadController : ControllerBase
             return ".jpg";
         }
 
+        // Video (saved raw)
+        if (contentType.Contains("mp4")) return ".mp4";
+        if (contentType.Contains("quicktime")) return ".mov";
+        if (contentType.Contains("webm")) return ".webm";
+
         var ext = Path.GetExtension(file.FileName);
         if (string.IsNullOrWhiteSpace(ext))
         {
@@ -380,7 +385,7 @@ public class TourPhotoUploadController : ControllerBase
             ext = ".jpg";
         }
 
-        return ext == ".jpg" || ext == ".png"
+        return ext is ".jpg" or ".png" or ".mp4" or ".mov" or ".webm"
             ? ext
             : ".jpg";
     }

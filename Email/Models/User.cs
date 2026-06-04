@@ -61,6 +61,9 @@ namespace Email.Models
         public bool CanEditCalendar { get; set; }
         public bool CanViewSettings { get; set; }
         public bool CanManageUsers { get; set; }
+        // 2026-06-04 - Admin can lock a guide from posting (default false = allowed)
+        public bool CommunityLocked { get; set; }
+        public bool FaqLocked { get; set; }
     }
 }
 

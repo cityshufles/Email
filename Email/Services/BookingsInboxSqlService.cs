@@ -71,6 +71,14 @@ SELECT TOP (@Limit)
           AND ccl.LabelKey = 'needs_number'
           AND ccl.IsActive = 1
     ) THEN 1 ELSE 0 END AS bit) AS NeedsNumber,
+    CAST(CASE WHEN EXISTS (
+        SELECT 1
+        FROM dbo.CustomerContactLabels ccl2
+        WHERE ccl2.CustomerId = b.CustomerId
+          AND ccl2.LabelKey = 'responded'
+          AND ccl2.IsActive = 1
+    ) THEN 1 ELSE 0 END AS bit) AS Responded,
+    (SELECT COUNT(*) FROM dbo.Bookings b2 WHERE b2.CustomerId = b.CustomerId AND b2.IsActive = 1) AS CustomerBookingCount,
     b.NumberOfAttendees,
     b.NumberOfAdults,
     b.NumberOfChildren,
@@ -108,6 +116,52 @@ FROM dbo.Bookings b";
                     cancellationToken: ct));
 
             return rows.ToList();
+        }
+
+        // 2026-06-03 - Guest page: load aggregate profile by customerId (latest booking → full profile)
+        public async Task<CustomerCommunicationProfile?> GetCustomerProfileAsync(
+            int customerId,
+            CancellationToken ct = default)
+        {
+            using var conn = _connectionFactory.CreateOpenConnection();
+            var bookingId = await conn.QueryFirstOrDefaultAsync<int?>(new CommandDefinition(
+                "SELECT TOP 1 Id FROM dbo.Bookings WHERE CustomerId = @CustomerId ORDER BY COALESCE(UpdatedAt, CreatedAt) DESC, Id DESC;",
+                new { CustomerId = customerId }, cancellationToken: ct));
+            if (bookingId == null) return null;
+            return await GetWalkerProfileAsync(bookingId.Value, ct);
+        }
+
+        public async Task<List<CustomerNote>> GetCustomerNotesAsync(
+            int customerId,
+            CancellationToken ct = default)
+        {
+            using var conn = _connectionFactory.CreateOpenConnection();
+            const string sql = @"
+SELECT Id, CustomerId, NoteType, Content, CreatedBy, CreatedAtUtc, UpdatedAtUtc
+FROM dbo.CustomerNotes
+WHERE CustomerId = @CustomerId AND IsActive = 1
+ORDER BY CreatedAtUtc DESC;";
+            var rows = await conn.QueryAsync<CustomerNote>(
+                new CommandDefinition(sql, new { CustomerId = customerId }, cancellationToken: ct));
+            return rows.ToList();
+        }
+
+        public async Task<int> SaveCustomerNoteAsync(
+            int customerId,
+            string content,
+            string noteType = "general",
+            string? createdBy = null,
+            CancellationToken ct = default)
+        {
+            using var conn = _connectionFactory.CreateOpenConnection();
+            const string sql = @"
+INSERT INTO dbo.CustomerNotes (CustomerId, NoteType, Content, CreatedBy)
+VALUES (@CustomerId, @NoteType, @Content, @CreatedBy);
+SELECT CAST(SCOPE_IDENTITY() AS INT);";
+            return await conn.QuerySingleAsync<int>(new CommandDefinition(
+                sql,
+                new { CustomerId = customerId, NoteType = string.IsNullOrWhiteSpace(noteType) ? "general" : noteType, Content = content, CreatedBy = createdBy },
+                cancellationToken: ct));
         }
 
         public async Task<CustomerCommunicationProfile?> GetWalkerProfileAsync(

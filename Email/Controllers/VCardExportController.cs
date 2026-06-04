@@ -276,6 +276,55 @@ namespace Email.Controllers
             }
         }
 
+        /// <summary>
+        /// 2026-06-03 - GET /vcards/bulk?messageIds=a,b,c
+        /// Returns one .vcf containing all requested contacts (bulk export from the Bookings page).
+        /// </summary>
+        [HttpGet("bulk")]
+        public async Task<IActionResult> DownloadBulk([FromQuery] string messageIds, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(messageIds))
+            {
+                return BadRequest("messageIds is required.");
+            }
+
+            var ids = messageIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (ids.Count == 0)
+            {
+                return BadRequest("No message ids supplied.");
+            }
+
+            var vcards = new List<string>();
+            foreach (var id in ids)
+            {
+                try
+                {
+                    var pe = await _tourTreeService.GetProcessedEmailByMessageIdAsync(id);
+                    if (pe == null) continue;
+                    var walker = MapProcessedEmailToMobileWalker(pe);
+                    vcards.Add(_vcardService.GenerateVCard(walker));
+                }
+                catch
+                {
+                    // skip an individual bad id; continue with the rest
+                }
+            }
+
+            if (vcards.Count == 0)
+            {
+                return NotFound("No contacts found for the selected bookings.");
+            }
+
+            var vcf = _vcardService.GenerateVcf(vcards);
+            var bytes = _vcardService.GetUtf8Bytes(vcf, includeBom: true);
+            SetNoStore();
+            var fileName = $"contacts_{vcards.Count}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.vcf";
+            return File(bytes, "text/vcard", fileName);
+        }
+
         private static bool TryParseDate(string raw, out DateTime day)
         {
             day = default;

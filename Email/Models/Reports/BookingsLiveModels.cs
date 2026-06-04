@@ -30,6 +30,13 @@ namespace Email.Models.Reports
         public int? NumberOfChildren { get; set; }
         public string? Language { get; set; }
         public string? BookingStatus { get; set; }
+        // 2026-05-31 - Booking command-center fields
+        public bool Responded { get; set; }
+        public int CustomerBookingCount { get; set; }
+        public byte SmsContactState { get; set; }
+        public byte WaContactState { get; set; }
+        public byte PlatformContactState { get; set; }
+        public bool IsReturningGuest => CustomerBookingCount > 1;
     }
 
     public sealed class CustomerCommunicationProfile
@@ -42,6 +49,17 @@ namespace Email.Models.Reports
         public GalleryResolutionInfo Gallery { get; set; } = new();
         public List<string> SentStages { get; set; } = new();
         public List<MessageStageSnapshot> SentStageSnapshots { get; set; } = new();
+    }
+
+    public sealed class CustomerNote
+    {
+        public int Id { get; set; }
+        public int CustomerId { get; set; }
+        public string NoteType { get; set; } = "general";
+        public string Content { get; set; } = string.Empty;
+        public string? CreatedBy { get; set; }
+        public DateTime CreatedAtUtc { get; set; }
+        public DateTime UpdatedAtUtc { get; set; }
     }
 
     public sealed class MessageStageSnapshot

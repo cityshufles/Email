@@ -94,5 +94,7 @@ public class PhotoInfo
     public string Path { get; set; } = string.Empty;
     public string DateFolder { get; set; } = string.Empty;
     public string Filename { get; set; } = string.Empty;
+    public string Extension { get; set; } = string.Empty;
     public DateTime? CreatedDate { get; set; }
+    public bool IsVideo => Extension is ".mp4" or ".mov" or ".webm";
 }

@@ -40,7 +40,7 @@
 
         host.innerHTML = `
             <div class="tpu-dropzone" data-role="dropzone">
-                <input type="file" multiple accept="image/*" class="tpu-file-input" data-role="input" />
+                <input type="file" multiple accept="image/*,video/*" class="tpu-file-input" data-role="input" />
                 <div class="tpu-dz-content">
                     <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
                     <p class="mt-2 mb-1 fw-semibold">Drag &amp; drop photos here</p>
@@ -94,7 +94,7 @@
 
     function addFiles(fileList) {
         if (state.isUploading || !fileList) return;
-        const incoming = Array.from(fileList).filter(f => f.type && f.type.startsWith("image/"));
+        const incoming = Array.from(fileList).filter(f => f.type && (f.type.startsWith("image/") || f.type.startsWith("video/")));
         for (const file of incoming) {
             if (state.items.length >= MAX_FILES) {
                 setStatus(`Maximum ${MAX_FILES} photos per upload. Extra files were skipped.`, "error");
@@ -104,6 +104,7 @@
             state.items.push({
                 id: `${state.items.length}-${file.name}-${file.size}`,
                 name: file.name, size: file.size, blob: file,
+                isVideo: (file.type || "").startsWith("video/"),
                 previewUrl: URL.createObjectURL(file), progress: 0, status: "pending", error: ""
             });
         }
@@ -163,7 +164,9 @@
                         : `<button type="button" class="btn btn-sm btn-outline-danger p-0 px-1" data-remove="${i.id}" title="Remove"><i class="bi bi-x"></i></button>`;
             return `
                 <div class="tpu-item">
-                    <img class="tpu-thumb" src="${i.previewUrl}" alt="" />
+                    ${i.isVideo
+                        ? `<video class="tpu-thumb" src="${i.previewUrl}" muted playsinline></video>`
+                        : `<img class="tpu-thumb" src="${i.previewUrl}" alt="" />`}
                     <div class="tpu-meta">
                         <div class="small text-truncate fw-semibold" title="${i.name}">${i.name}</div>
                         <div class="small text-muted">${fmtSize(i.size)}</div>

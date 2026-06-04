@@ -22,6 +22,7 @@ namespace Email.Models.Faq
         public int SortOrder { get; set; }
         public bool IsActive { get; set; }
         public int? CreatedByUserId { get; set; }
+        public bool IsLocked { get; set; }
         public DateTime CreatedAtUtc { get; set; }
         public DateTime UpdatedAtUtc { get; set; }
         public List<FaqAnswer> Answers { get; set; } = new();

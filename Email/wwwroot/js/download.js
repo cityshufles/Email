@@ -61,6 +61,37 @@ window.downloadTextFile = (textContent, fileName, mimeType) => {
     }
 };
 
+// 2026-05-31 - Hand a protocol URL (sms:, whatsapp://, tel:) to the OS app without opening a new tab.
+// For these schemes the browser does NOT navigate the document, so the Blazor page/circuit stays intact.
+window.openProtocolLink = (url) => {
+    try { window.location.href = url; } catch (e) { console.error('openProtocolLink error', e); }
+};
+
+// 2026-05-31 - Fetch a same-origin URL and download its content as a file (no extra tab).
+// Used for per-row vCard download on the Bookings page (reuses /vcards/walker endpoint).
+window.downloadUrlAsFile = async (url, fileName) => {
+    try {
+        const resp = await fetch(url, { credentials: 'same-origin' });
+        if (!resp.ok) { console.error('downloadUrlAsFile HTTP', resp.status); return false; }
+        const blob = await resp.blob();
+        const objUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objUrl;
+        link.download = fileName || 'download';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+            if (document.body.contains(link)) { document.body.removeChild(link); }
+            window.URL.revokeObjectURL(objUrl);
+        }, 2000);
+        return true;
+    } catch (e) {
+        console.error('downloadUrlAsFile error', e);
+        return false;
+    }
+};
+
 // Helper to insert text at cursor position in a textarea
 window.insertTextAtCursor = (textareaId, textToInsert) => {
     try {
