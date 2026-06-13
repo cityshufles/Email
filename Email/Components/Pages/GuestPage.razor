@@ -231,14 +231,14 @@
 
     private async Task DownloadVcardAsync()
     {
-        var mid = profile?.SelectedBooking?.MessageId;
-        if (string.IsNullOrWhiteSpace(mid))
+        var bid = profile?.SelectedBooking?.BookingId ?? 0;
+        if (bid <= 0)
         {
-            await ToastService.ShowErrorAsync("vCard", "No message id for this guest.");
+            await ToastService.ShowErrorAsync("vCard", "No booking for this guest.");
             return;
         }
-        var url = $"/vcards/walker?messageId={Uri.EscapeDataString(mid)}";
         var safe = (profile?.SelectedBooking?.CustomerName ?? "contact").Replace(" ", "_").Replace(",", "");
-        await JSRuntime.InvokeVoidAsync("downloadUrlAsFile", url, $"{safe}.vcf");
+        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/booking?bookingId={bid}", $"{safe}.vcf");
+        if (!ok) await ToastService.ShowErrorAsync("vCard", "Download failed.");
     }
 }

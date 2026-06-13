@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Email.Models;
 using Email.Models.Mobile;
+using Email.Models.Reports;
 using Email.Services;
 using Email.TourTreeViewShapedData.Enums;
 using Email.TourTreeViewShapedData.Models;
@@ -30,13 +31,59 @@ namespace Email.Controllers
         private readonly ITourTreeService _tourTreeService;
         private readonly VCardExportService _vcardService;
         private readonly VCardLogService _logService;
+        private readonly IBookingsInboxService _bookingsService;
 
-        public VCardExportController(ITourTreeService tourTreeService, VCardExportService vcardService, VCardLogService logService)
+        public VCardExportController(ITourTreeService tourTreeService, VCardExportService vcardService, VCardLogService logService, IBookingsInboxService bookingsService)
         {
             _tourTreeService = tourTreeService;
             _vcardService = vcardService;
             _logService = logService;
+            _bookingsService = bookingsService;
         }
+
+        // 2026-06-04 - Booking-based vCard: works for ANY booking (no ProcessedEmail dependency).
+        [HttpGet("booking")]
+        public async Task<IActionResult> DownloadBooking([FromQuery] int bookingId, CancellationToken ct)
+        {
+            if (bookingId <= 0) return BadRequest(new { error = "bookingId is required." });
+            var bookings = await _bookingsService.GetBookingsByIdsAsync(new[] { bookingId }, ct);
+            var b = bookings.FirstOrDefault();
+            if (b == null) return NotFound(new { error = "Booking not found." });
+            var vcf = _vcardService.GenerateVcf(new[] { _vcardService.GenerateVCard(MapBookingToWalker(b)) });
+            var bytes = _vcardService.GetUtf8Bytes(vcf, includeBom: true);
+            SetNoStore();
+            return File(bytes, "text/vcard", $"contact_{SanitizeFileStem(b.CustomerName)}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.vcf");
+        }
+
+        [HttpGet("bookings")]
+        public async Task<IActionResult> DownloadBookings([FromQuery] string bookingIds, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(bookingIds)) return BadRequest(new { error = "bookingIds is required." });
+            var ids = bookingIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, out var n) ? n : 0)
+                .Where(n => n > 0).Distinct().ToList();
+            if (ids.Count == 0) return BadRequest(new { error = "No valid booking ids." });
+            var bookings = await _bookingsService.GetBookingsByIdsAsync(ids, ct);
+            if (bookings.Count == 0) return NotFound(new { error = "No bookings found." });
+            var vcards = bookings.Select(b => _vcardService.GenerateVCard(MapBookingToWalker(b))).ToList();
+            var bytes = _vcardService.GetUtf8Bytes(_vcardService.GenerateVcf(vcards), includeBom: true);
+            SetNoStore();
+            return File(bytes, "text/vcard", $"contacts_{vcards.Count}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.vcf");
+        }
+
+        private static MobileWalkerInfoModel MapBookingToWalker(BookingsLiveListItem b) => new()
+        {
+            DisplayName = b.CustomerName,
+            Phone = b.CustomerPhone ?? string.Empty,
+            Attendees = b.NumberOfAttendees ?? 0,
+            VendorName = b.VendorName,
+            TourName = b.TourName,
+            DateLabel = b.TourDate?.ToString("MMM d, yyyy", CultureInfo.InvariantCulture) ?? string.Empty,
+            BookingCode = b.BookingCode,
+            MessageId = b.MessageId,
+            CustomerId = b.CustomerId
+        };
 
         /// <summary>
         /// Created: 2025-12-19 00:00 UTC

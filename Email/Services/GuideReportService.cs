@@ -28,6 +28,7 @@ namespace Email.Services
         Task UpdateBookingAttendeesAsync(int bookingId, int actualAdults, int actualChildren);
         Task UpdateBookingGuideStateAsync(int bookingId, string? reviewStatus, string? reviewNotes, bool isCheckedIn, bool doNotContact);
         Task UpdateBookingPhoneAsync(int bookingId, string phone);
+        Task UpdateBookingContactAsync(int bookingId, string name, string phone, string email);
     }
 
     public class GuideReportService : IGuideReportService
@@ -1016,6 +1017,45 @@ END";
                  Console.WriteLine($"[{DateTime.UtcNow:O}] UpdateBookingPhoneAsync ERROR: {ex.Message}");
                  throw;
              }
+        }
+
+        // 2026-06-04 - Update guest name + phone + email together (bookings page pencil edit)
+        public async Task UpdateBookingContactAsync(int bookingId, string name, string phone, string email)
+        {
+            using var conn = CreateConnection();
+            try
+            {
+                const string updateBookingSql = @"
+                    UPDATE dbo.Bookings
+                    SET CustomerName = @Name,
+                        CustomerPhone = @Phone,
+                        CustomerEmail = @Email,
+                        CustomerIdentifier = CASE WHEN @Phone <> '' THEN @Phone ELSE CustomerIdentifier END,
+                        UpdatedAt = SYSUTCDATETIME()
+                    OUTPUT INSERTED.CustomerId
+                    WHERE Id = @BookingId";
+
+                var customerId = await conn.QuerySingleOrDefaultAsync<int?>(updateBookingSql,
+                    new { BookingId = bookingId, Name = name ?? string.Empty, Phone = phone ?? string.Empty, Email = email ?? string.Empty });
+
+                if (customerId.HasValue && customerId.Value > 0)
+                {
+                    const string updateCustomerSql = @"
+                        UPDATE dbo.Customers
+                        SET FullName = @Name,
+                            PhoneNumber = @Phone,
+                            Email = @Email,
+                            UpdatedAt = SYSUTCDATETIME()
+                        WHERE Id = @CustomerId";
+                    await conn.ExecuteAsync(updateCustomerSql,
+                        new { CustomerId = customerId.Value, Name = name ?? string.Empty, Phone = phone ?? string.Empty, Email = email ?? string.Empty });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:O}] UpdateBookingContactAsync ERROR: {ex.Message}");
+                throw;
+            }
         }
 
         public async Task UpdateBookingAttendeesAsync(int bookingId, int actualAdults, int actualChildren)

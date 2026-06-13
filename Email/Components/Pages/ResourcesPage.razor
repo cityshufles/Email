@@ -26,7 +26,7 @@
                 <div class="row g-3">
                     <div class="col-12">
                         <label class="form-label small fw-semibold">File</label>
-                        <InputFile OnChange="OnFileSelected" class="form-control form-control-sm"
+                        <InputFile OnChange="OnFileSelected" class="form-control form-control-sm" id="resourceFileInput"
                                    accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.webm,.pdf" />
                         @if (selectedFile != null)
                         {
@@ -305,32 +305,14 @@
 
         try
         {
-            using var content = new MultipartFormDataContent();
-            var maxSize = 200 * 1024 * 1024L;
-            using var fileStream = selectedFile.OpenReadStream(maxSize);
-            var streamContent = new StreamContent(fileStream);
-            content.Add(streamContent, "file", selectedFile.Name);
+            // Direct-HTTP upload via JS (browser sends auth cookie; no circuit streaming, no service cast).
+            var csv = selectedTourIds.Count > 0 ? string.Join(",", selectedTourIds) : string.Empty;
+            var result = await JSRuntime.InvokeAsync<UploadResult>(
+                "resourcesUploader.upload", "resourceFileInput", uploadDescription ?? string.Empty, csv);
 
-            if (!string.IsNullOrWhiteSpace(uploadDescription))
+            if (result.Ok)
             {
-                content.Add(new StringContent(uploadDescription), "description");
-            }
-
-            if (selectedTourIds.Count > 0)
-            {
-                content.Add(new StringContent(string.Join(",", selectedTourIds)), "tourIds");
-            }
-
-            using var http = new HttpClient { BaseAddress = GetBaseUri() };
-            var cookies = GetAuthCookies();
-            if (!string.IsNullOrEmpty(cookies))
-            {
-                http.DefaultRequestHeaders.Add("Cookie", cookies);
-            }
-
-            var response = await http.PostAsync("/resources/upload", content);
-            if (response.IsSuccessStatusCode)
-            {
+                await JSRuntime.InvokeVoidAsync("resourcesUploader.clear", "resourceFileInput");
                 await ToastService.ShowSuccessAsync("Resource uploaded successfully!");
                 ResetUploadForm();
                 showUploadPanel = false;
@@ -338,8 +320,7 @@
             }
             else
             {
-                var error = await response.Content.ReadAsStringAsync();
-                await ToastService.ShowErrorAsync($"Upload failed: {error}");
+                await ToastService.ShowErrorAsync($"Upload failed: {result.Error}");
             }
         }
         catch (Exception ex)
@@ -351,6 +332,12 @@
             isUploading = false;
             StateHasChanged();
         }
+    }
+
+    private sealed class UploadResult
+    {
+        public bool Ok { get; set; }
+        public string? Error { get; set; }
     }
 
     private void ResetUploadForm()
@@ -383,28 +370,6 @@
             deleteResource = null;
             StateHasChanged();
         }
-    }
-
-    private Uri GetBaseUri()
-    {
-        var request = ((IHttpContextAccessor?)
-            ((IServiceProvider)JSRuntime).GetService(typeof(IHttpContextAccessor)))?.HttpContext?.Request;
-        if (request != null)
-        {
-            return new Uri($"{request.Scheme}://{request.Host}");
-        }
-        return new Uri("http://localhost:5282");
-    }
-
-    private string? GetAuthCookies()
-    {
-        var accessor = (IHttpContextAccessor?)
-            ((IServiceProvider)JSRuntime).GetService(typeof(IHttpContextAccessor));
-        if (accessor?.HttpContext?.Request.Headers.TryGetValue("Cookie", out var cookies) == true)
-        {
-            return cookies.ToString();
-        }
-        return null;
     }
 
     private static string FormatFileSize(long bytes)

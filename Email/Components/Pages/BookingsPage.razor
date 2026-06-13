@@ -7,6 +7,7 @@
 @inject IVendorsApiService VendorsService
 @inject ITourEmailsService EmailsService
 @inject ITourMessagesApiService TourMessagesService
+@inject IGuideReportService GuideReportService
 @inject IJSRuntime JSRuntime
 @inject IToastService ToastService
 
@@ -68,10 +69,10 @@
         <small class="text-muted">@GetResultsLabel()</small>
     </div>
 
-    @if (selectedMessageIds.Count > 0)
+    @if (selectedBookingIds.Count > 0)
     {
         <div class="alert alert-primary d-flex flex-wrap align-items-center gap-2 py-2">
-            <span class="fw-semibold">@selectedMessageIds.Count selected</span>
+            <span class="fw-semibold">@selectedBookingIds.Count selected</span>
             <button class="btn btn-sm btn-primary" @onclick="DownloadSelectedVcardsAsync">
                 <i class="bi bi-download me-1"></i>Download vCards
             </button>
@@ -104,7 +105,8 @@
                     <button class="btn btn-link text-decoration-none fw-semibold p-0" @onclick="() => ToggleDay(dayKey)">
                         <i class="bi @(collapsed ? "bi-chevron-right" : "bi-chevron-down") me-1"></i>
                         @FormatDayHeader(dayKey)
-                        <span class="badge text-bg-secondary ms-1">@dayBookings.Count</span>
+                        <span class="badge text-bg-secondary ms-1">@dayBookings.Count booking(s)</span>
+                        <span class="badge text-bg-info ms-1">@dayBookings.Sum(b => b.NumberOfAttendees ?? 0) guest(s)</span>
                     </button>
                     <button class="btn btn-sm btn-outline-info" @onclick="() => DownloadDayVcardsAsync(dayBookings)" title="Download all vCards for this day">
                         <i class="bi bi-download me-1"></i>Download all vCards
@@ -121,13 +123,10 @@
                         <div class="card-body pb-2">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div class="d-flex align-items-center gap-2">
-                                    @if (!string.IsNullOrWhiteSpace(booking.MessageId))
-                                    {
-                                        <input type="checkbox" class="form-check-input mt-0"
-                                               checked="@selectedMessageIds.Contains(booking.MessageId)"
-                                               @onchange="() => ToggleSelect(booking.MessageId)"
-                                               title="Select for bulk vCard download" />
-                                    }
+                                    <input type="checkbox" class="form-check-input mt-0"
+                                           checked="@selectedBookingIds.Contains(booking.BookingId)"
+                                           @onchange="() => ToggleSelect(booking.BookingId)"
+                                           title="Select for bulk vCard download" />
                                     <h6 class="card-title mb-0 fw-bold">@booking.CustomerName</h6>
                                 </div>
                                 @if (!string.IsNullOrWhiteSpace(booking.BookingStatus))
@@ -205,9 +204,9 @@
                                             <i class="bi bi-circle-fill @GetStateColorClass(booking.WaContactState)"></i>
                                         </button>
                                     </div>
-                                    @* Platform (binary) *@
+                                    @* Platform (binary) = contacted on the booking platform *@
                                     <div class="d-flex flex-column align-items-center">
-                                        <span class="small text-muted">Platform</span>
+                                        <span class="small text-muted" title="Mark when you've messaged this guest on the booking platform (Viator/GYG inbox)">On platform</span>
                                         <button class="btn btn-link btn-sm p-0 mt-1" title="@GetPlatformToggleTitle(booking.PlatformContactState)" @onclick="() => TogglePlatformAsync(booking)">
                                             <i class="@GetPlatformIconClass(booking.PlatformContactState)"></i>
                                         </button>
@@ -216,11 +215,29 @@
                             }
                             else
                             {
-                                <div class="mb-2"><span class="small text-muted"><i class="bi bi-telephone-x me-1"></i>No phone</span></div>
+                                @* No phone → message must be sent on the platform; copy it to paste there *@
+                                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                    <span class="small text-muted"><i class="bi bi-telephone-x me-1"></i>No phone</span>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => CopyMessageAsync(booking)" title="Copy the message to paste on the booking platform">
+                                        <i class="bi bi-clipboard me-1"></i>Copy message
+                                    </button>
+                                    <div class="d-flex flex-column align-items-center">
+                                        <span class="small text-muted" title="Mark when you've messaged this guest on the booking platform">On platform</span>
+                                        <button class="btn btn-link btn-sm p-0" title="@GetPlatformToggleTitle(booking.PlatformContactState)" @onclick="() => TogglePlatformAsync(booking)">
+                                            <i class="@GetPlatformIconClass(booking.PlatformContactState)"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             }
                             <div class="d-flex flex-wrap gap-2 align-items-center">
                                 <button class="btn btn-sm @(booking.Responded ? "btn-success" : "btn-outline-secondary")" @onclick="() => ToggleRespondedAsync(booking)" title="Mark whether the guest has responded at all">
                                     <i class="bi bi-reply me-1"></i>@(booking.Responded ? "Responded" : "No reply")
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => CopyMessageAsync(booking)" title="Copy the templated message">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => BeginEdit(booking)" title="Edit guest name / phone / email">
+                                    <i class="bi bi-pencil"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-info" @onclick="() => DownloadVcardAsync(booking)" title="Download vCard">
                                     <i class="bi bi-person-vcard"></i>
@@ -229,6 +246,24 @@
                                     <i class="bi bi-person-lines-fill"></i>
                                 </a>
                             </div>
+                            @if (editingBookingId == booking.BookingId)
+                            {
+                                <div class="border rounded p-2 mt-2">
+                                    <div class="mb-1"><label class="form-label small mb-0">Name</label>
+                                        <input class="form-control form-control-sm" @bind="editName" /></div>
+                                    <div class="mb-1"><label class="form-label small mb-0">Phone</label>
+                                        <input class="form-control form-control-sm" @bind="editPhone" placeholder="+1..." /></div>
+                                    <div class="mb-2"><label class="form-label small mb-0">Email</label>
+                                        <input class="form-control form-control-sm" @bind="editEmail" /></div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-primary" @onclick="() => SaveEditAsync(booking)" disabled="@isSavingEdit">
+                                            @if (isSavingEdit) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            Save
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                                    </div>
+                                </div>
+                            }
                         </div>
                     </div>
                 </div>
@@ -256,7 +291,7 @@
     private string? firstTimeTemplate;
     private string? returningTemplate;
     private readonly HashSet<string> busyStateKeys = new();
-    private readonly HashSet<string> selectedMessageIds = new();
+    private readonly HashSet<int> selectedBookingIds = new();
     private readonly HashSet<string> collapsedDays = new();
 
     protected override async Task OnInitializedAsync()
@@ -513,14 +548,9 @@
     // ---- Per-row vCard (no extra tab) ----
     private async Task DownloadVcardAsync(BookingsLiveListItem b)
     {
-        if (string.IsNullOrWhiteSpace(b.MessageId))
-        {
-            await ToastService.ShowErrorAsync("vCard", "No message id for this booking.");
-            return;
-        }
-        var url = $"/vcards/walker?messageId={Uri.EscapeDataString(b.MessageId)}";
         var safe = (b.CustomerName ?? "contact").Replace(" ", "_").Replace(",", "");
-        await JSRuntime.InvokeVoidAsync("downloadUrlAsFile", url, $"{safe}.vcf");
+        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/booking?bookingId={b.BookingId}", $"{safe}.vcf");
+        if (!ok) await ToastService.ShowErrorAsync("vCard", "Download failed.");
     }
 
     // ---- Day grouping (bookings grouped by the day they came in = CreatedAt) ----
@@ -548,35 +578,89 @@
 
     private async Task DownloadDayVcardsAsync(List<BookingsLiveListItem> dayBookings)
     {
-        var ids = dayBookings
-            .Where(b => !string.IsNullOrWhiteSpace(b.MessageId))
-            .Select(b => b.MessageId)
-            .Distinct()
-            .ToList();
+        var ids = dayBookings.Select(b => b.BookingId).Where(id => id > 0).Distinct().ToList();
         if (ids.Count == 0)
         {
             await ToastService.ShowErrorAsync("vCards", "No contacts for this day.");
             return;
         }
-        var q = string.Join(",", ids.Select(Uri.EscapeDataString));
-        await JSRuntime.InvokeVoidAsync("downloadUrlAsFile", $"/vcards/bulk?messageIds={q}", $"contacts_{ids.Count}.vcf");
+        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/bookings?bookingIds={string.Join(",", ids)}", $"contacts_{ids.Count}.vcf");
+        if (!ok) await ToastService.ShowErrorAsync("vCards", "Download failed.");
     }
 
-    // ---- Bulk vCard selection ----
-    private void ToggleSelect(string messageId)
+    // ---- Copy templated message (for guests contacted on the platform / no phone) ----
+    private async Task CopyMessageAsync(BookingsLiveListItem b)
     {
-        if (string.IsNullOrWhiteSpace(messageId)) return;
-        if (!selectedMessageIds.Add(messageId)) selectedMessageIds.Remove(messageId);
+        var msg = BuildMessageBody(b);
+        if (string.IsNullOrWhiteSpace(msg))
+        {
+            await ToastService.ShowErrorAsync("Copy", "No message template found. Add First-Time/Returning templates.");
+            return;
+        }
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("blazorCopyText", msg);
+            await ToastService.ShowSuccessAsync("Copied", "Message copied — paste it on the platform.");
+        }
+        catch { await ToastService.ShowErrorAsync("Copy", "Could not copy to clipboard."); }
     }
 
-    private void ClearSelection() => selectedMessageIds.Clear();
+    // ---- Edit guest name / phone / email ----
+    private int? editingBookingId;
+    private string editName = string.Empty;
+    private string editPhone = string.Empty;
+    private string editEmail = string.Empty;
+    private bool isSavingEdit;
+
+    private void BeginEdit(BookingsLiveListItem b)
+    {
+        editingBookingId = b.BookingId;
+        editName = b.CustomerName ?? string.Empty;
+        editPhone = b.CustomerPhone ?? string.Empty;
+        editEmail = b.CustomerEmail ?? string.Empty;
+    }
+
+    private void CancelEdit() => editingBookingId = null;
+
+    private async Task SaveEditAsync(BookingsLiveListItem b)
+    {
+        isSavingEdit = true;
+        StateHasChanged();
+        try
+        {
+            await GuideReportService.UpdateBookingContactAsync(b.BookingId, editName?.Trim() ?? string.Empty, editPhone?.Trim() ?? string.Empty, editEmail?.Trim() ?? string.Empty);
+            b.CustomerName = editName?.Trim() ?? string.Empty;
+            b.CustomerPhone = string.IsNullOrWhiteSpace(editPhone) ? null : editPhone.Trim();
+            b.CustomerEmail = string.IsNullOrWhiteSpace(editEmail) ? null : editEmail.Trim();
+            if (!string.IsNullOrWhiteSpace(b.CustomerPhone)) b.NeedsNumber = false;
+            editingBookingId = null;
+            await ToastService.ShowSuccessAsync("Saved", "Guest info updated.");
+        }
+        catch
+        {
+            await ToastService.ShowErrorAsync("Save", "Could not update guest info.");
+        }
+        finally
+        {
+            isSavingEdit = false;
+            StateHasChanged();
+        }
+    }
+
+    // ---- Bulk vCard selection (by booking id) ----
+    private void ToggleSelect(int bookingId)
+    {
+        if (bookingId <= 0) return;
+        if (!selectedBookingIds.Add(bookingId)) selectedBookingIds.Remove(bookingId);
+    }
+
+    private void ClearSelection() => selectedBookingIds.Clear();
 
     private async Task DownloadSelectedVcardsAsync()
     {
-        if (selectedMessageIds.Count == 0) return;
-        var ids = string.Join(",", selectedMessageIds.Select(Uri.EscapeDataString));
-        var url = $"/vcards/bulk?messageIds={ids}";
-        await JSRuntime.InvokeVoidAsync("downloadUrlAsFile", url, $"contacts_{selectedMessageIds.Count}.vcf");
+        if (selectedBookingIds.Count == 0) return;
+        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/bookings?bookingIds={string.Join(",", selectedBookingIds)}", $"contacts_{selectedBookingIds.Count}.vcf");
+        if (!ok) await ToastService.ShowErrorAsync("vCards", "Download failed.");
     }
 
     // ---- Contact-state display helpers (mirror Tour Dashboard) ----

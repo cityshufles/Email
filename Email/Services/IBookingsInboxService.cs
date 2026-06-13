@@ -49,5 +49,15 @@ namespace Email.Services
             string noteType = "general",
             string? createdBy = null,
             CancellationToken ct = default);
+
+        // 2026-06-04 - Fetch bookings by id (for booking-based vCard export)
+        Task<List<BookingsLiveListItem>> GetBookingsByIdsAsync(
+            IEnumerable<int> bookingIds,
+            CancellationToken ct = default);
+
+        // 2026-06-04 - Global guest directory: all customers (search + alphabetical)
+        Task<List<CustomerDirectoryItem>> GetAllCustomersAsync(
+            string? search = null,
+            CancellationToken ct = default);
     }
 }

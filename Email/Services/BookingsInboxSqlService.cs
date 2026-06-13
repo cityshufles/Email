@@ -118,6 +118,51 @@ FROM dbo.Bookings b";
             return rows.ToList();
         }
 
+        // 2026-06-04 - Fetch bookings by id (booking-based vCard export, works for ALL bookings)
+        public async Task<List<BookingsLiveListItem>> GetBookingsByIdsAsync(
+            IEnumerable<int> bookingIds,
+            CancellationToken ct = default)
+        {
+            var ids = (bookingIds ?? Enumerable.Empty<int>()).Distinct().ToList();
+            if (ids.Count == 0) return new List<BookingsLiveListItem>();
+            using var conn = _connectionFactory.CreateOpenConnection();
+            const string sql = @"
+SELECT b.Id AS BookingId, b.CustomerId,
+       ISNULL(b.CustomerIdentifier,'') AS CustomerIdentifier,
+       ISNULL(b.CustomerName,'') AS CustomerName,
+       b.CustomerPhone, b.CustomerEmail,
+       ISNULL(b.BookingCode,'') AS BookingCode,
+       ISNULL(b.MessageId,'') AS MessageId,
+       ISNULL(b.VendorName,'') AS VendorName,
+       ISNULL(b.TourName,'') AS TourName,
+       b.TourDate, b.TourTime, b.NumberOfAttendees, b.Language
+FROM dbo.Bookings b
+WHERE b.Id IN @Ids;";
+            var rows = await conn.QueryAsync<BookingsLiveListItem>(
+                new CommandDefinition(sql, new { Ids = ids }, cancellationToken: ct));
+            return rows.ToList();
+        }
+
+        // 2026-06-04 - Global guest directory (all customers, alphabetical, optional search)
+        public async Task<List<CustomerDirectoryItem>> GetAllCustomersAsync(
+            string? search = null,
+            CancellationToken ct = default)
+        {
+            using var conn = _connectionFactory.CreateOpenConnection();
+            var sql = @"
+SELECT Id, ISNULL(FullName,'') AS FullName, FirstName, LastName, PhoneNumber, Email, ISNULL(TotalBookings,0) AS TotalBookings
+FROM dbo.Customers";
+            var safe = string.IsNullOrWhiteSpace(search) ? null : "%" + search.Trim() + "%";
+            if (safe != null)
+            {
+                sql += "\nWHERE FullName LIKE @S OR PhoneNumber LIKE @S OR Email LIKE @S";
+            }
+            sql += "\nORDER BY FullName;";
+            var rows = await conn.QueryAsync<CustomerDirectoryItem>(
+                new CommandDefinition(sql, new { S = safe }, cancellationToken: ct));
+            return rows.ToList();
+        }
+
         // 2026-06-03 - Guest page: load aggregate profile by customerId (latest booking → full profile)
         public async Task<CustomerCommunicationProfile?> GetCustomerProfileAsync(
             int customerId,
