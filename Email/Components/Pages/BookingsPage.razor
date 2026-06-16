@@ -183,6 +183,20 @@
                             }
                         </div>
                         <div class="card-footer bg-transparent">
+                            @if (allTemplates.Count > 0)
+                            {
+                                <div class="mb-2">
+                                    <label class="form-label small mb-0 text-muted">Message to send</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@(selectedTemplateByBooking.TryGetValue(booking.BookingId, out var selTid) ? selTid : 0)"
+                                            @onchange="(e) => OnTemplateSelected(booking.BookingId, e)">
+                                        @foreach (var t in allTemplates)
+                                        {
+                                            <option value="@t.Id">@t.MessageName</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
                             @if (!string.IsNullOrWhiteSpace(booking.CustomerPhone))
                             {
                                 <div class="d-flex flex-wrap gap-3 align-items-start mb-2">
@@ -290,6 +304,10 @@
     // Command-center: message templates + busy guard for contact-state toggles
     private string? firstTimeTemplate;
     private string? returningTemplate;
+    private List<DbTourMessage> allTemplates = new();
+    private int firstTimeTemplateId;
+    private int returningTemplateId;
+    private readonly Dictionary<int, int> selectedTemplateByBooking = new();
     private readonly HashSet<string> busyStateKeys = new();
     private readonly HashSet<int> selectedBookingIds = new();
     private readonly HashSet<string> collapsedDays = new();
@@ -306,12 +324,34 @@
         try
         {
             var msgs = await TourMessagesService.GetTourMessagesAsync();
-            firstTimeTemplate = msgs.FirstOrDefault(m =>
-                string.Equals(m.MessageName, "First-Time Guest", StringComparison.OrdinalIgnoreCase))?.MessageContent;
-            returningTemplate = msgs.FirstOrDefault(m =>
-                string.Equals(m.MessageName, "Returning Guest", StringComparison.OrdinalIgnoreCase))?.MessageContent;
+            allTemplates = msgs.Where(m => m.IsActive).OrderBy(m => m.MessageName).ToList();
+            var ft = msgs.FirstOrDefault(m => string.Equals(m.MessageName, "First-Time Guest", StringComparison.OrdinalIgnoreCase));
+            var rt = msgs.FirstOrDefault(m => string.Equals(m.MessageName, "Returning Guest", StringComparison.OrdinalIgnoreCase));
+            firstTimeTemplate = ft?.MessageContent;
+            returningTemplate = rt?.MessageContent;
+            firstTimeTemplateId = ft?.Id ?? 0;
+            returningTemplateId = rt?.Id ?? 0;
         }
         catch { /* templates optional; quick-send still opens blank */ }
+    }
+
+    // Default each booking's template to the First-time/Returning one (user can change in the dropdown).
+    private void SetDefaultTemplateSelections()
+    {
+        foreach (var b in Bookings)
+        {
+            if (selectedTemplateByBooking.ContainsKey(b.BookingId)) continue;
+            var def = b.IsReturningGuest ? returningTemplateId : firstTimeTemplateId;
+            if (def > 0) selectedTemplateByBooking[b.BookingId] = def;
+        }
+    }
+
+    private void OnTemplateSelected(int bookingId, ChangeEventArgs e)
+    {
+        if (int.TryParse(e?.Value?.ToString(), out var tid))
+        {
+            selectedTemplateByBooking[bookingId] = tid;
+        }
     }
 
     private async Task LoadVendorsAsync()
@@ -336,6 +376,7 @@
             var rows = await BookingsInboxService.GetRecentBookingsAsync(SelectedLimit, vendorFilter, SelectedOrderBy, langFilter);
             Bookings = rows.ToList();
             await MergeContactStatesAsync();
+            SetDefaultTemplateSelections();
 
             foreach (var vendor in Bookings
                 .Where(b => !string.IsNullOrWhiteSpace(b.VendorName))
@@ -514,7 +555,15 @@
 
     private string BuildMessageBody(BookingsLiveListItem b)
     {
-        var tpl = b.IsReturningGuest ? returningTemplate : firstTimeTemplate;
+        string? tpl = null;
+        if (selectedTemplateByBooking.TryGetValue(b.BookingId, out var tid))
+        {
+            tpl = allTemplates.FirstOrDefault(m => m.Id == tid)?.MessageContent;
+        }
+        if (string.IsNullOrWhiteSpace(tpl))
+        {
+            tpl = b.IsReturningGuest ? returningTemplate : firstTimeTemplate;
+        }
         if (string.IsNullOrWhiteSpace(tpl)) return string.Empty;
         var firstName = (b.CustomerName ?? string.Empty)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? (b.CustomerName ?? string.Empty);
@@ -549,8 +598,7 @@
     private async Task DownloadVcardAsync(BookingsLiveListItem b)
     {
         var safe = (b.CustomerName ?? "contact").Replace(" ", "_").Replace(",", "");
-        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/booking?bookingId={b.BookingId}", $"{safe}.vcf");
-        if (!ok) await ToastService.ShowErrorAsync("vCard", "Download failed.");
+        await JSRuntime.InvokeVoidAsync("downloadServerFile", $"/vcards/booking?bookingId={b.BookingId}", $"{safe}.vcf");
     }
 
     // ---- Day grouping (bookings grouped by the day they came in = CreatedAt) ----
@@ -584,8 +632,7 @@
             await ToastService.ShowErrorAsync("vCards", "No contacts for this day.");
             return;
         }
-        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/bookings?bookingIds={string.Join(",", ids)}", $"contacts_{ids.Count}.vcf");
-        if (!ok) await ToastService.ShowErrorAsync("vCards", "Download failed.");
+        await JSRuntime.InvokeVoidAsync("downloadServerFile", $"/vcards/bookings?bookingIds={string.Join(",", ids)}", $"contacts_{ids.Count}.vcf");
     }
 
     // ---- Copy templated message (for guests contacted on the platform / no phone) ----
@@ -659,8 +706,7 @@
     private async Task DownloadSelectedVcardsAsync()
     {
         if (selectedBookingIds.Count == 0) return;
-        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/bookings?bookingIds={string.Join(",", selectedBookingIds)}", $"contacts_{selectedBookingIds.Count}.vcf");
-        if (!ok) await ToastService.ShowErrorAsync("vCards", "Download failed.");
+        await JSRuntime.InvokeVoidAsync("downloadServerFile", $"/vcards/bookings?bookingIds={string.Join(",", selectedBookingIds)}", $"contacts_{selectedBookingIds.Count}.vcf");
     }
 
     // ---- Contact-state display helpers (mirror Tour Dashboard) ----

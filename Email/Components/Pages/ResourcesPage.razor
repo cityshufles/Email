@@ -118,9 +118,7 @@
                             }
                             else if (resource.IsVideo)
                             {
-                                <div class="resource-video-placeholder">
-                                    <i class="bi bi-play-circle fs-1"></i>
-                                </div>
+                                <video src="/@resource.RelativePath" class="resource-img" preload="metadata" muted playsinline></video>
                             }
                             else if (resource.IsPdf)
                             {

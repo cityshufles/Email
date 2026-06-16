@@ -165,6 +165,11 @@
     private string uploadTourTime = string.Empty;
     private TimeOnly? uploadTime; // value from the <input type="time"> picker
 
+    // 2026-06-13 - Pre-fill from Guide Calendar (in-app uploader launch)
+    [Parameter, SupplyParameterFromQuery] public string? TourDate { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? TourName { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? TourTime { get; set; }
+
     // Direct-HTTP uploader interop (see wwwroot/js/tour-photos-uploader.js)
     private DotNetObjectReference<TourPhotos>? uploaderRef;
     private bool uploaderInitialized = false;
@@ -181,6 +186,25 @@
             tourNames = await TourTreeService.GetDistinctTourNamesAsync();
         }
         catch { tourNames = new(); }
+
+        // Pre-fill + open uploader when launched from Guide Calendar (query params).
+        if (!string.IsNullOrWhiteSpace(TourName) || !string.IsNullOrWhiteSpace(TourTime) || !string.IsNullOrWhiteSpace(TourDate))
+        {
+            if (!string.IsNullOrWhiteSpace(TourName)) uploadTourName = TourName.Trim();
+            if (!string.IsNullOrWhiteSpace(TourTime))
+            {
+                uploadTourTime = TourTime.Trim();
+                if (TimeOnly.TryParse(uploadTourTime, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var t))
+                {
+                    uploadTime = t;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(TourDate) && DateTime.TryParse(TourDate, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d))
+            {
+                uploadDate = d;
+            }
+            showUploader = true;
+        }
 
         await LoadAllPhotos();
     }

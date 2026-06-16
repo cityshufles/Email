@@ -2999,21 +2999,18 @@
 
     private string GetMobileUploaderUrl()
     {
-        var baseUrl = GetConfiguredBaseUrl();
-        var uploaderBaseUrl = $"{baseUrl}/mobile-photo-upload.html";
-
+        // 2026-06-13 - Use the in-app uploader (/tour-photos) instead of the external static page.
+        // Both post to /tour-photos/upload-alt (direct XHR, no SignalR) so there is no circuit timeout,
+        // and this stays authenticated + same-origin.
         if (SelectedTour == null)
         {
-            return uploaderBaseUrl;
+            return "/tour-photos";
         }
 
         var tourDate = Uri.EscapeDataString(SelectedDate.ToString("yyyy-MM-dd"));
         var tourName = Uri.EscapeDataString(SelectedTour.TourName ?? string.Empty);
         var tourTime = Uri.EscapeDataString(SelectedTour.RawTourTime ?? string.Empty);
-        var returnUrl = $"{baseUrl}/guide-report?date={tourDate}&tourName={tourName}&tourTime={tourTime}&photoReturn=1";
-        var encodedReturnUrl = Uri.EscapeDataString(returnUrl);
-
-        return $"{uploaderBaseUrl}?tourDate={tourDate}&tourName={tourName}&tourTime={tourTime}&returnUrl={encodedReturnUrl}";
+        return $"/tour-photos?tourDate={tourDate}&tourName={tourName}&tourTime={tourTime}";
     }
 
     private void ApplyRouteContextFromQuery()

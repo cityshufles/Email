@@ -55,8 +55,14 @@ namespace Email.Services.Community
             }
         }
 
-        public async Task<int> CreatePostAsync(CommunityPostWriteModel post, CancellationToken ct = default)
+        public async Task<int> CreatePostAsync(CommunityPostWriteModel post, bool isAdmin = false, CancellationToken ct = default)
         {
+            // Server-side guard: only admins may create announcements (defense-in-depth; UI also hidden).
+            if (post.IsAnnouncement && !isAdmin)
+            {
+                post.IsAnnouncement = false;
+            }
+
             var depth = 0;
             if (post.ParentPostId.HasValue)
             {
@@ -140,8 +146,14 @@ namespace Email.Services.Community
             }
         }
 
-        public async Task SendAnnouncementEmailsAsync(int postId, CancellationToken ct = default)
+        public async Task SendAnnouncementEmailsAsync(int postId, bool isAdmin = false, CancellationToken ct = default)
         {
+            // Server-side guard: only admins may trigger announcement emails.
+            if (!isAdmin)
+            {
+                _logger.LogWarning("SendAnnouncementEmailsAsync blocked for non-admin (post {PostId})", postId);
+                return;
+            }
             try
             {
                 using var conn = _connectionFactory.CreateOpenConnection();

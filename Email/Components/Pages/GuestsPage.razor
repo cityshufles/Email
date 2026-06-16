@@ -38,7 +38,7 @@
         <div class="list-group">
             @foreach (var c in customers)
             {
-                <a href="@($"/guest/{c.Id}")" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                <a href="@($"/guest/{c.Id}?from=guests")" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
                     <div>
                         <span class="fw-semibold">@(string.IsNullOrWhiteSpace(c.FullName) ? "(no name)" : c.FullName)</span>
                         @if (c.TotalBookings > 1)

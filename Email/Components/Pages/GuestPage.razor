@@ -10,8 +10,11 @@
 <PageTitle>Guest</PageTitle>
 
 <div class="container-fluid py-3" style="max-width: 1000px;">
-    <a href="/bookings" class="btn btn-sm btn-outline-secondary mb-3">
-        <i class="bi bi-arrow-left me-1"></i>Back to Bookings
+    @{
+        var fromGuests = string.Equals(From, "guests", StringComparison.OrdinalIgnoreCase);
+    }
+    <a href="@(fromGuests ? "/guests" : "/bookings")" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1"></i>@(fromGuests ? "Back to Guests" : "Back to Bookings")
     </a>
 
     @if (isLoading)
@@ -175,6 +178,7 @@
 
 @code {
     [Parameter] public int CustomerId { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? From { get; set; }
 
     private CustomerCommunicationProfile? profile;
     private List<CustomerNote> notes = new();
@@ -238,7 +242,6 @@
             return;
         }
         var safe = (profile?.SelectedBooking?.CustomerName ?? "contact").Replace(" ", "_").Replace(",", "");
-        var ok = await JSRuntime.InvokeAsync<bool>("downloadUrlAsFile", $"/vcards/booking?bookingId={bid}", $"{safe}.vcf");
-        if (!ok) await ToastService.ShowErrorAsync("vCard", "Download failed.");
+        await JSRuntime.InvokeVoidAsync("downloadServerFile", $"/vcards/booking?bookingId={bid}", $"{safe}.vcf");
     }
 }

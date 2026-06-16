@@ -31,7 +31,7 @@
                 <textarea class="form-control mb-2" rows="3" placeholder="Share something with the team..."
                           @bind="newPostContent"></textarea>
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <AuthorizeView Roles="Admin,Manager">
+                    <AuthorizeView Roles="Admin">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="announcement-check" @bind="newPostIsAnnouncement" />
                             <label class="form-check-label small" for="announcement-check">
@@ -165,6 +165,7 @@
     private int currentUserId;
     private string currentUserName = string.Empty;
     private bool communityLocked;
+    private bool currentUserIsAdmin;
 
     protected override async Task OnInitializedAsync()
     {
@@ -179,6 +180,7 @@
         var idStr = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         currentUserId = int.TryParse(idStr, out var id) ? id : 0;
         communityLocked = ReadLockFlag(state.User.FindFirst("Permissions")?.Value, community: true);
+        currentUserIsAdmin = state.User.IsInRole("Admin");
     }
 
     // Reads the CommunityLocked/FaqLocked flag from the user's Permissions JSON claim.
@@ -222,14 +224,14 @@
                 AuthorUserId = currentUserId,
                 AuthorName = currentUserName,
                 Content = newPostContent.Trim(),
-                IsAnnouncement = newPostIsAnnouncement
-            });
+                IsAnnouncement = newPostIsAnnouncement && currentUserIsAdmin
+            }, currentUserIsAdmin);
 
-            if (newPostIsAnnouncement)
+            if (newPostIsAnnouncement && currentUserIsAdmin)
             {
                 try
                 {
-                    await CommunityService.SendAnnouncementEmailsAsync(postId);
+                    await CommunityService.SendAnnouncementEmailsAsync(postId, currentUserIsAdmin);
                     await ToastService.ShowSuccessAsync("Posted and announcement emails sent!");
                 }
                 catch
@@ -318,7 +320,7 @@
     {
         try
         {
-            await CommunityService.SendAnnouncementEmailsAsync(post.Id);
+            await CommunityService.SendAnnouncementEmailsAsync(post.Id, currentUserIsAdmin);
             await ToastService.ShowSuccessAsync("Announcement emails sent!");
             await LoadPostsAsync();
         }

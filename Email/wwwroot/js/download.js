@@ -61,6 +61,27 @@ window.downloadTextFile = (textContent, fileName, mimeType) => {
     }
 };
 
+// 2026-06-13 - Download a server file via a real anchor (no fetch/blob).
+// Needed for multi-contact vCards: iOS Contacts imports ALL cards when the file comes
+// straight from the server (text/vcard + Content-Disposition); a fetched blob only imports
+// the first. On desktop the `download` attribute downloads cleanly with no extra tab.
+window.downloadServerFile = (url, fileName) => {
+    try {
+        const a = document.createElement('a');
+        a.href = url;
+        if (fileName) a.download = fileName;
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { if (document.body.contains(a)) document.body.removeChild(a); }, 2000);
+        return true;
+    } catch (e) {
+        console.error('downloadServerFile error', e);
+        return false;
+    }
+};
+
 // 2026-05-31 - Hand a protocol URL (sms:, whatsapp://, tel:) to the OS app without opening a new tab.
 // For these schemes the browser does NOT navigate the document, so the Blazor page/circuit stays intact.
 window.openProtocolLink = (url) => {
